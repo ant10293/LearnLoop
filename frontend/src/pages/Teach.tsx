@@ -5,7 +5,7 @@ import { RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { Bone } from "../components/Skeleton";
 import { ErrorNote, Layout } from "../components/ui";
-import { api, humanizeModel, type Run } from "../lib/learnloop";
+import { api, type Run } from "../lib/learnloop";
 
 export function TeachPage() {
   const { id = "" } = useParams();
@@ -59,10 +59,6 @@ export function TeachPage() {
             <li>Finished result visible at the end of the recording</li>
           </ul>
           <p className="muted small">Moving or head-mounted cameras and small parts are not supported in this version.</p>
-          <p className="small">
-            {status.data?.object_views_enabled ? "Models" : "Model"}: <strong>{status.isPending ? <Bone width="8rem" /> : humanizeModel(status.data?.model_id ?? "")}</strong>
-            {status.data?.object_views_enabled && <> and <strong>{humanizeModel("sam-3.1")}</strong></>} (Meta)
-          </p>
           {demo && <RecordingAnalysis key={demo.video.id} recording={demo} onDone={learned} action="Learn the procedure" />}
         </section>
       </div>

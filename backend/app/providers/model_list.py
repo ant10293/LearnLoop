@@ -126,6 +126,12 @@ def live_options(
     return options
 
 
+def account_options(session, provider_id: str) -> list[dict]:
+    """The picker's rows: the account's list, or the catalog when that list cannot be read."""
+    secret, base_url = _account(session, provider_id)
+    return live_options(provider_id, secret, base_url) or [caps.as_dict() for caps in models_for(provider_id)]
+
+
 def choose_fallback(
     options: list[dict],
     *,

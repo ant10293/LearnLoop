@@ -462,9 +462,10 @@ def decode_mask_raster(record: SamRecord):
 class SamAdapter:
     model_id = "sam-3.1"
 
-    def __init__(self, secret: str, timeout_s: float = 180):
+    def __init__(self, secret: str, timeout_s: float = 180, model_id: str = "sam-3.1"):
         self.secret = secret
         self.timeout_s = provider_timeout(timeout_s)
+        self.model_id = model_id
 
     def _client(self) -> AsyncOpenAI:
         return AsyncOpenAI(api_key=self.secret, base_url=META_BASE, timeout=self.timeout_s)

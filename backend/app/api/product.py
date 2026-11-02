@@ -45,6 +45,10 @@ class ReferenceBody(BaseModel):
 class AnalyzeBody(BaseModel):
     # False means: use a stored answer or say what a live call would involve.
     allow_live: bool = False
+    # Empty uses the default inference model.
+    model_id: str = ""
+    # None uses the default segmentation model. Empty means no segmentation.
+    segmentation_model_id: str | None = None
 
 
 class LearnBody(BaseModel):
@@ -64,12 +68,16 @@ def status(session: Session = Depends(db)) -> dict:
         "profile": guided.PROFILE,
         "model_id": guided.DEFAULT_MODEL,
         "modality": guided.MODALITY,
-        "object_views_enabled": settings.object_views,
         "max_clip_seconds": guided.MAX_CLIP_SECONDS,
         "live_enabled": settings.live_inference,
         "meta_key_configured": bool(secret),
         "providers": ["meta"],
     }
+
+
+@router.get("/models")
+def list_models(session: Session = Depends(db)) -> dict:
+    return guided.model_choices(session)
 
 
 @router.get("/procedures")
@@ -215,7 +223,11 @@ def analyze(video_id: str, payload: AnalyzeBody, session: Session = Depends(db))
         if template_row is None:
             raise HTTPException(409, "Accept the learned procedure before analyzing a new attempt.")
     document = template_row.document_json if template_row else None
-    plan = guided.plan(video, template=document)
+    try:
+        model_id, segmentation_model_id = guided.choose_models(session, payload.model_id, payload.segmentation_model_id)
+    except UnsupportedMode as exc:
+        raise HTTPException(400, str(exc)) from exc
+    plan = guided.plan(video, template=document, model_id=model_id, segmentation_model_id=segmentation_model_id)
     if not plan["cached"] and not (payload.allow_live and settings.live_inference):
         raise HTTPException(409, {"code": "live_call_required", "plan": plan})
     try:
@@ -225,6 +237,8 @@ def analyze(video_id: str, payload: AnalyzeBody, session: Session = Depends(db))
             template=document,
             template_id=template_row.id if template_row else "",
             allow_live=payload.allow_live,
+            model_id=model_id,
+            segmentation_model_id=segmentation_model_id,
         )
     except (ValueError, UnsupportedMode) as exc:
         raise HTTPException(400, str(exc)) from exc

@@ -645,8 +645,8 @@ def _clearest_observation(session, object_id: str):
     )
 
 
-def _finish(session, run, call, result) -> None:
-    cost, known = estimate_cost(lookup("meta", "sam-3.1"), result.input_tokens, result.output_tokens)
+def _finish(session, run, call, result, model_id: str = "sam-3.1") -> None:
+    cost, known = estimate_cost(lookup("meta", model_id), result.input_tokens, result.output_tokens)
     finish_provider_call(
         session,
         run,
@@ -655,7 +655,7 @@ def _finish(session, run, call, result) -> None:
             text=result.text,
             raw={
                 "id": result.request_id,
-                "model": "sam-3.1",
+                "model": model_id,
                 "file_id": result.file_id,
                 "usage": {
                     "input_tokens": result.input_tokens,
@@ -665,7 +665,7 @@ def _finish(session, run, call, result) -> None:
             usage=Usage(result.input_tokens, result.output_tokens, cost, known),
             request_id=result.request_id,
             latency_ms=result.latency_ms,
-            model_id="sam-3.1",
+            model_id=model_id,
         ),
     )
 

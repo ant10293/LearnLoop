@@ -33,6 +33,7 @@ from app.services.storage import data_path
 
 PROFILE = "hackathon_guided"
 DEFAULT_MODEL = "muse-wonder-1.0"
+DEFAULT_SEGMENTATION_MODEL = "sam-3.1"
 MODALITY = "native_video"
 MAX_CLIP_SECONDS = 60.0
 MAX_REQUESTS = 1
@@ -76,7 +77,48 @@ Rules for the list:
 """.strip()
 
 
-def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEFAULT_MODEL) -> dict:
+def model_choices(session: Session) -> dict:
+    """The account's models for each job, as vision-test-bench splits them: SAM segments, the rest analyze."""
+    from app.providers.catalog import models_for
+    from app.providers.model_list import account_options, choose_fallback
+
+    options = account_options(session, "meta")
+    inference = [item for item in options if not _is_segmenter(item) and item.get("native_video")]
+    # The account list may leave SAM out, and it is called through its own endpoint.
+    segmentation = [item for item in options if _is_segmenter(item)] or [caps.as_dict() for caps in models_for("meta") if _is_segmenter(caps.as_dict())]
+    if not settings.object_views:
+        segmentation = []
+    default_inference = DEFAULT_MODEL if _offers(inference, DEFAULT_MODEL) else choose_fallback(inference, native_video=True)
+    default_segmentation = DEFAULT_SEGMENTATION_MODEL if _offers(segmentation, DEFAULT_SEGMENTATION_MODEL) else next((str(item["model_id"]) for item in segmentation), "")
+    return {
+        "inference": inference,
+        "segmentation": segmentation,
+        "default_inference": default_inference,
+        "default_segmentation": default_segmentation,
+    }
+
+
+def _is_segmenter(item: dict) -> bool:
+    return str(item.get("model_id")).startswith("sam")
+
+
+def _offers(options: list[dict], model_id: str) -> bool:
+    return any(item.get("model_id") == model_id for item in options)
+
+
+def choose_models(session: Session, model_id: str, segmentation_model_id: str | None) -> tuple[str, str]:
+    """Apply a person's picks. No inference pick or None for segmentation uses the default; "" turns segmentation off."""
+    choices = model_choices(session)
+    model = model_id or choices["default_inference"]
+    if not _offers(choices["inference"], model):
+        raise UnsupportedMode(f"{model} cannot analyze a video on this account.")
+    segmentation = choices["default_segmentation"] if segmentation_model_id is None else segmentation_model_id
+    if segmentation and not _offers(choices["segmentation"], segmentation):
+        raise UnsupportedMode(f"{segmentation} is not available for segmentation.")
+    return model, segmentation
+
+
+def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEFAULT_MODEL, segmentation_model_id: str = "") -> dict:
     """What a call would send, whether a stored answer exists, and what it could cost."""
     from app.pipeline import object_views
 
@@ -99,7 +141,8 @@ def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEF
         "cache_key": key,
         "cached": find_cached(key) is not None,
         "live_enabled": settings.live_inference,
-        "object_view_requests": 1 if settings.object_views and not template else 0,
+        "segmentation_model_id": segmentation_model_id if not template else "",
+        "object_view_requests": 1 if segmentation_model_id and not template else 0,
         "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)),
     }
 
@@ -112,6 +155,7 @@ def create_guided_run(
     template_id: str = "",
     allow_live: bool = False,
     model_id: str = DEFAULT_MODEL,
+    segmentation_model_id: str = "",
 ) -> AnalysisRun:
     from app.services.experiments import create_run
 
@@ -154,7 +198,8 @@ def create_guided_run(
         "max_output_tokens": settings.guided_max_output_tokens,
         "max_retries": 0,
         "inference_source": "pending",
-        "object_views": settings.object_views and not template,
+        "object_views": bool(segmentation_model_id) and not template,
+        "segmentation_model_id": segmentation_model_id if not template else "",
     }
     session.add(Job(run_id=run.id, max_attempts=1))
     session.commit()

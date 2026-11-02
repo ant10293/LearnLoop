@@ -41,8 +41,8 @@ const video = { id: "v1", filename: "demo.mp4", duration_sec: 10, playback_url: 
 const attempt = { ...video, id: "v2", filename: "attempt.mp4", playback_url: "/p/v2" };
 const run = { id: "r2", video_id: "v2", status: "completed", error: "", model_id: "muse-wonder-1.0", modality: "native_video", profile: "hackathon_guided", source: "cached", cached_at: "", provider_requests: 0, reference_template_id: "t1", stages: {} };
 const roles = [
-  { role_id: "role:green", label: "green cube", original_label: "", visual_characteristics: "", uncertain: false },
-  { role_id: "role:base", label: "gray base", original_label: "", visual_characteristics: "", uncertain: false },
+  { role_id: "role:green", label: "green cube", source_object_ids: [], original_label: "", visual_characteristics: "", uncertain: false },
+  { role_id: "role:base", label: "gray base", source_object_ids: [], original_label: "", visual_characteristics: "", uncertain: false },
 ];
 const templateStep = {
   step_id: "s1", name: "Place green cube", required: true, requirement_status: "required", object_roles: ["role:green", "role:base"],
@@ -83,7 +83,7 @@ describe("Projects", () => {
       if (url === "/api/learnloop/procedures" && init?.method === "POST") return { body: { ...summary, id: "new" } };
       if (url === "/api/learnloop/procedures") return { body: [summary] };
       if (url.includes("/procedures/new")) return { body: procedure({ recordings: [], templates: [], template: null }) };
-      if (url.includes("/status")) return { body: { model_id: "muse-wonder-1.0", object_views_enabled: true, max_clip_seconds: 60 } };
+      if (url.includes("/status")) return { body: { model_id: "muse-wonder-1.0", max_clip_seconds: 60 } };
       return undefined;
     });
     show("/");
@@ -96,9 +96,8 @@ describe("Projects", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(calls.some((call) => call.init?.method === "POST")).toBe(true));
     expect(await screen.findByRole("heading", { name: "Teach" })).toBeTruthy();
-    expect(await screen.findByText("SAM 3.1")).toBeTruthy();
-    expect(screen.getByText("Muse Wonder 1.0")).toBeTruthy();
     expect(humanizeModel("sam-3.1")).toBe("SAM 3.1");
+    expect(humanizeModel("muse-wonder-1.0")).toBe("Muse Wonder 1.0");
   });
 
   it("reports a failed load instead of spinning", async () => {
@@ -232,6 +231,28 @@ describe("Teach", () => {
     expect(JSON.parse(String(analyzes[0].init?.body)).allow_live).toBe(false);
   });
 
+  it("sends the picked models, and segmentation can be turned off", async () => {
+    const calls = mockApi((url) => {
+      if (url.endsWith("/models")) {
+        return { body: { inference: [{ model_id: "muse-wonder-1.0" }, { model_id: "muse-spark-1.3" }], segmentation: [{ model_id: "sam-3.1" }], default_inference: "muse-wonder-1.0", default_segmentation: "sam-3.1" } };
+      }
+      if (url.endsWith("/analyze")) return { status: 500, body: { detail: "stop here" } };
+      return base(url);
+    });
+    show("/procedures/p1/teach");
+    const inference = await screen.findByRole("combobox", { name: "Inference model" });
+    const segmentation = screen.getByRole("combobox", { name: "Segmentation model" });
+    expect(inference).toHaveValue("muse-wonder-1.0");
+    expect(segmentation).toHaveValue("sam-3.1");
+    expect(screen.getByRole("option", { name: "SAM 3.1" })).toBeTruthy();
+    fireEvent.change(inference, { target: { value: "muse-spark-1.3" } });
+    fireEvent.change(segmentation, { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Learn the procedure" }));
+    await screen.findByRole("alert");
+    const body = JSON.parse(String(calls.find((call) => call.url.endsWith("/analyze"))?.init?.body));
+    expect(body).toMatchObject({ model_id: "muse-spark-1.3", segmentation_model_id: "" });
+  });
+
   it("shows a failed analysis and the provider's reason", async () => {
     mockApi((url) => {
       if (url.endsWith("/analyze")) return { body: { ...run, id: "rf", status: "pending" } };
@@ -273,6 +294,33 @@ describe("Procedure review", () => {
     expect(await screen.findByText("Learning from demo.mp4")).toBeTruthy();
     expect(screen.getByText("Meta analysis")).toHaveClass("running");
     expect(screen.queryByText("Nothing has been learned yet.")).toBeNull();
+  });
+
+  it("shows a placeholder and selects the demonstration being learned", async () => {
+    mockApi((url) => (url.endsWith("/procedures/p1") ? { body: untaught("running") } : undefined));
+    const { container } = show("/procedures/p1/procedure");
+    const item = await screen.findByRole("button", { name: /demo\.mp4 · Learning/ });
+    expect(item).toHaveAttribute("aria-current", "true");
+    expect(item.closest(".panel")?.querySelector(".bone")).toBeNull();
+    expect(container.querySelector(".step .field.bone")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Learned procedures" })).toBeTruthy();
+  });
+
+  it("still lets the person open an earlier procedure while one is being learned", async () => {
+    const earlier = template("accepted");
+    mockApi((url) => {
+      if (url.endsWith("/procedures/p1")) return { body: { ...untaught("running"), template: earlier, templates: [earlier] } };
+      if (url.endsWith("/objects")) return { body: { objects: {} } };
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    await screen.findByRole("button", { name: /demo\.mp4 · Learning/ });
+    expect(screen.queryByLabelText("Step 1 name")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /demo\.mov · Latest/ }));
+    expect(await screen.findByLabelText("Step 1 name")).toHaveValue("Place green cube");
+    expect(screen.getByText("The procedure below is from an earlier demonstration.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /demo\.mp4 · Learning/ }));
+    await waitFor(() => expect(screen.queryByLabelText("Step 1 name")).toBeNull());
   });
 
   it("learns once when the analysis finished after leaving Teach", async () => {

@@ -26,9 +26,11 @@ export function ProcedurePage() {
   // The newest procedure unless the person picked an earlier one. Saving an edit adds a version to the same one.
   const [picked, setPicked] = useState("");
   const learned = learnedProcedures(procedure.data?.templates ?? []);
-  const template = learned.find((item) => item.family_id === picked) ?? procedure.data?.template;
   const latest = latestDemonstration(procedure.data);
   const learnFrom = latest?.run?.status === "completed" && !procedure.data?.templates.some((item) => item.source_run_id === latest.run?.id) ? latest.run.id : "";
+  // A demonstration still being learned is selected until the person picks a finished one.
+  const teaching = latest && (preparing(latest) || analyzing(latest) || learnFrom) ? latest : undefined;
+  const template = learned.find((item) => item.family_id === picked) ?? (teaching ? undefined : procedure.data?.template);
   const learning = useRef("");
   const [steps, setSteps] = useState<Record<string, StepEdit>>({});
   const [labels, setLabels] = useState<Record<string, string>>({});
@@ -58,11 +60,29 @@ export function ProcedurePage() {
   }, [client, id, learnFrom]);
 
   if (procedure.isPending) return <Layout procedureId={id} titleLoading><ProcedureSkeleton /></Layout>;
+  const history = (learned.length > 1 || teaching) && (
+    <LearnedList learned={learned} recordings={procedure.data?.recordings ?? []} current={template?.id} teaching={teaching} onPick={setPicked} />
+  );
+  if (teaching && !template) {
+    return (
+      <Layout procedureId={id} title={procedure.data?.name}>
+        <ProcedureSkeleton
+          notices={
+            <>
+              <ErrorNote message={error} />
+              <div className="panel teaching-banner"><TeachingStatus recording={teaching} procedureId={id} /></div>
+            </>
+          }
+          history={history}
+        />
+      </Layout>
+    );
+  }
   if (!template) {
     return (
       <Layout procedureId={id} title={procedure.data?.name}>
         <h1>Procedure</h1>
-        {latest && (preparing(latest) || analyzing(latest) || latest.run?.status === "failed" || learnFrom) ? (
+        {latest?.run?.status === "failed" ? (
           <TeachingStatus recording={latest} procedureId={id} />
         ) : (
           <>
@@ -120,7 +140,7 @@ export function ProcedurePage() {
         notices={
           <>
             <ErrorNote message={error} />
-            {latest && (preparing(latest) || analyzing(latest) || latest.run?.status === "failed" || learnFrom) && (
+            {latest && (teaching || latest.run?.status === "failed") && (
               <div className="panel teaching-banner">
                 <p className="small muted">The procedure below is from an earlier demonstration.</p>
                 <TeachingStatus recording={latest} procedureId={id} />
@@ -133,26 +153,7 @@ export function ProcedurePage() {
           const track = views.data?.objects[role.source_object_ids[0]]?.track;
           return track?.length ? [{ label: labels[role.role_id] ?? role.label, track }] : [];
         })} />}
-        history={learned.length > 1 && (
-          <section className="panel">
-            <h2>Learned procedures</h2>
-            <p className="muted small">Each comes from one analyzed demonstration. Pick one to see it.</p>
-            <div className="learned-list">
-              {learned.map((item, index) => {
-                const still = procedure.data?.recordings.find((row) => row.video.id === item.source_video_id)?.video.thumbnail_url;
-                return (
-                <button key={item.family_id} type="button" className="learned-item" aria-current={item.id === template.id} onClick={() => setPicked(item.family_id)}>
-                  {still ? <img src={still} alt="" /> : <span className="learned-thumb" />}
-                  <span className="learned-text">
-                    <strong className="small">{item.source_filename || "Demonstration"}{index === 0 ? " · Latest" : ""}</strong>
-                    <span className="muted small">Learned {new Date(`${item.created_at}Z`).toLocaleString()} · {item.document.steps.length} steps · {item.acceptance_status === "accepted" ? "Accepted" : "Draft"}</span>
-                  </span>
-                </button>
-                );
-              })}
-            </div>
-          </section>
-        )}
+        history={history}
         objects={roles.map((role) => {
           const view = views.data?.objects[role.source_object_ids[0]];
           return (
@@ -226,13 +227,48 @@ function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: stri
   );
 }
 
-function ProcedureSkeleton() {
+function LearnedList({ learned, recordings, current, teaching, onPick }: { learned: Template[]; recordings: Recording[]; current?: string; teaching?: Recording; onPick: (familyId: string) => void }) {
   return (
-    <div aria-busy="true">
-      <p className="sr-only">Loading the procedure</p>
+    <section className="panel">
+      <h2>Learned procedures</h2>
+      <p className="muted small">Each comes from one analyzed demonstration. Pick one to see it.</p>
+      <div className="learned-list">
+        {teaching && (
+          <button type="button" className="learned-item" aria-current={!current} onClick={() => onPick("")}>
+            {teaching.video.thumbnail_url ? <img src={teaching.video.thumbnail_url} alt="" /> : <span className="learned-thumb" />}
+            <span className="learned-text">
+              <strong className="small">{teaching.video.filename || "Demonstration"} · Learning</strong>
+              <span className="muted small">{preparing(teaching) ? "Preparing the recording" : analyzing(teaching) ? "Analyzing the demonstration" : "Building the procedure"}</span>
+            </span>
+          </button>
+        )}
+        {learned.map((item, index) => {
+          const still = recordings.find((row) => row.video.id === item.source_video_id)?.video.thumbnail_url;
+          return (
+            <button key={item.family_id} type="button" className="learned-item" aria-current={item.id === current} onClick={() => onPick(item.family_id)}>
+              {still ? <img src={still} alt="" /> : <span className="learned-thumb" />}
+              <span className="learned-text">
+                <strong className="small">{item.source_filename || "Demonstration"}{index === 0 ? " · Latest" : ""}</strong>
+                <span className="muted small">Learned {new Date(`${item.created_at}Z`).toLocaleString()} · {item.document.steps.length} steps · {item.acceptance_status === "accepted" ? "Accepted" : "Draft"}</span>
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+/** Stands in for the procedure while it loads or is being learned. `history` is real, so it stays usable. */
+function ProcedureSkeleton({ notices, history }: { notices?: ReactNode; history?: ReactNode }) {
+  return (
+    <div aria-busy={history ? undefined : "true"}>
+      {!history && <p className="sr-only">Loading the procedure</p>}
       <ProcedureView
         version={<Bone width="24rem" />}
         actions={<TagBone />}
+        notices={notices}
+        history={history}
         film={<Film label="Demonstration" caption={<Bone width="70%" />} />}
         objects={Array.from({ length: ROLE_PLACEHOLDERS }, (_, index) => (
           <span key={index} className="object"><FieldBone /></span>

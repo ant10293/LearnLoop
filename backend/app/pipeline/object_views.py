@@ -42,6 +42,7 @@ from app.video.probe import probe
 log = logging.getLogger("learnloop.object_views")
 
 SAM_FPS = 8.0
+_DEFAULT_SAM = "sam-3.1"
 _LONG_SIDE = 1080
 _CROP_SIDE = 160
 _PADDING = 0.15
@@ -96,6 +97,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
 
     document = load_working(run.id)
     allow_live = bool((run.config_json or {}).get("allow_live")) and settings.live_inference
+    model_id = (run.config_json or {}).get("segmentation_model_id") or _DEFAULT_SAM
     secret, _source = load_secret(session, "meta")
     directory = views_dir(run.id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -111,13 +113,13 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
     session.commit()
     if seeds:
         prompt = _prompt(seeds, media)
-        key = _cache_key(video.checksum_sha256, prompt)
+        key = _cache_key(video.checksum_sha256, prompt, model_id)
         text = _cached(key)
         if text is not None:
             replayed = 1
         elif allow_live and secret:
             requests = 1
-            text, error = await _call(session, run, media, prompt, secret)
+            text, error = await _call(session, run, media, prompt, secret, model_id)
             # An empty answer may be the prompt or the footage, so a later run may try again.
             if text:
                 _store(key, text)
@@ -130,7 +132,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
     manifest = _render(run.id, document, media, tracked, _last_frame_time(video))
     manifest.update(
         {
-            "source": "sam-3.1",
+            "source": model_id,
             "fps": SAM_FPS,
             "requests": requests,
             "replayed_requests": replayed,
@@ -250,7 +252,7 @@ def _prompt(seeds: list[Seed], media: Path) -> str:
     return render_spatial_prompt(marks)
 
 
-async def _call(session, run, media: Path, prompt: str, secret: str) -> tuple[str | None, str]:
+async def _call(session, run, media: Path, prompt: str, secret: str, model_id: str) -> tuple[str | None, str]:
     from app.pipeline.sam_stage import _finish
     from app.services.costs import fail_provider_call, open_provider_call
 
@@ -259,19 +261,19 @@ async def _call(session, run, media: Path, prompt: str, secret: str) -> tuple[st
         run,
         stage="segmentation",
         provider_id="meta",
-        model_id="sam-3.1",
+        model_id=model_id,
         modality="native_video",
         parameters={"prompt_kind": "spatial", "prompt": prompt, "fps": SAM_FPS},
     )
     session.commit()
     try:
-        result = await SamAdapter(secret).segment_video(media, prompt, prompt_kind="spatial", propagation_direction="both")
+        result = await SamAdapter(secret, model_id=model_id).segment_video(media, prompt, prompt_kind="spatial", propagation_direction="both")
     except Exception as exc:
         log.warning("SAM failed: %s", exc)
         fail_provider_call(call, exc)
         session.commit()
         return None, str(exc)[:400]
-    _finish(session, run, call, result)
+    _finish(session, run, call, result, model_id)
     session.commit()
     return result.text, ""
 
@@ -410,9 +412,12 @@ def _low_rate_copy(source: Path, dest: Path) -> Path:
     return dest
 
 
-def _cache_key(checksum: str, prompt: str) -> str:
-    parts = json.dumps({"video": checksum, "prompt": prompt, "fps": SAM_FPS, "side": _LONG_SIDE}, sort_keys=True)
-    return hashlib.sha256(parts.encode()).hexdigest()
+def _cache_key(checksum: str, prompt: str, model_id: str = _DEFAULT_SAM) -> str:
+    fields = {"video": checksum, "prompt": prompt, "fps": SAM_FPS, "side": _LONG_SIDE}
+    # Answers stored before models could be chosen are all from the default, so its key stays the same.
+    if model_id != _DEFAULT_SAM:
+        fields["model"] = model_id
+    return hashlib.sha256(json.dumps(fields, sort_keys=True).encode()).hexdigest()
 
 
 def _cached(key: str) -> str | None:

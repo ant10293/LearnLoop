@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, api, humanizeModel, type CallPlan, type Recording, type Run } from "../lib/learnloop";
+import { ApiError, api, humanizeModel, type CallPlan, type ModelOption, type Recording, type Run } from "../lib/learnloop";
+import { FieldBone } from "./Skeleton";
 import { ErrorNote } from "./ui";
 
 const STAGES: [string, string][] = [
@@ -41,6 +42,11 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
     refetchInterval: (query) => (query.state.data && ["completed", "failed", "canceled"].includes(query.state.data.status) ? false : 800),
   });
   const video = live.data?.video ?? recording.video;
+  const models = useQuery({ queryKey: ["models"], queryFn: api.models });
+  // Null keeps the server's default until the person picks.
+  const [inference, setInference] = useState<string | null>(null);
+  const [segmentation, setSegmentation] = useState<string | null>(null);
+  const segments = recording.role === "demonstration";
 
   useEffect(() => {
     const data = run.data;
@@ -54,7 +60,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
     setError("");
     setBusy(true);
     try {
-      const created = await api.analyze(videoId, allowLive);
+      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "" });
       setPlan(null);
       setRunId(created.id);
     } catch (exc) {
@@ -76,9 +82,27 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   return (
     <div className="analysis">
       {!running && status !== "completed" && !plan && (
-        <button className="btn primary" disabled={busy} onClick={() => void start(false)}>
-          {status === "failed" ? "Analyze again" : action}
-        </button>
+        <>
+          <div className="model-picker">
+            <label className="stack small">
+              <span className="muted">Inference model</span>
+              {models.isPending ? <FieldBone select /> : (
+                <ModelSelect label="Inference model" options={models.data?.inference ?? []} value={inference ?? models.data?.default_inference ?? ""} onChange={setInference} />
+              )}
+            </label>
+            {segments && (models.isPending || Boolean(models.data?.segmentation.length)) && (
+              <label className="stack small">
+                <span className="muted">Segmentation model (optional)</span>
+                {models.isPending ? <FieldBone select /> : (
+                  <ModelSelect label="Segmentation model" options={models.data?.segmentation ?? []} value={segmentation ?? models.data?.default_segmentation ?? ""} onChange={setSegmentation} none="None" />
+                )}
+              </label>
+            )}
+          </div>
+          <button className="btn primary" disabled={busy} onClick={() => void start(false)}>
+            {status === "failed" ? "Analyze again" : action}
+          </button>
+        </>
       )}
       {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => setPlan(null)} />}
       {(run.data || runLoading) && (
@@ -101,6 +125,15 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   );
 }
 
+function ModelSelect({ label, options, value, onChange, none }: { label: string; options: ModelOption[]; value: string; onChange: (value: string) => void; none?: string }) {
+  return (
+    <select className="field" aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+      {none && <option value="">{none}</option>}
+      {options.map((item) => <option key={item.model_id} value={item.model_id}>{item.label || humanizeModel(item.model_id)}</option>)}
+    </select>
+  );
+}
+
 function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: boolean; onApprove: () => void; onCancel: () => void }) {
   return (
     <div className="plan" role="dialog" aria-label="Approve Meta request">
@@ -110,7 +143,7 @@ function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: b
         <dt>Model</dt><dd>{humanizeModel(plan.model_id)}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
         <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
         <dt>Requests</dt><dd>At most {plan.max_requests}, with no automatic retry</dd>
-        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>One more Meta request to find the objects on the first frame, then one {humanizeModel("sam-3.1")} request, about {plan.object_view_frames.toLocaleString()} billed frames.</dd></>}
+        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>One more Meta request to find the objects on the first frame, then one {humanizeModel(plan.segmentation_model_id)} request, about {plan.object_view_frames.toLocaleString()} billed frames.</dd></>}
         <dt>Output limit</dt><dd>{plan.max_output_tokens.toLocaleString()} tokens</dd>
         <dt>Estimated cost</dt><dd>{plan.estimated_cost_usd == null ? "Unknown. No rate is recorded for this model." : `$${plan.estimated_cost_usd}`}</dd>
       </dl>

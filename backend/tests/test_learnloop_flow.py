@@ -574,7 +574,7 @@ def test_a_demonstration_follows_every_box_in_one_sam_request_and_replays_it(lab
     answer_text = "\n".join(_sam_line(frame, [(0, 10), (2, 100)]) for frame in range(4))
 
     class FakeSam:
-        def __init__(self, secret, timeout_s=180):
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
             pass
 
         async def segment_video(self, media, prompt, **kwargs):
@@ -635,7 +635,7 @@ def test_bad_starting_boxes_send_nothing_to_sam(lab, monkeypatch):
     monkeypatch.setattr(settings, "object_views", True)
 
     class NoSam:
-        def __init__(self, secret, timeout_s=180):
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
             pass
 
         async def segment_video(self, media, prompt, **kwargs):
@@ -657,7 +657,7 @@ def test_sam_failure_keeps_the_analysis(lab, monkeypatch):
     monkeypatch.setattr(settings, "object_views", True)
 
     class DownSam:
-        def __init__(self, secret, timeout_s=180):
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
             pass
 
         async def segment_video(self, media, prompt, **kwargs):
@@ -672,3 +672,40 @@ def test_sam_failure_keeps_the_analysis(lab, monkeypatch):
     views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
     assert "SAM is down" in views["error"]
     assert all(not item["seen_cells"] for item in views["objects"].values())
+
+
+def test_models_come_from_the_account_and_segmentation_is_optional(lab, monkeypatch):
+    from app.config import settings
+    from app.providers import model_list
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    listed = [
+        {"model_id": "muse-spark-1.3", "native_video": True},
+        {"model_id": "muse-wonder-1.0", "native_video": True},
+    ]
+    monkeypatch.setattr(model_list, "live_options", lambda *args, **kwargs: listed)
+    choices = client.get("/api/learnloop/models").json()
+    assert [item["model_id"] for item in choices["inference"]] == ["muse-spark-1.3", "muse-wonder-1.0"]
+    # The account did not list SAM, so the catalog's row is offered.
+    assert [item["model_id"] for item in choices["segmentation"]] == ["sam-3.1"]
+    assert choices["default_inference"] == "muse-wonder-1.0" and choices["default_segmentation"] == "sam-3.1"
+
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Picks"}).json()["id"]
+    video = _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration")
+    url = f"/api/learnloop/recordings/{video}/analyze"
+    assert client.post(url, json={"allow_live": True, "model_id": "sam-3.1"}).status_code == 400
+    assert client.post(url, json={"allow_live": True, "segmentation_model_id": "muse-spark-1.3"}).status_code == 400
+    plan = client.post(url, json={"model_id": "muse-spark-1.3", "segmentation_model_id": ""}).json()["detail"]["plan"]
+    assert plan["model_id"] == "muse-spark-1.3" and plan["object_view_requests"] == 0
+    run = _analyze_with(client, video, model_id="muse-spark-1.3", segmentation_model_id="")
+    assert run["model_id"] == "muse-spark-1.3"
+    assert stub.calls[-1].model_id == "muse-spark-1.3"
+    assert run["stages"]["segmentation"] == "skipped"
+
+
+def _analyze_with(client, video_id, **models):
+    response = client.post(f"/api/learnloop/recordings/{video_id}/analyze", json={"allow_live": True, **models})
+    assert response.status_code == 200, response.text
+    _run_job(response.json()["id"])
+    return client.get(f"/api/learnloop/runs/{response.json()['id']}").json()

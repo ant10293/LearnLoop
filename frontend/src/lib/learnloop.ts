@@ -205,8 +205,21 @@ export interface CallPlan {
   estimated_input_tokens: number;
   estimated_cost_usd: number | null;
   live_enabled: boolean;
+  segmentation_model_id: string;
   object_view_requests: number;
   object_view_frames: number;
+}
+
+export interface ModelOption {
+  model_id: string;
+  label?: string;
+}
+
+export interface ModelChoices {
+  inference: ModelOption[];
+  segmentation: ModelOption[];
+  default_inference: string;
+  default_segmentation: string;
 }
 
 export interface ObjectView {
@@ -253,7 +266,8 @@ export interface TemplatePatch {
 }
 
 export const api = {
-  status: () => request<{ model_id: string; modality: string; object_views_enabled: boolean; max_clip_seconds: number; live_enabled: boolean; meta_key_configured: boolean }>("/api/learnloop/status"),
+  models: () => request<ModelChoices>("/api/learnloop/models"),
+  status: () => request<{ model_id: string; modality: string; max_clip_seconds: number; live_enabled: boolean; meta_key_configured: boolean }>("/api/learnloop/status"),
   procedures: () => request<ProcedureSummary[]>("/api/learnloop/procedures"),
   createProcedure: (name: string) => post<ProcedureSummary>("/api/learnloop/procedures", { name }),
   procedure: (id: string) => request<Procedure>(`/api/learnloop/procedures/${id}`),
@@ -283,7 +297,8 @@ export const api = {
   locate: (file: File) => post<{ path: string }>("/api/videos/locate", { name: file.name, size: file.size, mtime_ms: Math.round(file.lastModified) }),
   reference: (id: string, role: Recording["role"], path: string) => post<Recording>(`/api/learnloop/procedures/${id}/recordings/reference`, { path, role }),
   removeRecording: (videoId: string) => request<{ deleted: string }>(`/api/learnloop/recordings/${videoId}`, { method: "DELETE" }),
-  analyze: (videoId: string, allowLive: boolean) => post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive }),
+  analyze: (videoId: string, allowLive: boolean, models?: { model_id: string; segmentation_model_id: string | null }) =>
+    post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive, ...models }),
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),
   objectViews: (runId: string) => request<{ objects: Record<string, ObjectView> }>(`/api/learnloop/runs/${runId}/objects`),
