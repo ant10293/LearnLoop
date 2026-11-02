@@ -8,13 +8,14 @@ cd "$ROOT"
 
 DATA_DIR="$ROOT/data/app"
 DB_FILE="$DATA_DIR/learnloop.db"
-API_PORT=8000
-APP_PORT=5174
+API_PORT=8010
+APP_PORT=5180
 
 export LEARNLOOP_DATA_DIR="$DATA_DIR"
 export LEARNLOOP_DATABASE_URL="sqlite:///$DB_FILE"
 export LEARNLOOP_AUTO_SEED=0
 export LEARNLOOP_WORKER_ENABLED=1
+export LEARNLOOP_API_ORIGIN="http://127.0.0.1:${API_PORT}"
 export LEARNLOOP_CORS_ORIGINS="http://127.0.0.1:${APP_PORT},http://localhost:${APP_PORT}"
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy \
   SOCKS_PROXY SOCKS5_PROXY socks_proxy socks5_proxy \

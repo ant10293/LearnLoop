@@ -32,10 +32,9 @@ ANSWERS = {"demo": DEMONSTRATION, "correct": CORRECT, "omitted": OMITTED, "mispl
 
 class AuthoredMeta:
     async def generate(self, secret, request):
-        from sqlalchemy import select
-
         from app.db import SessionLocal
         from app.models.media import VideoAsset
+        from sqlalchemy import select
 
         session = SessionLocal()
         try:

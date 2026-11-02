@@ -41,7 +41,7 @@ def judge_predicate(
 
 def _relation(predicate, execution, subject, target, roles, video_id: str) -> PredicateJudgement:
     if target is None or not target.object_local_ids:
-        return _cannot(predicate, "The anchor role is unresolved, so a missing component is not claimed.")
+        return _cannot(predicate, "The object this part belongs on was not identified, so a missing component is not claimed.")
     subject_ids = set(subject.object_local_ids if subject else [])
     target_ids = set(target.object_local_ids)
     window = _final_window(execution)
@@ -115,8 +115,8 @@ def _relation(predicate, execution, subject, target, roles, video_id: str) -> Pr
             status="fail",
             error_category="MISSING_COMPONENT",
             note=(
-                "The anchor is visible in the learned context and the expected relation is absent. "
-                "The expected role was not observed in that view."
+                "The object this part belongs on is visible, and the rest of the arrangement matches, "
+                "but the expected arrangement is absent. The expected part was not seen in that view."
             ),
             evidence=_visible_evidence(execution, target_ids, window, video_id),
         )
@@ -458,7 +458,7 @@ def _visible_evidence(execution, object_ids: set[str], window, video_id: str) ->
             EvidenceRef(
                 video_id=video_id,
                 timestamp=observation.timestamp,
-                observation="Anchor is visible in the final interval",
+                observation="The object this part belongs on is visible at the end",
                 evidence_class="DIRECTLY_OBSERVED",
                 object_local_ids=[observation.object_local_id],
                 bbox=bbox,

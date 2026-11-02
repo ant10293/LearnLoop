@@ -298,8 +298,3 @@ export function conditionText(condition: Partial<Condition>, roles: Role[]): str
   }
   return `${label(condition.subject_role)} is ${condition.state_label ?? ""}`;
 }
-
-/** The latest analysis a recording can be checked with, if any. */
-export function latestVerification(procedure: Procedure, videoId: string): VerificationBrief | undefined {
-  return procedure.verifications.find((item) => item.execution_video_id === videoId);
-}

@@ -168,7 +168,7 @@ function StepDetail({ step, verification, videoId, duration, onChange, onSeek }:
       <dl className="facts">
         <dt>Expected</dt><dd>{step.expected}</dd>
         <dt>Observed</dt><dd>{step.observed}</dd>
-        <dt>Why</dt><dd>{step.explanation}</dd>
+        {step.explanation !== step.observed && <><dt>Why</dt><dd>{step.explanation}</dd></>}
       </dl>
       {moments.length > 0 && (
         <div className="frames">

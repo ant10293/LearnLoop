@@ -292,6 +292,14 @@ def _execution_state(verdict: str, corrected: bool, alignment: dict) -> str:
     return "unknown"
 
 
+_RELATION_WORDS = {
+    "attached": "attached to",
+    "supported_by": "resting on",
+    "left_of": "left of",
+    "right_of": "right of",
+}
+
+
 def _expected(step: TemplateStep, roles: dict[str, RoleAssignment]) -> str:
     parts = []
     for predicate in step.completion_conditions:
@@ -300,7 +308,7 @@ def _expected(step: TemplateStep, roles: dict[str, RoleAssignment]) -> str:
         subject = _label(roles, predicate.subject_role)
         if predicate.type == "physical_relationship":
             target = _label(roles, predicate.target_role)
-            parts.append(f"{subject} {predicate.relation} {target}".strip())
+            parts.append(f"{subject} {_RELATION_WORDS.get(predicate.relation, predicate.relation.replace('_', ' '))} {target}".strip())
         else:
             parts.append(f"{subject} reaches {predicate.state_label or predicate.to_state}".strip())
     return "; ".join(parts) or step.completion_text or step.expected_action or step.name

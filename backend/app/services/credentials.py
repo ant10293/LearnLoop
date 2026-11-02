@@ -6,10 +6,11 @@ import os
 from pathlib import Path
 
 from cryptography.fernet import Fernet, InvalidToken
+from dotenv import dotenv_values
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.config import settings
+from app.config import REPO_ROOT, settings
 from app.models.runs import ProviderSecret, ProviderStatus
 from app.models.util import utcnow
 
@@ -45,7 +46,15 @@ def env_secret(provider_id: str) -> str:
     for name in ENV_FALLBACKS.get(provider_id, []):
         if os.environ.get(name):
             return os.environ[name].strip()
-    return ""
+    return _dotenv_secret(primary)
+
+
+def _dotenv_secret(name: str) -> str:
+    """Settings reads only LEARNLOOP_* from .env, so the provider key is read here."""
+    path = REPO_ROOT / ".env"
+    if not name or not path.exists():
+        return ""
+    return (dotenv_values(path).get(name) or "").strip()
 
 
 def store_secret(session: Session, provider_id: str, secret: str) -> None:

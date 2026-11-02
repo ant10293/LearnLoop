@@ -20,7 +20,12 @@ from app.models.runs import AnalysisRun, Job, ModelRequestRow
 from app.models.util import utcnow
 from app.pipeline.contracts import GUIDED_TASK, StructuredOutputError, schema_hash, validate_output
 from app.pipeline.prompts import CAMERA_CONTEXT, FOUNDATIONAL
-from app.providers.types import GenerationRequest, ProviderError, UnsupportedMode, rough_input_tokens
+from app.providers.types import (
+    GenerationRequest,
+    ProviderError,
+    UnsupportedMode,
+    rough_input_tokens,
+)
 from app.schemas.analysis import AnalysisDocument, Coverage
 from app.services.storage import data_path
 

@@ -466,3 +466,14 @@ def test_a_guided_run_uses_one_request_without_sam_or_tracking(lab):
     assert request.max_output_tokens == 24_000 and request.schema_name == "learnloop_guided_task"
     for stage in ("spatial_tracking", "segmentation", "evidence_fusion", "reinspection", "transcription"):
         assert run["stages"][stage] == "skipped"
+
+
+def test_the_meta_key_is_read_from_dotenv(tmp_path, monkeypatch):
+    from app.services import credentials
+
+    monkeypatch.delenv("MODEL_API_KEY", raising=False)
+    monkeypatch.delenv("META_MODEL_API_KEY", raising=False)
+    monkeypatch.setattr(credentials, "REPO_ROOT", tmp_path)
+    assert credentials.env_secret("meta") == ""
+    (tmp_path / ".env").write_text("MODEL_API_KEY=from-dotenv\n")
+    assert credentials.env_secret("meta") == "from-dotenv"
