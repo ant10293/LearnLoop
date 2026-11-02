@@ -17,10 +17,11 @@ export function VerifyPage() {
     queryFn: () => api.procedure(id),
     refetchInterval: (query) => (query.state.data?.recordings.some((item) => !["ready", "failed"].includes(item.video.ingest_status)) ? 1000 : false),
   });
-  const [selected, setSelected] = useState("");
+  // "" follows the latest attempt; null means the user deselected.
+  const [selected, setSelected] = useState<string | null>("");
   const accepted = [...(procedure.data?.templates ?? [])].reverse().find((item) => item.acceptance_status === "accepted");
   const attempts = (procedure.data?.recordings ?? []).filter((item) => item.role === "execution");
-  const current = attempts.find((item) => item.video.id === selected) ?? attempts[attempts.length - 1];
+  const current = selected === null ? undefined : attempts.find((item) => item.video.id === selected) ?? attempts[attempts.length - 1];
 
   const check = useCallback(
     async (run: Run) => {
@@ -76,7 +77,7 @@ export function VerifyPage() {
       {attempts.length > 0 && (
         <div className="tabs" role="tablist" aria-label="Attempts">
           {attempts.map((item) => (
-            <AttemptTab key={item.video.id} recording={item} procedure={procedure.data as Procedure} active={item.video.id === current?.video.id} onClick={() => setSelected(item.video.id)} />
+            <AttemptTab key={item.video.id} recording={item} procedure={procedure.data as Procedure} active={item.video.id === current?.video.id} onClick={() => setSelected(item.video.id === current?.video.id ? null : item.video.id)} />
           ))}
         </div>
       )}

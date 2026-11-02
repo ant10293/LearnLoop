@@ -367,6 +367,20 @@ describe("Verify", () => {
     expect(screen.getByRole("link", { name: "Export report" })).toHaveAttribute("href", "/api/verifications/c1/export");
   });
 
+  it("deselects an attempt when its selected tab is clicked again", async () => {
+    mockApi(handler());
+    show("/procedures/p1/verify");
+    await screen.findByText("Missing component");
+    const tab = screen.getByRole("tab");
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(tab);
+    expect(tab).toHaveAttribute("aria-selected", "false");
+    expect(screen.queryByText("Missing component")).toBeNull();
+    fireEvent.click(tab);
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(await screen.findByText("Missing component")).toBeTruthy();
+  });
+
   it("seeks both videos when a step is selected", async () => {
     mockApi(handler());
     const { container } = show("/procedures/p1/verify");
