@@ -17,7 +17,7 @@ FastAPI ── SQLite ── local media files
 
 ## Analysis: `hackathon_guided`
 
-`backend/app/pipeline/guided.py` makes one call to Meta with a strict, closed JSON schema (`GuidedTaskOutput`) that omits per-frame tracks. Its only boxes are first sightings, which start the SAM object views. Its field names match the canonical `AnalysisDocument`, so there is one representation of an analysis. The strict contract validator runs on live and cached answers alike. Nothing is repaired or fabricated.
+`backend/app/pipeline/guided.py` makes one call to Meta with a strict, closed JSON schema (`GuidedTaskOutput`) that omits boxes and per-frame tracks. The SAM object views get their starting boxes from a separate call on the first frame. Its field names match the canonical `AnalysisDocument`, so there is one representation of an analysis. The strict contract validator runs on live and cached answers alike. Nothing is repaired or fabricated.
 
 Failure handling:
 

@@ -67,7 +67,7 @@ Live calls are off by default. A live analysis needs all three of these, and cac
 2. Set `LEARNLOOP_LIVE_INFERENCE=1` in `.env`.
 3. Approve the request in the app, which shows the model, the limits, and the cost if known.
 
-Each analysis sends one analysis request, with no automatic retry. A demonstration also sends one SAM request at 8 frames per second, started from the boxes in the analysis. A valid answer is stored against the exact video checksum, model, prompts, schema, and output limit, then replayed and labeled as cached. An invalid answer is reported, kept for audit, and never stored for replay.
+Each analysis sends one analysis request, with no automatic retry. A demonstration also sends one Meta request that finds each object on the first frame, then one SAM request at 8 frames per second that follows them. A valid answer is stored against the exact video checksum, model, prompts, schema, and output limit, then replayed and labeled as cached. An invalid answer is reported, kept for audit, and never stored for replay.
 
 ## Supported recordings
 

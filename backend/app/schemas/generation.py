@@ -229,14 +229,24 @@ class GuidedObject(_Closed):
 
 
 class GuidedObservation(_Closed):
-    """Where one object is at a moment. The box only starts a SAM track; verification reads results."""
+    """Where one object is at a moment. No box: verification reads results, not tracks."""
 
     object_local_id: str
     timestamp: float
     visibility: Visibility
-    bbox: GeneratedBox | None
     description: str
     evidence: GeneratedEvidence
+
+
+class GuidedLocatedObject(_Closed):
+    local_id: str
+    bbox: GeneratedBox | None
+
+
+class GuidedLocateOutput(_Closed):
+    """Starting boxes for SAM, read from one still frame."""
+
+    objects: list[GuidedLocatedObject]
 
 
 class GuidedTaskOutput(_Closed):

@@ -140,10 +140,13 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .object .field { width: 100%; }
 .object-head { display: flex; align-items: center; gap: 0.5rem; }
 .object-thumb { width: 2.75rem; height: 2.75rem; flex: none; object-fit: contain; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; }
-.object-timeline { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; margin-top: 0.35rem; }
-.object-cell { aspect-ratio: 1; padding: 0; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
-.object-cell:hover, .object-cell:focus-visible { border-color: var(--accent); }
-.object-cell img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.object-timeline { display: flex; overflow-x: auto; padding-bottom: 0.25rem; margin-top: 0.35rem; }
+.object-cell { width: 3.5rem; flex: none; }
+.object-frame { display: block; width: 3.5rem; height: 3.5rem; padding: 0; overflow: hidden; background: #000; border: 0; border-radius: 0; cursor: pointer; }
+.object-frame.missing { background: var(--panel-2); border: 1px dashed var(--line); cursor: default; }
+.object-frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+.object-time { margin-top: 0.25rem; text-align: center; font-size: 10px; line-height: 1; color: var(--muted); }
+.step-time { flex: none; white-space: nowrap; }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
 .tab { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.7rem; background: transparent; border: 1px solid var(--line); border-radius: 7px; font-size: 0.85rem; cursor: pointer; }

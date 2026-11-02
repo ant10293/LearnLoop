@@ -110,7 +110,7 @@ function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: b
         <dt>Model</dt><dd>{humanizeModel(plan.model_id)}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
         <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
         <dt>Requests</dt><dd>At most {plan.max_requests}, with no automatic retry</dd>
-        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>{humanizeModel("sam-3.1")}, one request, about {plan.object_view_frames.toLocaleString()} billed frames.</dd></>}
+        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>One more Meta request to find the objects on the first frame, then one {humanizeModel("sam-3.1")} request, about {plan.object_view_frames.toLocaleString()} billed frames.</dd></>}
         <dt>Output limit</dt><dd>{plan.max_output_tokens.toLocaleString()} tokens</dd>
         <dt>Estimated cost</dt><dd>{plan.estimated_cost_usd == null ? "Unknown. No rate is recorded for this model." : `$${plan.estimated_cost_usd}`}</dd>
       </dl>

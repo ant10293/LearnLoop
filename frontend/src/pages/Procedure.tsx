@@ -206,12 +206,22 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
 function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: string; onSeek: (time: number) => void }) {
   if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
   return (
-    <div className="object-timeline" role="group" aria-label={`Timeline for ${label}`}>
-      {view.cells.map((cell) => (
-        <button key={cell.time} type="button" className="object-cell" title={`${clock(cell.time)}${cell.url ? "" : ", not found"}`} aria-label={`${clock(cell.time)}${cell.url ? "" : ", not found"}`} onClick={() => onSeek(cell.time)}>
-          {cell.url && <img src={cell.url} alt="" loading="lazy" />}
-        </button>
-      ))}
+    <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
+      {view.cells.map((cell) => {
+        const stamp = clock(cell.time);
+        return (
+          <div key={cell.time} role="listitem" className="object-cell" aria-label={cell.url ? `Frame at ${stamp}` : `Not found at ${stamp}`}>
+            {cell.url ? (
+              <button type="button" className="object-frame" title={stamp} onClick={() => onSeek(cell.time)}>
+                <img src={cell.url} alt="" loading="lazy" />
+              </button>
+            ) : (
+              <div className="object-frame missing" title={`Not found · ${stamp}`} />
+            )}
+            <div className="object-time mono">{stamp}</div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -232,7 +242,7 @@ function ProcedureSkeleton() {
             key={index}
             index={index}
             title={<FieldBone className="title grow" />}
-            time={<Bone width="3ch" />}
+            time={<Bone width="15ch" />}
             footer={<><Bone width="5rem" /><Bone width="6rem" /></>}
           >
             <StepFields
@@ -330,7 +340,7 @@ function StepCard({ index, step, edit, roles, onChange, onSeek }: { index: numbe
       index={index}
       removed={removed}
       title={<input className="field title grow" aria-label={`Step ${index + 1} name`} value={edit.name ?? step.name} onChange={(event) => onChange({ name: event.target.value })} disabled={removed} />}
-      time={step.demo_time_start != null && <button className="btn small mono" onClick={() => onSeek(step.demo_time_start as number)}>{clock(step.demo_time_start)}</button>}
+      time={step.demo_time_start != null && <button className="btn small mono step-time" onClick={() => onSeek(step.demo_time_start as number)}>{clock(step.demo_time_start)}{step.demo_time_end != null && ` - ${clock(step.demo_time_end)}`}</button>}
       footer={
         <>
           {!removed && (

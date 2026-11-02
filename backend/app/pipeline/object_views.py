@@ -1,7 +1,7 @@
 """Object thumbnails and per-object timelines for a demonstration.
 
-SAM follows every object's first box from the analysis through a low frame rate
-copy of the recording, in one request. This is for looking at, not for judging:
+One Meta call finds each object on the first frame. SAM then follows those boxes
+through a low frame rate copy of the recording, in one request. This is for looking at, not for judging:
 nothing here enters the analysis or a verdict. A failure leaves the analysis in place.
 """
 
@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +21,7 @@ from app.config import settings
 from app.models.media import VideoAsset
 from app.models.runs import AnalysisRun
 from app.perception.sam_masks import cutout_from_mask
+from app.pipeline.contracts import GUIDED_LOCATE
 from app.providers.sam import (
     MAX_PROMPTED_OBJECTS,
     SamAdapter,
@@ -30,18 +32,31 @@ from app.providers.sam import (
     parse_sam_output,
     render_spatial_prompt,
 )
+from app.providers.types import FrameInput, GenerationRequest
 from app.schemas.analysis import AnalysisDocument
+from app.schemas.generation import GuidedLocateOutput
 from app.services.storage import data_path, resolve_stored
+from app.video.frames import extract_frame
 from app.video.probe import probe
 
 log = logging.getLogger("learnloop.object_views")
 
 SAM_FPS = 8.0
-TIMELINE_CELLS = 24
 _LONG_SIDE = 1080
 _CROP_SIDE = 160
 _PADDING = 0.15
 _MANIFEST = "manifest.json"
+_LOCATE_OUTPUT_TOKENS = 8_000
+# A box over most of the frame is the scene, not one part.
+_MAX_SEED_AREA = 0.5
+LOCATE_SYSTEM = """
+You are locating known objects on one still image from the start of a recording. Return one entry per listed object, using its local_id.
+bbox is a tight box around that one object alone, out to its outermost visible pixels, with x, y, w, and h as fractions of the image from 0 to 1 and the origin at the top left.
+Objects with identical labels are separate physical parts: give each its own box on a different part.
+Small parts count. Look closely before deciding a part is not there. A mark on the surface or a shadow is not a part.
+If an object is not visible in this image, set bbox to null. Do not guess a location.
+Return JSON only.
+""".strip()
 
 
 @dataclass
@@ -85,14 +100,15 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
     directory = views_dir(run.id)
     directory.mkdir(parents=True, exist_ok=True)
     media = _low_rate_copy(resolve_stored(video.stored_path), directory / "tracked.mp4")
-    seeds = _seeds(document)
-    stage.progress_total = 1
+    stage.progress_total = 2
     stage.progress_current = 0
     session.commit()
     tracked: dict[str, list[Sighting]] = {}
     requests = 0
     replayed = 0
-    error = ""
+    seeds, locate_requests, locate_replayed, error = await _locate(session, run, video, document, allow_live, secret)
+    stage.progress_current = 1
+    session.commit()
     if seeds:
         prompt = _prompt(seeds, media)
         key = _cache_key(video.checksum_sha256, prompt)
@@ -109,15 +125,17 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
             error = "No stored SAM answer matches, and a live call was not approved."
         if text:
             tracked = _assign(parse_sam_output(text), seeds)
-    stage.progress_current = 1
+    stage.progress_current = 2
     session.commit()
-    manifest = _render(run.id, document, media, tracked, float(video.duration_sec or 0))
+    manifest = _render(run.id, document, media, tracked, _last_frame_time(video))
     manifest.update(
         {
             "source": "sam-3.1",
             "fps": SAM_FPS,
             "requests": requests,
             "replayed_requests": replayed,
+            "locate_requests": locate_requests,
+            "locate_replayed": locate_replayed,
             "frames_per_request": estimated_frames(float(video.duration_sec or 0)),
             "seeded_objects": [seed.local_id for seed in seeds],
             "error": error,
@@ -127,14 +145,93 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
     return {key: value for key, value in manifest.items() if key != "objects"}
 
 
-def _seeds(document: AnalysisDocument) -> list[Seed]:
-    """Each object's earliest box from the analysis. The box is the model's estimate, so SAM may follow the wrong thing."""
-    seeds = []
-    for item in document.objects[:MAX_PROMPTED_OBJECTS]:
-        boxed = [row for row in document.observations if row.object_local_id == item.local_id and row.bbox is not None]
-        if boxed:
-            first = min(boxed, key=lambda row: row.timestamp)
-            seeds.append(Seed(item.local_id, len(seeds), first.timestamp, first.bbox.model_dump()))
+async def _locate(session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, allow_live: bool, secret: str) -> tuple[list[Seed], int, int, str]:
+    """Boxes for each object on the first frame. A still gives the model sharper pixels than the whole video did."""
+    user = _locate_prompt(document)
+    key = hashlib.sha256(
+        json.dumps({"video": video.checksum_sha256, "model": run.model_id, "system": LOCATE_SYSTEM, "user": user, "schema": GUIDED_LOCATE.hash}, sort_keys=True).encode()
+    ).hexdigest()
+    text = _cached(key)
+    requests, replayed = 0, 0
+    if text is not None:
+        replayed = 1
+    elif allow_live and secret:
+        requests = 1
+        text, error = await _locate_call(session, run, video, user, secret)
+        if text is None:
+            return [], requests, replayed, error
+    else:
+        return [], 0, 0, "No stored starting boxes match, and a live call was not approved."
+    try:
+        answer = GuidedLocateOutput.model_validate_json(text)
+    except ValueError as exc:
+        return [], requests, replayed, f"The starting boxes were not valid: {str(exc)[:300]}"
+    if requests:
+        _store(key, text)
+    return _seeds(document, answer), requests, replayed, ""
+
+
+def _locate_prompt(document: AnalysisDocument) -> str:
+    entries = [f"- {item.local_id}: {item.label}. {item.visual_characteristics or item.description or ''}".strip() for item in document.objects]
+    return "Objects to find:\n" + "\n".join(entries)
+
+
+async def _locate_call(session, run: AnalysisRun, video: VideoAsset, user: str, secret: str) -> tuple[str | None, str]:
+    from app.providers.registry import get_provider
+    from app.services.costs import fail_provider_call, finish_provider_call, open_provider_call
+
+    still = views_dir(run.id) / "first_frame.jpg"
+    extract_frame(resolve_stored(video.stored_path), 0.0, still, accurate=True)
+    request = GenerationRequest(
+        model_id=run.model_id,
+        system_prompt=LOCATE_SYSTEM,
+        user_prompt=user,
+        frames=[FrameInput(0.0, still)],
+        modality="sampled_frames",
+        json_schema=GUIDED_LOCATE.schema,
+        schema_name=GUIDED_LOCATE.name,
+        max_output_tokens=_LOCATE_OUTPUT_TOKENS,
+    )
+    call = open_provider_call(
+        session,
+        run,
+        stage="locate",
+        provider_id="meta",
+        model_id=run.model_id,
+        modality="sampled_frames",
+        parameters={"schema_name": GUIDED_LOCATE.name, "strict_output": True, "output_token_limit": _LOCATE_OUTPUT_TOKENS},
+        frame_timestamps=[0.0],
+    )
+    session.commit()
+    try:
+        response = await get_provider("meta", session).generate(secret, request)
+    except Exception as exc:
+        log.warning("Locating objects failed: %s", exc)
+        fail_provider_call(call, exc)
+        session.commit()
+        return None, str(exc)[:400]
+    finish_provider_call(session, run, call, response)
+    session.commit()
+    if response.incomplete_reason:
+        return None, f"The starting boxes stopped early ({response.incomplete_reason})."
+    return response.text, ""
+
+
+def _seeds(document: AnalysisDocument, answer: GuidedLocateOutput) -> list[Seed]:
+    """The boxes are the model's estimate, so SAM may still follow the wrong thing."""
+    known = {item.local_id for item in document.objects}
+    seeds: list[Seed] = []
+    taken: set[str] = set()
+    for item in answer.objects[:MAX_PROMPTED_OBJECTS]:
+        box = item.bbox
+        if item.local_id not in known or item.local_id in taken or box is None:
+            continue
+        x, y = max(box.x, 0.0), max(box.y, 0.0)
+        w, h = min(box.w, 1 - x), min(box.h, 1 - y)
+        if w <= 0 or h <= 0 or w * h > _MAX_SEED_AREA:
+            continue
+        taken.add(item.local_id)
+        seeds.append(Seed(item.local_id, len(seeds), 0.0, {"x": x, "y": y, "w": w, "h": h}))
     return seeds
 
 
@@ -191,9 +288,9 @@ def _assign(records: list[SamRecord], seeds: list[Seed]) -> dict[str, list[Sight
     return tracks
 
 
-def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], duration: float) -> dict:
+def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float) -> dict:
     directory = views_dir(run_id)
-    times = [duration * (index + 0.5) / TIMELINE_CELLS for index in range(TIMELINE_CELLS)]
+    times = _cell_times(last_frame)
     wanted = set()
     for sightings in tracked.values():
         wanted.add(_first(sightings).record.frame_index)
@@ -223,6 +320,17 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
             ],
         }
     return {"objects": objects}
+
+
+def _cell_times(last_frame: float) -> list[float]:
+    """Every whole second, then the last frame. A second within one sample of the last frame would show the same image."""
+    return [float(second) for second in range(math.ceil(last_frame - 1 / SAM_FPS))] + [last_frame]
+
+
+def _last_frame_time(video: VideoAsset) -> float:
+    """The container's duration runs one frame past the start of the last frame."""
+    duration = float(video.duration_sec or 0)
+    return max(duration - 1 / video.fps, 0.0) if video.fps else duration
 
 
 def _nearest(sightings: list[Sighting], moment: float) -> Sighting | None:
