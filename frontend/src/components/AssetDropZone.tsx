@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { pathsForDrop } from "../lib/droppedPath";
+import { Bone } from "./Skeleton";
 
 type Item = { name: string; url: string; file: File };
 
@@ -31,6 +32,7 @@ type Props = {
   chooser?: boolean;
   libraryLabel?: string;
   onChooseLibrary?: () => void;
+  loading?: boolean;
 };
 
 export function AssetDropZone({
@@ -52,6 +54,7 @@ export function AssetDropZone({
   chooser = true,
   libraryLabel,
   onChooseLibrary,
+  loading = false,
 }: Props) {
   const input = useRef<HTMLInputElement>(null);
   const wasPending = useRef(false);
@@ -130,20 +133,21 @@ export function AssetDropZone({
         failed: Boolean(error),
       }));
   const showZone = chooser || Boolean(onChooseLibrary);
+  const accepting = chooser && !loading;
 
   return (
     <div>
       {showZone && <>
       <div
         className={`drop-zone${dragOver ? " is-dragover" : ""}${chooser ? "" : " is-compact"}`}
-        tabIndex={0}
+        tabIndex={loading ? undefined : 0}
         onDragEnter={(event) => {
-          if (!chooser || !isFileDrag(event)) return;
+          if (!accepting || !isFileDrag(event)) return;
           event.preventDefault();
           setDragOver(true);
         }}
         onDragOver={(event) => {
-          if (!chooser || !isFileDrag(event)) return;
+          if (!accepting || !isFileDrag(event)) return;
           event.preventDefault();
           setDragOver(true);
         }}
@@ -155,11 +159,11 @@ export function AssetDropZone({
           const hinted = pathsForDrop([...files], event.dataTransfer);
           event.preventDefault();
           setDragOver(false);
-          if (!chooser || !isFileDrag(event)) return;
+          if (!accepting || !isFileDrag(event)) return;
           take(files, hinted);
         }}
         onKeyDown={(event) => {
-          if (!chooser) return;
+          if (!accepting) return;
           if (event.key === "Enter" || event.key === " ") {
             event.preventDefault();
             input.current?.click();
@@ -168,7 +172,7 @@ export function AssetDropZone({
       >
         {chooser && <div className="drop-zone-icon" aria-hidden="true" />}
         <p className="drop-zone-copy">
-          {[
+          {loading ? <Bone width="16rem" /> : [
             prompt ? `${prompt} ` : null,
             chooser ? (
               <button key="files" type="button" className="linkish" onClick={() => input.current?.click()}>
@@ -183,8 +187,8 @@ export function AssetDropZone({
             ) : null,
           ]}
         </p>
-        {chooser && <p className="drop-zone-supported">{supported}</p>}
-        {chooser && (
+        {chooser && <p className="drop-zone-supported">{loading ? <Bone width="10rem" /> : supported}</p>}
+        {accepting && (
           <input
             ref={input}
             type="file"

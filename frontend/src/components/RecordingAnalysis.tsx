@@ -10,11 +10,11 @@ const STAGES: [string, string][] = [
   ["validation", "Check the structured answer"],
 ];
 
-export function AnalysisStages({ run }: { run: Run }) {
+export function AnalysisStages({ run }: { run?: Run }) {
   return (
     <ol className="stages" aria-label="Analysis progress">
       {STAGES.map(([key, label]) => (
-        <li key={key} className={run.stages[key] ?? "pending"}>{label}</li>
+        <li key={key} className={run?.stages[key] ?? "pending"}>{label}</li>
       ))}
     </ol>
   );
@@ -67,7 +67,8 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   }
 
   const status = run.data?.status;
-  const running = status === "pending" || status === "running";
+  const runLoading = Boolean(runId) && run.isPending;
+  const running = runLoading || status === "pending" || status === "running";
   if (video.ingest_status === "failed") return <ErrorNote message={video.ingest_error || "This recording could not be read."} />;
   if (video.ingest_status && video.ingest_status !== "ready") {
     return <p className="status-line" role="status">Preparing the recording. {video.ingest_detail}</p>;
@@ -80,7 +81,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
         </button>
       )}
       {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => setPlan(null)} />}
-      {run.data && (
+      {(run.data || runLoading) && (
         <AnalysisStages run={run.data} />
       )}
       {status === "failed" && (

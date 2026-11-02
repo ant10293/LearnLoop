@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { clock, reviewLabels, verdictLabels, verdictTone, type ReviewState } from "../lib/learnloop";
+import { Bone } from "./Skeleton";
 
 export function Logo() {
   return (
@@ -12,12 +13,12 @@ export function Logo() {
   );
 }
 
-export function Layout({ children, procedureId, title }: { children: ReactNode; procedureId?: string; title?: string }) {
+export function Layout({ children, procedureId, title, titleLoading }: { children: ReactNode; procedureId?: string; title?: string; titleLoading?: boolean }) {
   return (
     <div className="app">
       <header className="topbar">
         <Link to="/" className="brand"><Logo />LearnLoop</Link>
-        {title && <span className="crumb">{title}</span>}
+        {(title || titleLoading) && <span className="crumb">{title ?? <Bone width="9rem" />}</span>}
         {procedureId && (
           <nav className="flow" aria-label="Procedure steps">
             <NavLink to={`/procedures/${procedureId}/teach`}>Teach</NavLink>
@@ -43,8 +44,8 @@ export function ErrorNote({ message }: { message: string }) {
   return message ? <p className="error" role="alert">{message}</p> : null;
 }
 
-/** A video that jumps to `time` whenever a new request arrives, including the same time twice. */
-export function Film({ src, time, seek, caption, label }: { src: string; time: number | null | undefined; seek: number; caption: string; label: string }) {
+/** A video that jumps to `time` whenever a new request arrives, including the same time twice. Without `src` it is still loading. */
+export function Film({ src, time, seek, caption, label }: { src?: string; time?: number | null; seek?: number; caption: ReactNode; label: string }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const node = ref.current;
@@ -58,8 +59,8 @@ export function Film({ src, time, seek, caption, label }: { src: string; time: n
   }, [src, time, seek]);
   return (
     <figure className="film">
-      <figcaption><strong>{label}</strong><span className="mono">{clock(time)}</span></figcaption>
-      {src ? <video ref={ref} src={src} controls muted playsInline aria-label={label} /> : <div className="film-empty">No recording</div>}
+      <figcaption><strong>{label}</strong><span className="mono">{src === undefined ? <Bone width="3ch" /> : clock(time)}</span></figcaption>
+      {src ? <video ref={ref} src={src} controls muted playsInline aria-label={label} /> : <div className="film-empty">{src === undefined ? <Bone className="bone-fill" /> : "No recording"}</div>}
       <p className="muted small">{caption}</p>
     </figure>
   );

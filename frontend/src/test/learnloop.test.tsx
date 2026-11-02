@@ -104,6 +104,58 @@ describe("Projects", () => {
   });
 });
 
+describe("Loading skeletons", () => {
+  const loaded = (url: string) => {
+    if (url === "/api/learnloop/procedures") return { body: [summary] };
+    if (url.endsWith("/api/settings")) return { body: { video_storage: "copy" } };
+    if (url.includes("/status")) return { body: { model_id: "muse-wonder-1.0", max_clip_seconds: 60 } };
+    if (url.endsWith("/procedures/p1")) return { body: procedure({ template: template("ai_draft"), templates: [template("ai_draft")] }) };
+    if (url.endsWith("/verifications/c1")) return { body: report() };
+    return undefined;
+  };
+
+  it("replaces the procedure cards' placeholders with the procedures", async () => {
+    mockApi(loaded);
+    const { container } = show("/");
+    expect(screen.getByText("Loading procedures")).toHaveClass("sr-only");
+    expect(container.querySelector(".cards[aria-busy='true'] .card .thumb-empty .bone-fill")).toBeInTheDocument();
+    expect(await screen.findByText("Cubes")).toBeTruthy();
+    expect(container.querySelector(".bone")).toBeNull();
+  });
+
+  it("draws the procedure's own layout and copy before it arrives", async () => {
+    mockApi(loaded);
+    const { container } = show("/procedures/p1/procedure");
+    expect(screen.getByText("Loading the procedure")).toHaveClass("sr-only");
+    expect(screen.getByRole("heading", { name: "Learned procedure" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Objects" })).toBeTruthy();
+    expect(screen.getAllByText("What the verifier checks").length).toBeGreaterThan(0);
+    expect(container.querySelector(".step .field.bone")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Step 1 name")).toHaveValue("Place green cube");
+    expect(container.querySelector(".bone")).toBeNull();
+  });
+
+  it("does not accept a recording until Teach knows the procedure", async () => {
+    mockApi(loaded);
+    const { container } = show("/procedures/p1/teach");
+    expect(container.querySelector(".drop-zone .bone")).toBeInTheDocument();
+    expect(container.querySelector("input[type='file']")).toBeNull();
+    await waitFor(() => expect(container.querySelector("input[type='file']")).toBeInTheDocument());
+    expect(container.querySelector(".drop-zone .bone")).toBeNull();
+  });
+
+  it("draws the report's layout until Verify has it", async () => {
+    mockApi((url) => (url.endsWith("/procedures/p1") ? { body: procedure() } : loaded(url)));
+    const { container } = show("/procedures/p1/verify");
+    expect(screen.getByText("Loading the report")).toHaveClass("sr-only");
+    expect(container.querySelector(".overall .verdict .bone")).toBeInTheDocument();
+    expect(screen.getByText("Expected")).toBeTruthy();
+    expect(await screen.findByText("Missing component")).toBeTruthy();
+    expect(screen.queryByText("Loading the report")).toBeNull();
+    expect(container.querySelector(".bone")).toBeNull();
+  });
+});
+
 describe("Teach", () => {
   let storageMode = "copy";
   const data = () => procedure({ recordings: [{ role: "demonstration", video, run: null }], templates: [], template: null, verifications: [] });

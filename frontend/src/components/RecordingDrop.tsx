@@ -16,12 +16,14 @@ export function RecordingDrop({
   prompt,
   recordings,
   onChange,
+  loading,
 }: {
   procedureId: string;
   role: Recording["role"];
   prompt: string;
   recordings: Recording[];
   onChange: (recording?: Recording) => void | Promise<void>;
+  loading?: boolean;
 }) {
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
   const [upload, setUpload] = useState<Upload | null>(null);
@@ -110,6 +112,7 @@ export function RecordingDrop({
         chooseLabel="Choose file"
         supported="Supported: MP4, MOV, WebM"
         rows={rows}
+        loading={loading}
         onRemove={(id) => void remove(id)}
         onFiles={(files, paths) => void send(files, paths)}
       />

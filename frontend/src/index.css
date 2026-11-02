@@ -74,7 +74,7 @@ p { margin: 0.3rem 0; }
 .hero p { font-size: 1.1rem; color: var(--muted); margin-bottom: 1.2rem; }
 .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 1rem; }
 .card { display: block; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
-.card:hover { border-color: var(--ink); }
+a.card:hover { border-color: var(--ink); }
 .card img, .thumb-empty { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #e7e6df; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; }
 .card-body { padding: 0.8rem 1rem 1rem; }
 
@@ -340,6 +340,44 @@ button.linkish {
 .storage-choice strong { display: block; font-weight: 500; }
 .storage-choice .muted { display: block; }
 .upload-preview { margin-bottom: 0.8rem; }
+
+/* Loading placeholders, from vision-test-bench */
+.bone {
+  display: inline-block;
+  height: 0.7em;
+  max-width: 100%;
+  border-radius: 0.25rem;
+  vertical-align: middle;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 8%, var(--panel-2)) 0%,
+    color-mix(in srgb, var(--text) 18%, var(--panel-2)) 50%,
+    color-mix(in srgb, var(--text) 8%, var(--panel-2)) 100%
+  );
+  background-size: 220% 100%;
+  animation: bone-shine 1.4s ease-in-out infinite;
+}
+.bone-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+.thumb-empty > .bone-fill, .film-empty > .bone-fill { height: auto; align-self: stretch; }
+.film-empty { overflow: hidden; }
+/* A real control keeps its own height, so only the text-sized height and inline display are undone. */
+.field.bone { display: block; width: 100%; height: auto; }
+.step header .field.bone { width: auto; }
+@keyframes bone-shine {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bone {
+    animation: none;
+    background: color-mix(in srgb, var(--text) 10%, var(--panel-2));
+  }
+}
 
 @media (max-width: 860px) {
   .split, .split.procedure, .split.report, .films { grid-template-columns: minmax(0, 1fr); }

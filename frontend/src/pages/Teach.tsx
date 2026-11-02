@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
+import { Bone } from "../components/Skeleton";
 import { ErrorNote, Layout } from "../components/ui";
 import { api, type Run } from "../lib/learnloop";
 
@@ -30,7 +31,7 @@ export function TeachPage() {
   );
 
   return (
-    <Layout procedureId={id} title={procedure.data?.name}>
+    <Layout procedureId={id} title={procedure.data?.name} titleLoading={procedure.isPending}>
       <h1>Teach</h1>
       <p className="lead">Upload a recording of the task done correctly.</p>
       <ErrorNote message={procedure.error ? (procedure.error as Error).message : ""} />
@@ -44,6 +45,7 @@ export function TeachPage() {
             role="demonstration"
             prompt={demo ? "Drag and drop a new demonstration here or" : "Drag and drop a video here or"}
             recordings={demo ? [demo] : []}
+            loading={procedure.isPending}
             onChange={() => client.invalidateQueries({ queryKey: ["procedure", id] })}
           />
         </section>
@@ -51,13 +53,13 @@ export function TeachPage() {
           <h2>Recordings that work</h2>
           <ul className="guide">
             <li>Camera fixed in one place</li>
-            <li>Up to {status.data?.max_clip_seconds ?? 60} seconds</li>
+            <li>Up to {status.isPending ? <Bone width="2ch" /> : status.data?.max_clip_seconds ?? 60} seconds</li>
             <li>Good lighting, whole workspace in view</li>
             <li>A few large, distinct objects</li>
             <li>Finished result visible at the end of the recording</li>
           </ul>
           <p className="muted small">Moving or head-mounted cameras and small parts are not supported in this version.</p>
-          <p className="small">Model: <strong>{status.data?.model_id}</strong> (Meta)</p>
+          <p className="small">Model: <strong>{status.isPending ? <Bone width="8rem" /> : status.data?.model_id}</strong> (Meta)</p>
           {demo && <RecordingAnalysis key={demo.video.id} recording={demo} onDone={learned} action="Learn the procedure" />}
         </section>
       </div>
