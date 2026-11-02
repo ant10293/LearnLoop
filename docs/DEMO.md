@@ -4,7 +4,7 @@
 
 ## Recordings to make
 
-Use a fixed camera on a tripod or stack of books, looking down at a plain surface. Use the same framing for all three, keep each under 30 seconds, and move your hands fully away at the end. Hold the final state for about 3 seconds.
+Use a fixed camera on a tripod or stack of books, looking down at a plain surface. Use the same framing for all three, and keep each under 30 seconds. Hold the final state in view for about 3 seconds.
 
 Suggested task: a large flat base, plus three large blocks of different colors. Place red on the base, then blue on the base, then yellow on the base.
 
@@ -41,5 +41,5 @@ C uses a positively visible wrong placement on purpose. It is stronger evidence 
 
 - **"Analyze again" after a failed analysis:** the failure reason is on screen. Trying again sends another request, which needs another approval. Do not retry repeatedly. Read the reason first.
 - **`incomplete_output`:** the answer hit the output limit. Raise `LEARNLOOP_GUIDED_MAX_OUTPUT_TOKENS` deliberately. This changes the replay key.
-- **Everything reports CANNOT VERIFY:** the hands or framing probably hid the final state, or the model classified the arrangement as inferred. Re-record rather than weakening the rules. Conditions can be corrected on the procedure screen.
+- **Everything reports CANNOT VERIFY:** the framing or an obstruction probably hid the final state, or the model classified the arrangement as inferred. Re-record rather than weakening the rules. Conditions can be corrected on the procedure screen.
 - **Offline or no credits:** use cached replay. Keep the exact same video files, because a different file never replays. After a successful call, copy files from `data/app/inference_cache/` to `demo/replay/`.

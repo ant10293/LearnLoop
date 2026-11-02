@@ -19,6 +19,8 @@ test("teach, review, accept, verify, inspect evidence, confirm, export", async (
   await page.getByLabel("Procedure name").fill("Cube assembly");
   await page.getByRole("button", { name: "Create", exact: true }).click();
 
+  await expect(page.getByText("Supported: MP4, MOV, WebM")).toBeVisible();
+  await page.screenshot({ path: "test-results/0-teach.png", fullPage: true });
   await page.locator('input[type="file"]').setInputFiles(clip("demo", "gray"));
   await page.getByRole("button", { name: "Learn the procedure" }).click({ timeout: 60_000 });
   await expect(page.getByRole("dialog", { name: "Approve Meta request" })).toContainText("At most 1, with no automatic retry");
@@ -35,6 +37,7 @@ test("teach, review, accept, verify, inspect evidence, confirm, export", async (
   await page.getByRole("button", { name: "Accept procedure" }).click();
 
   await expect(page.getByRole("heading", { name: "Verify an attempt" })).toBeVisible();
+  await page.screenshot({ path: "test-results/0-verify.png", fullPage: true });
   await page.locator('input[type="file"]').setInputFiles(clip("omitted", "blue"));
   await page.getByRole("button", { name: "Analyze and verify" }).click({ timeout: 60_000 });
   await page.getByRole("button", { name: "Send one request" }).click();

@@ -1,7 +1,8 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { RecordingAnalysis } from "../components/RecordingAnalysis";
+import { RecordingDrop } from "../components/RecordingDrop";
 import { ErrorNote, Layout } from "../components/ui";
 import { api, type Run } from "../lib/learnloop";
 
@@ -9,25 +10,13 @@ export function TeachPage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const client = useQueryClient();
-  const procedure = useQuery({ queryKey: ["procedure", id], queryFn: () => api.procedure(id) });
+  const procedure = useQuery({
+    queryKey: ["procedure", id],
+    queryFn: () => api.procedure(id),
+    refetchInterval: (query) => (query.state.data?.recordings.some((item) => !["ready", "failed"].includes(item.video.ingest_status)) ? 1000 : false),
+  });
   const status = useQuery({ queryKey: ["status"], queryFn: api.status });
-  const [error, setError] = useState("");
-  const [uploading, setUploading] = useState(false);
   const demo = [...(procedure.data?.recordings ?? [])].reverse().find((item) => item.role === "demonstration");
-
-  async function upload(file?: File) {
-    if (!file) return;
-    setError("");
-    setUploading(true);
-    try {
-      await api.upload(id, "demonstration", file);
-      await client.invalidateQueries({ queryKey: ["procedure", id] });
-    } catch (exc) {
-      setError((exc as Error).message);
-    } finally {
-      setUploading(false);
-    }
-  }
 
   const learned = useCallback(
     async (run: Run) => {
@@ -44,18 +33,19 @@ export function TeachPage() {
     <Layout procedureId={id} title={procedure.data?.name}>
       <h1>Teach</h1>
       <p className="lead">Upload a recording of the task done correctly.</p>
-      <ErrorNote message={error || (procedure.error ? (procedure.error as Error).message : "")} />
+      <ErrorNote message={procedure.error ? (procedure.error as Error).message : ""} />
       <div className="split">
         <section className="panel">
-          {demo?.video.playback_url && demo.video.ingest_status === "ready" ? (
-            <video className="preview" src={demo.video.playback_url} controls muted playsInline aria-label="Demonstration" />
-          ) : (
-            <div className="film-empty">{demo ? "Preparing the recording" : "No demonstration yet"}</div>
+          {demo?.video.ingest_status === "ready" && (
+            <video className="preview upload-preview" src={demo.video.playback_url} controls muted playsInline aria-label="Demonstration" />
           )}
-          <label className={`btn ${demo ? "" : "primary"} upload`}>
-            {uploading ? "Uploading" : demo ? "Replace demonstration" : "Choose video"}
-            <input type="file" accept="video/mp4,video/quicktime,video/webm,.mov,.mp4,.webm" disabled={uploading} onChange={(event) => void upload(event.target.files?.[0])} />
-          </label>
+          <RecordingDrop
+            procedureId={id}
+            role="demonstration"
+            prompt={demo ? "Drag and drop a new demonstration here or" : "Drag and drop a video here or"}
+            preparing={demo?.video}
+            onUploaded={() => client.invalidateQueries({ queryKey: ["procedure", id] })}
+          />
         </section>
         <section className="panel">
           <h2>Recordings that work</h2>
@@ -64,7 +54,7 @@ export function TeachPage() {
             <li>Up to {status.data?.max_clip_seconds ?? 60} seconds</li>
             <li>Good lighting, whole workspace in view</li>
             <li>A few large, distinct objects</li>
-            <li>Hands clear of the finished result at the end</li>
+            <li>Finished result visible at the end of the recording</li>
           </ul>
           <p className="muted small">Moving or head-mounted cameras and small parts are not supported in this version.</p>
           <p className="small">Model: <strong>{status.data?.model_id}</strong> (Meta)</p>

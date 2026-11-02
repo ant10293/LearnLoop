@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { RecordingAnalysis } from "../components/RecordingAnalysis";
+import { RecordingDrop } from "../components/RecordingDrop";
 import { ErrorNote, Film, Layout, ReviewTag, VerdictTag } from "../components/ui";
 import { api, basisLabels, clock, errorLabels, frameUrl, type Answer, type Procedure, type Recording, type Run, type StepResult, type Verification } from "../lib/learnloop";
 
@@ -10,26 +11,9 @@ export function VerifyPage() {
   const client = useQueryClient();
   const procedure = useQuery({ queryKey: ["procedure", id], queryFn: () => api.procedure(id) });
   const [selected, setSelected] = useState("");
-  const [error, setError] = useState("");
-  const [uploading, setUploading] = useState(false);
   const accepted = [...(procedure.data?.templates ?? [])].reverse().find((item) => item.acceptance_status === "accepted");
   const attempts = (procedure.data?.recordings ?? []).filter((item) => item.role === "execution");
   const current = attempts.find((item) => item.video.id === selected) ?? attempts[attempts.length - 1];
-
-  async function upload(file?: File) {
-    if (!file) return;
-    setError("");
-    setUploading(true);
-    try {
-      const created = await api.upload(id, "execution", file);
-      setSelected(created.video.id);
-      await client.invalidateQueries({ queryKey: ["procedure", id] });
-    } catch (exc) {
-      setError((exc as Error).message);
-    } finally {
-      setUploading(false);
-    }
-  }
 
   const check = useCallback(
     async (run: Run) => {
@@ -59,14 +43,19 @@ export function VerifyPage() {
         </div>
         <div className="row">
           {accepted && <ReviewTag state={accepted.review_state} />}
-          <label className="btn primary upload">
-            {uploading ? "Uploading" : "Upload an attempt"}
-            <input type="file" accept="video/mp4,video/quicktime,video/webm,.mov,.mp4,.webm" disabled={uploading} onChange={(event) => void upload(event.target.files?.[0])} />
-          </label>
         </div>
       </div>
-      <ErrorNote message={error || (procedure.error ? (procedure.error as Error).message : "")} />
-      {attempts.length === 0 && <p className="lead">No attempts yet. Upload a recording of someone doing this task.</p>}
+      <ErrorNote message={procedure.error ? (procedure.error as Error).message : ""} />
+      <RecordingDrop
+        procedureId={id}
+        role="execution"
+        prompt="Drag and drop an attempt here or"
+        onUploaded={async (created) => {
+          setSelected(created.video.id);
+          await client.invalidateQueries({ queryKey: ["procedure", id] });
+        }}
+      />
+      <div className="upload-gap" />
       {attempts.length > 0 && (
         <div className="tabs" role="tablist" aria-label="Attempts">
           {attempts.map((item) => (

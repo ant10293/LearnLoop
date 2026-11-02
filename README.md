@@ -73,7 +73,7 @@ Each analysis sends at most one request, with no automatic retry. A valid answer
 
 - Fixed camera, up to 60 seconds, good lighting, whole workspace in view
 - A few large, visually distinct objects
-- Hands clear of the finished result at the end
+- Finished result visible at the end of the recording
 
 ## Known limitations
 

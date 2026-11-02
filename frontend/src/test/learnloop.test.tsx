@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProcedurePage } from "../pages/Procedure";
@@ -113,15 +113,24 @@ describe("Teach", () => {
     return undefined;
   };
 
-  it("uploads a demonstration", async () => {
-    const calls = mockApi((url, init) => {
-      if (url.endsWith("/recordings") && init?.method === "POST") return { body: { role: "demonstration", video, run: null } };
-      return base(url);
+  it("uploads a demonstration from the drop zone and shows progress", async () => {
+    mockApi(base);
+    const sent: FormData[] = [];
+    let request: { upload: { onprogress?: (event: unknown) => void } };
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:clip", revokeObjectURL: () => undefined }));
+    vi.stubGlobal("XMLHttpRequest", class {
+      upload = {} as { onprogress?: (event: unknown) => void };
+      constructor() { request = this; }
+      open() {}
+      send(body: FormData) { sent.push(body); }
     });
     const { container } = show("/procedures/p1/teach");
-    await screen.findByText(/muse-wonder-1.0/);
+    expect(await screen.findByText("Supported: MP4, MOV, WebM")).toBeTruthy();
     fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "demo.mp4", { type: "video/mp4" })] } });
-    await waitFor(() => expect(calls.some((call) => call.url.endsWith("/recordings") && call.init?.body instanceof FormData)).toBe(true));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].get("role")).toBe("demonstration");
+    act(() => request.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 2 }));
+    expect(await screen.findByRole("progressbar")).toHaveTextContent("50%");
   });
 
   it("asks before a billable call and never sends one without a yes", async () => {

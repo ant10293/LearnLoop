@@ -62,6 +62,7 @@ export interface VideoInfo {
   playback_url: string;
   thumbnail_url: string;
   ingest_status: string;
+  ingest_progress?: number;
   ingest_detail?: string;
   ingest_error?: string;
 }
@@ -212,12 +213,25 @@ export const api = {
   procedures: () => request<ProcedureSummary[]>("/api/learnloop/procedures"),
   createProcedure: (name: string) => post<ProcedureSummary>("/api/learnloop/procedures", { name }),
   procedure: (id: string) => request<Procedure>(`/api/learnloop/procedures/${id}`),
-  upload: (id: string, role: Recording["role"], file: File) => {
-    const form = new FormData();
-    form.append("role", role);
-    form.append("file", file);
-    return request<Recording>(`/api/learnloop/procedures/${id}/recordings`, { method: "POST", body: form });
-  },
+  upload: (id: string, role: Recording["role"], file: File, onProgress?: (ratio: number) => void) =>
+    new Promise<Recording>((resolve, reject) => {
+      const form = new FormData();
+      form.append("role", role);
+      form.append("file", file);
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `/api/learnloop/procedures/${id}/recordings`);
+      xhr.responseType = "json";
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) onProgress?.(event.loaded / event.total);
+      };
+      xhr.onload = () => {
+        const payload = xhr.response as (Recording & { detail?: unknown }) | null;
+        if (xhr.status >= 200 && xhr.status < 300 && payload) resolve(payload);
+        else reject(new Error(typeof payload?.detail === "string" ? payload.detail : `The upload failed (${xhr.status}).`));
+      };
+      xhr.onerror = () => reject(new Error("The upload failed. Check that the server is running."));
+      xhr.send(form);
+    }),
   analyze: (videoId: string, allowLive: boolean) => post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive }),
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),
