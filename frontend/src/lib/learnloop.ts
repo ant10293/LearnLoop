@@ -106,6 +106,7 @@ export interface TemplateStep {
 export interface Role {
   role_id: string;
   label: string;
+  source_object_ids: string[];
   original_label: string;
   visual_characteristics: string;
   uncertain: boolean;
@@ -117,7 +118,11 @@ export interface Template {
   name: string;
   acceptance_status: string;
   review_state: ReviewState;
+  family_id: string;
+  created_at: string;
+  source_run_id: string;
   source_video_id: string;
+  source_filename: string;
   document: { summary: string; roles: Role[]; steps: TemplateStep[]; review_log: unknown[] };
 }
 
@@ -200,6 +205,44 @@ export interface CallPlan {
   estimated_input_tokens: number;
   estimated_cost_usd: number | null;
   live_enabled: boolean;
+  object_view_requests: number;
+  object_view_frames: number;
+}
+
+export interface ObjectView {
+  thumbnail_url: string | null;
+  cells: { time: number; url: string | null }[];
+  seen_cells: number;
+  track?: TrackBox[];
+}
+
+export interface TrackBox {
+  time: number;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export interface FilmTrack {
+  label: string;
+  track: TrackBox[];
+}
+
+/** The box nearest this moment. Past two samples at 8 per second, the object was not found. */
+export function boxAt(track: TrackBox[], time: number): TrackBox | null {
+  let best: TrackBox | null = null;
+  for (const item of track) {
+    if (!best || Math.abs(item.time - time) < Math.abs(best.time - time)) best = item;
+  }
+  return best && Math.abs(best.time - time) <= 0.25 ? best : null;
+}
+
+/** The newest version of each learned procedure, newest first. Versions of one are edits, not separate procedures. */
+export function learnedProcedures(templates: Template[]): Template[] {
+  const newest = new Map<string, Template>();
+  for (const item of templates) newest.set(item.family_id, item);
+  return [...newest.values()].reverse();
 }
 
 export interface TemplatePatch {
@@ -210,7 +253,7 @@ export interface TemplatePatch {
 }
 
 export const api = {
-  status: () => request<{ model_id: string; modality: string; max_clip_seconds: number; live_enabled: boolean; meta_key_configured: boolean }>("/api/learnloop/status"),
+  status: () => request<{ model_id: string; modality: string; object_views_enabled: boolean; max_clip_seconds: number; live_enabled: boolean; meta_key_configured: boolean }>("/api/learnloop/status"),
   procedures: () => request<ProcedureSummary[]>("/api/learnloop/procedures"),
   createProcedure: (name: string) => post<ProcedureSummary>("/api/learnloop/procedures", { name }),
   procedure: (id: string) => request<Procedure>(`/api/learnloop/procedures/${id}`),
@@ -243,6 +286,7 @@ export const api = {
   analyze: (videoId: string, allowLive: boolean) => post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive }),
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),
+  objectViews: (runId: string) => request<{ objects: Record<string, ObjectView> }>(`/api/learnloop/runs/${runId}/objects`),
   learn: (id: string, runId: string) => post<Template>(`/api/learnloop/procedures/${id}/learn`, { run_id: runId }),
   revise: (templateId: string, patch: TemplatePatch) => request<Template>(`/api/workflow-templates/${templateId}`, { method: "PATCH", body: JSON.stringify(patch) }),
   verify: (templateId: string, runId: string) => post<Verification>(`/api/learnloop/templates/${templateId}/verify`, { run_id: runId }),
@@ -252,6 +296,16 @@ export const api = {
 };
 
 export const frameUrl = (videoId: string, time: number) => `/api/learnloop/videos/${videoId}/frame?t=${time.toFixed(2)}`;
+
+const MODEL_ACRONYMS = new Set(["sam"]);
+
+/** "muse-wonder-1.0" -> "Muse Wonder 1.0", "sam-3.1" -> "SAM 3.1". */
+export function humanizeModel(modelId: string): string {
+  return modelId
+    .split(/[-_]/)
+    .map((word) => (MODEL_ACRONYMS.has(word.toLowerCase()) ? word.toUpperCase() : word.charAt(0).toUpperCase() + word.slice(1)))
+    .join(" ");
+}
 
 export function clock(value: number | null | undefined): string {
   if (value == null) return "—";

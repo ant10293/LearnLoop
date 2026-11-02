@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "Learn a physical procedure from a demonstration and verify the next attempt."
 requires-python = ">=3.12"
 dependencies = [
+  "meta-sam-parser>=0.0.6",
   "fastapi>=0.115",
   "uvicorn[standard]>=0.32",
   "sqlalchemy>=2.0.36",
@@ -26,9 +27,6 @@ dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.25",
   "ruff>=0.9",
-]
-sam = [
-  "meta-sam-parser>=0.0.6",
 ]
 
 [build-system]

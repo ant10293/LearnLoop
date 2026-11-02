@@ -7,6 +7,8 @@ competing hypotheses.
 
 from __future__ import annotations
 
+import re
+
 from app.schemas.analysis import AnalysisDocument
 from app.verification.read import jaccard, median_area, signature, state_labels, tokens
 from app.verification.schema import LearnedTemplate, ObjectRole, RoleAssignment, RoleHypothesis
@@ -61,7 +63,7 @@ def map_roles(
                 )
             )
             continue
-        assignments.append(_assign(role, ranked.get(role.role_id, []), claimed))
+        assignments.append(_assign(role, ranked.get(role.role_id, []), claimed, interchangeable=_has_twin(role, template)))
     return assignments
 
 
@@ -69,7 +71,27 @@ def assignment_index(assignments: list[RoleAssignment]) -> dict[str, RoleAssignm
     return {item.role_id: item for item in assignments}
 
 
-def _assign(role: ObjectRole, options: list[tuple[float, dict, str]], claimed: set[str]) -> RoleAssignment:
+def _base_label(label: str) -> str:
+    return re.sub(r"\s+\d+$", "", label or "").strip().lower()
+
+
+def _has_twin(role: ObjectRole, template: LearnedTemplate) -> bool:
+    """Same part doing the same job. A left pin and a right pin differ by relation, so they are not twins."""
+    return any(
+        other.role_id != role.role_id
+        and _base_label(other.label) == _base_label(role.label)
+        and set(other.relation_signature) == set(role.relation_signature)
+        for other in template.roles
+    )
+
+
+def _assign(
+    role: ObjectRole,
+    options: list[tuple[float, dict, str]],
+    claimed: set[str],
+    *,
+    interchangeable: bool = False,
+) -> RoleAssignment:
     open_options = [option for option in options if option[2] not in claimed]
     hypotheses = _hypotheses(options)
     embedding_note = "Appearance embeddings were not in the analysis document."
@@ -102,7 +124,8 @@ def _assign(role: ObjectRole, options: list[tuple[float, dict, str]], claimed: s
         )
     best = viable[0]
     second = viable[1] if len(viable) > 1 else None
-    if second and best[0] - second[0] < AMBIGUITY_MARGIN:
+    # Identical parts have no right instance to pick, so a tie between them is not a doubt.
+    if second and best[0] - second[0] < AMBIGUITY_MARGIN and not interchangeable:
         return RoleAssignment(
             role_id=role.role_id,
             label=role.label,

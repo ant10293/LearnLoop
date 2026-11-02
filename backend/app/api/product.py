@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -16,7 +18,7 @@ from app.models.product import ProcedureRecording
 from app.models.runs import AnalysisRun, ModelRequestRow, PipelineStageRun
 from app.models.util import new_id
 from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
-from app.pipeline import guided
+from app.pipeline import guided, object_views
 from app.providers.types import UnsupportedMode
 from app.services import verification_store as store
 from app.services.ingest import accept_reference, accept_upload, ingest_file, playback_path, referenced_file, schedule_ingest
@@ -62,6 +64,7 @@ def status(session: Session = Depends(db)) -> dict:
         "profile": guided.PROFILE,
         "model_id": guided.DEFAULT_MODEL,
         "modality": guided.MODALITY,
+        "object_views_enabled": settings.object_views,
         "max_clip_seconds": guided.MAX_CLIP_SECONDS,
         "live_enabled": settings.live_inference,
         "meta_key_configured": bool(secret),
@@ -236,6 +239,27 @@ def get_run(run_id: str, session: Session = Depends(db)) -> dict:
     return _run_payload(session, run)
 
 
+@router.get("/runs/{run_id}/objects")
+def run_objects(run_id: str) -> dict:
+    """Thumbnails and timelines, keyed by the analysis's object id. Empty until they exist."""
+    manifest = object_views.read_manifest(run_id) or {"objects": {}}
+    base = f"/api/learnloop/runs/{run_id}/objects"
+    for item in manifest["objects"].values():
+        item["thumbnail_url"] = f"{base}/{item['thumbnail']}" if item.get("thumbnail") else None
+        item["cells"] = [
+            {"time": cell["time"], "url": f"{base}/{cell['image']}" if cell["image"] else None} for cell in item["cells"]
+        ]
+    return manifest
+
+
+@router.get("/runs/{run_id}/objects/{name}")
+def run_object_image(run_id: str, name: str) -> FileResponse:
+    path = object_views.views_dir(run_id) / name
+    if not re.fullmatch(r"o\d+_(c\d+|thumb)\.(jpg|png)", name) or not path.is_file():
+        raise HTTPException(404, "image not found")
+    return FileResponse(path)
+
+
 @router.post("/procedures/{project_id}/learn")
 def learn(project_id: str, payload: LearnBody, session: Session = Depends(db)) -> dict:
     # Teach and Procedure can both ask. One analysis gives one learned procedure.
@@ -326,7 +350,7 @@ def _accepted_template(session: Session, project_id: str) -> LearnedWorkflowTemp
             LearnedWorkflowTemplate.project_id == project_id,
             LearnedWorkflowTemplate.acceptance_status == "accepted",
         )
-        .order_by(LearnedWorkflowTemplate.version.desc())
+        .order_by(LearnedWorkflowTemplate.created_at.desc())
     )
 
 

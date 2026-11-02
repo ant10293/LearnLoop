@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, api, type CallPlan, type Recording, type Run } from "../lib/learnloop";
+import { ApiError, api, humanizeModel, type CallPlan, type Recording, type Run } from "../lib/learnloop";
 import { ErrorNote } from "./ui";
 
 const STAGES: [string, string][] = [
@@ -93,7 +93,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
       )}
       {status === "completed" && run.data && (
         <p className="status-line" role="status">
-          Analysis complete with {run.data.model_id}. {run.data.source === "cached" ? "Replayed from a stored Meta response for this exact video. No request was sent." : "Live Meta response, stored for replay."}
+          Analysis complete with {humanizeModel(run.data.model_id)}. {run.data.source === "cached" ? "Replayed from a stored Meta response for this exact video. No request was sent." : "Live Meta response, stored for replay."}
         </p>
       )}
       <ErrorNote message={error} />
@@ -104,18 +104,19 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
 function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: boolean; onApprove: () => void; onCancel: () => void }) {
   return (
     <div className="plan" role="dialog" aria-label="Approve Meta request">
-      <h3>This needs one Meta request</h3>
+      <h3>This needs a Meta request</h3>
       <p>No stored response matches this exact video, model, and prompt.</p>
       <dl>
-        <dt>Model</dt><dd>{plan.model_id}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
+        <dt>Model</dt><dd>{humanizeModel(plan.model_id)}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
         <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
         <dt>Requests</dt><dd>At most {plan.max_requests}, with no automatic retry</dd>
+        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>{humanizeModel("sam-3.1")}, one request, about {plan.object_view_frames.toLocaleString()} billed frames.</dd></>}
         <dt>Output limit</dt><dd>{plan.max_output_tokens.toLocaleString()} tokens</dd>
         <dt>Estimated cost</dt><dd>{plan.estimated_cost_usd == null ? "Unknown. No rate is recorded for this model." : `$${plan.estimated_cost_usd}`}</dd>
       </dl>
       {plan.live_enabled ? (
         <div className="row">
-          <button className="btn primary" disabled={busy} onClick={onApprove}>Send one request</button>
+          <button className="btn primary" disabled={busy} onClick={onApprove}>{plan.object_view_requests > 0 ? "Send requests" : "Send one request"}</button>
           <button className="btn" onClick={onCancel}>Cancel</button>
         </div>
       ) : (

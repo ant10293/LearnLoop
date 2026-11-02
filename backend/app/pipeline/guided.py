@@ -1,6 +1,8 @@
 """hackathon_guided: one Meta call for a short fixed-camera procedure.
 
-No SAM, no local tracking, no reinspection, and no automatic retry. A response
+No local tracking, no reinspection, and no automatic retry. A demonstration
+also gets SAM object views for the page (see object_views.py); they never feed
+a verdict. A response
 is stored and replayed only for the exact video, model, prompt, and schema it
 answered. A cached answer is labeled cached. A failed answer is reported, kept
 on its request row, and never cached.
@@ -52,11 +54,11 @@ SKIPPED_STAGES = {
 
 _TASK = """
 This is a short recording from a fixed camera of a person handling a few distinct objects.
-Return only what matters for checking the physical result. Do not return boxes or per-frame tracks.
+Return only what matters for checking the physical result. Do not return per-frame tracks.
 
-objects: the objects the task acts on, and a base or container they end up on. Leave out hands and the bare work surface. The label is short and names color and shape.
-observations: for each object, one observation at the first moment and one at the last moment of the recording, with its visibility at that moment. Use visible, partial, occluded, or absent. Use absent only when the place the object would be is in view and the object is not there, and classify that DIRECTLY_OBSERVED. If the place is hidden or out of frame, use occluded and classify it UNKNOWN.
-relationships: for each pair that ends in a physical arrangement, one relationship. The subject is the object that was moved. The other is what it now rests on, sits in, or is joined to. time_start is when the arrangement is first achieved. time_end is the last moment it is visible. Choose the most specific kind: inside, attached, supported_by, above, below, left_of, right_of, around, touching. Do not use near for a completed placement. Classify it DIRECTLY_OBSERVED only when the arrangement itself can be seen in the frames, and INFERRED or UNKNOWN when it cannot. If an object was moved and the arrangement is wrong or incomplete, report the arrangement that is actually there.
+objects: the objects the task acts on, and a base or container they end up on. Leave out hands and the bare work surface. The label is short and names color and shape. Identical parts each get their own object with the same label.
+observations: for each object, one observation at the first moment and one at the last moment of the recording, with its visibility at that moment. Use visible, partial, occluded, or absent. Use absent only when the place the object would be is in view and the object is not there, and classify that DIRECTLY_OBSERVED. If the place is hidden or out of frame, use occluded and classify it UNKNOWN. The observation at the first moment an object is visible has a bbox: a tight box around that one object, with x, y, w, and h as fractions of the frame from 0 to 1 and the origin at the top left. Separate identical parts get separate boxes. Every other observation has bbox null.
+relationships: for each pair that ends in a physical arrangement, one relationship. The subject is the object that was moved. The other is the part in direct contact that holds it. When parts are stacked, do not skip to the largest body: name the nearest part it was pressed into or onto, judged from the last clear view before and the first clear view after the hand moves away. time_start is when the arrangement is first achieved. time_end is the last moment it is visible. Choose the most specific kind: inside, attached, supported_by, above, below, left_of, right_of, around, touching. Use inside only when most of the part disappears into the other. A part that stays mostly visible while held on is attached. Do not use near for a completed placement. Classify it DIRECTLY_OBSERVED only when the arrangement itself can be seen in the frames, and INFERRED or UNKNOWN when it cannot. If an object was moved and the arrangement is wrong or incomplete, report the arrangement that is actually there.
 transitions: to_state and from_state are chosen from: separate, placed, attached, inserted, removed, open, closed, flipped, empty, full, other.
 actions: one action per physical operation, with its outcome. An attempt that did not reach a result is attempted or failed, not completed.
 workflow_steps: the ordered procedure seen in the recording, usually one step per placed or changed object. required_objects lists every object in the step, including the object it is placed on. action_local_ids lists its actions. time_start and time_end bound the work. completion_condition states the visible end state. observed_result states what was seen.
@@ -76,6 +78,8 @@ Rules for the list:
 
 def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEFAULT_MODEL) -> dict:
     """What a call would send, whether a stored answer exists, and what it could cost."""
+    from app.pipeline import object_views
+
     system, user = _prompts(video, template)
     key = cache_key(video.checksum_sha256, model_id, system, user)
     request = GenerationRequest(model_id=model_id, system_prompt=system, user_prompt=user, modality=MODALITY)
@@ -95,6 +99,8 @@ def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEF
         "cache_key": key,
         "cached": find_cached(key) is not None,
         "live_enabled": settings.live_inference,
+        "object_view_requests": 1 if settings.object_views and not template else 0,
+        "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)),
     }
 
 
@@ -148,6 +154,7 @@ def create_guided_run(
         "max_output_tokens": settings.guided_max_output_tokens,
         "max_retries": 0,
         "inference_source": "pending",
+        "object_views": settings.object_views and not template,
     }
     session.add(Job(run_id=run.id, max_attempts=1))
     session.commit()
@@ -187,7 +194,7 @@ async def _live(session, run, video, config, key) -> AnalysisDocument:
     from app.services.costs import fail_provider_call, finish_provider_call, open_provider_call
     from app.services.credentials import load_secret
 
-    sent = session.query(ModelRequestRow).filter(ModelRequestRow.run_id == run.id).count()
+    sent = session.query(ModelRequestRow).filter(ModelRequestRow.run_id == run.id, ModelRequestRow.stage == "scene_analysis").count()
     if sent >= MAX_REQUESTS:
         raise UnsupportedMode("This run already used its one request. Start a new analysis to try again.")
     secret, _source = load_secret(session, "meta")

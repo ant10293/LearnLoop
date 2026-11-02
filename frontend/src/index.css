@@ -44,7 +44,7 @@ p { margin: 0.3rem 0; }
 .lead { font-size: 1.05rem; color: var(--muted); margin-bottom: 1rem; }
 
 .topbar { display: flex; align-items: center; gap: 1rem; padding: 1.1rem max(1.5rem, calc((100% - 1400px) / 2 + 1.5rem)) 0; }
-.brand { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.1rem; letter-spacing: -0.01em; }
+.brand { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.05rem; font-weight: 600; font-size: 1.1rem; letter-spacing: -0.01em; }
 .logo { width: 1.6rem; height: 1.6rem; color: var(--accent); flex: none; }
 .crumb { color: var(--muted); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .flow { margin-left: auto; display: flex; gap: 0.25rem; }
@@ -95,6 +95,16 @@ a.card:hover { border-color: var(--ink); }
 
 .preview, .film video { width: 100%; max-height: 52vh; background: #111; border-radius: 8px; display: block; }
 .film { margin: 0; }
+.film-stage { position: relative; }
+.film-boxes { position: absolute; overflow: hidden; pointer-events: none; }
+.film-box { position: absolute; border: 2px solid; border-radius: 2px; }
+.film-box span { position: absolute; left: -2px; bottom: 100%; max-width: 14rem; padding: 0 0.25rem; overflow: hidden; color: #111; font-size: 0.68rem; line-height: 1.25rem; white-space: nowrap; text-overflow: ellipsis; border-radius: 2px 2px 0 0; }
+.learned-list { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem; }
+.learned-item { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.4rem; color: inherit; font: inherit; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.learned-item:hover, .learned-item:focus-visible { border-color: var(--accent); }
+.learned-item[aria-current="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.learned-item img, .learned-item .learned-thumb { width: 3.5rem; height: 2.5rem; flex: none; object-fit: cover; background: var(--panel-2); border-radius: 4px; }
+.learned-text { display: flex; flex-direction: column; min-width: 0; }
 .film figcaption { display: flex; justify-content: space-between; margin-bottom: 0.3rem; font-size: 0.9rem; }
 .film-empty { aspect-ratio: 16 / 9; background: #e7e6df; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--muted); margin-bottom: 0.7rem; }
 .films { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
@@ -128,6 +138,12 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .condition-edit .field { flex: 1 1 8rem; font-size: 0.82rem; }
 .object { display: block; margin-top: 0.4rem; }
 .object .field { width: 100%; }
+.object-head { display: flex; align-items: center; gap: 0.5rem; }
+.object-thumb { width: 2.75rem; height: 2.75rem; flex: none; object-fit: contain; background: var(--panel-2); border: 1px solid var(--line); border-radius: 6px; }
+.object-timeline { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; margin-top: 0.35rem; }
+.object-cell { aspect-ratio: 1; padding: 0; overflow: hidden; background: var(--panel-2); border: 1px solid var(--line); border-radius: 3px; cursor: pointer; }
+.object-cell:hover, .object-cell:focus-visible { border-color: var(--accent); }
+.object-cell img { display: block; width: 100%; height: 100%; object-fit: cover; }
 
 .tabs { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 1rem; }
 .tab { display: inline-flex; align-items: center; gap: 0.5rem; padding: 0.4rem 0.7rem; background: transparent; border: 1px solid var(--line); border-radius: 7px; font-size: 0.85rem; cursor: pointer; }

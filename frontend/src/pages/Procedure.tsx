@@ -4,7 +4,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnalysisStages } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
-import { api, clock, conditionText, relationLabels, type Condition, type Procedure, type Recording, type Role, type Template, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
+import { api, clock, conditionText, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
 type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[] };
 
@@ -23,9 +23,12 @@ export function ProcedurePage() {
       return latest && (preparing(latest) || analyzing(latest)) ? 1000 : false;
     },
   });
-  const template = procedure.data?.template;
+  // The newest procedure unless the person picked an earlier one. Saving an edit adds a version to the same one.
+  const [picked, setPicked] = useState("");
+  const learned = learnedProcedures(procedure.data?.templates ?? []);
+  const template = learned.find((item) => item.family_id === picked) ?? procedure.data?.template;
   const latest = latestDemonstration(procedure.data);
-  const learnFrom = latest?.run?.status === "completed" && !procedure.data?.templates.some((item) => item.source_video_id === latest.video.id) ? latest.run.id : "";
+  const learnFrom = latest?.run?.status === "completed" && !procedure.data?.templates.some((item) => item.source_run_id === latest.run?.id) ? latest.run.id : "";
   const learning = useRef("");
   const [steps, setSteps] = useState<Record<string, StepEdit>>({});
   const [labels, setLabels] = useState<Record<string, string>>({});
@@ -33,6 +36,11 @@ export function ProcedurePage() {
   const [seek, setSeek] = useState({ time: null as number | null, tick: 0 });
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const views = useQuery({
+    queryKey: ["object-views", template?.source_run_id],
+    queryFn: () => api.objectViews(template?.source_run_id ?? ""),
+    enabled: Boolean(template?.source_run_id),
+  });
   useEffect(() => {
     setSteps({});
     setLabels({});
@@ -121,13 +129,43 @@ export function ProcedurePage() {
             {required.length === 0 && <p className="warning">Mark at least one step as required before accepting.</p>}
           </>
         }
-        film={<Film src={demo?.video.playback_url ?? ""} time={seek.time} seek={seek.tick} label="Demonstration" caption={template.document.summary} />}
-        objects={roles.map((role) => (
-          <label key={role.role_id} className="object">
-            <input className="field" aria-label={`Label for ${role.label}`} value={labels[role.role_id] ?? role.label} onChange={(event) => setLabels((current) => ({ ...current, [role.role_id]: event.target.value }))} />
-            {role.original_label && <span className="edited">Human-corrected from “{role.original_label}”</span>}
-          </label>
-        ))}
+        film={<Film src={demo?.video.playback_url ?? ""} time={seek.time} seek={seek.tick} label="Demonstration" caption={template.document.summary} tracks={roles.flatMap((role) => {
+          const track = views.data?.objects[role.source_object_ids[0]]?.track;
+          return track?.length ? [{ label: labels[role.role_id] ?? role.label, track }] : [];
+        })} />}
+        history={learned.length > 1 && (
+          <section className="panel">
+            <h2>Learned procedures</h2>
+            <p className="muted small">Each comes from one analyzed demonstration. Pick one to see it.</p>
+            <div className="learned-list">
+              {learned.map((item, index) => {
+                const still = procedure.data?.recordings.find((row) => row.video.id === item.source_video_id)?.video.thumbnail_url;
+                return (
+                <button key={item.family_id} type="button" className="learned-item" aria-current={item.id === template.id} onClick={() => setPicked(item.family_id)}>
+                  {still ? <img src={still} alt="" /> : <span className="learned-thumb" />}
+                  <span className="learned-text">
+                    <strong className="small">{item.source_filename || "Demonstration"}{index === 0 ? " · Latest" : ""}</strong>
+                    <span className="muted small">Learned {new Date(`${item.created_at}Z`).toLocaleString()} · {item.document.steps.length} steps · {item.acceptance_status === "accepted" ? "Accepted" : "Draft"}</span>
+                  </span>
+                </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+        objects={roles.map((role) => {
+          const view = views.data?.objects[role.source_object_ids[0]];
+          return (
+            <div key={role.role_id} className="object">
+              <div className="object-head">
+                {view?.thumbnail_url ? <img className="object-thumb" src={view.thumbnail_url} alt={role.label} /> : <span className="object-thumb empty" aria-hidden="true" />}
+                <input className="field" aria-label={`Label for ${role.label}`} value={labels[role.role_id] ?? role.label} onChange={(event) => setLabels((current) => ({ ...current, [role.role_id]: event.target.value }))} />
+              </div>
+              {view && <ObjectTimeline view={view} label={role.label} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
+              {role.original_label && <span className="edited">Human-corrected from “{role.original_label}”</span>}
+            </div>
+          );
+        })}
         steps={template.document.steps.map((step, index) => (
           <StepCard key={step.step_id} index={index} step={step} edit={steps[step.step_id] ?? {}} roles={roles} template={template} onChange={(edit) => change(step.step_id, edit)} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />
         ))}
@@ -137,7 +175,7 @@ export function ProcedurePage() {
 }
 
 /** The learned procedure's layout and fixed copy, for the loaded page and its skeleton. */
-function ProcedureView({ version, actions, notices, film, objects, steps }: { version: ReactNode; actions: ReactNode; notices?: ReactNode; film: ReactNode; objects: ReactNode; steps: ReactNode }) {
+function ProcedureView({ version, actions, notices, film, history, objects, steps }: { version: ReactNode; actions: ReactNode; notices?: ReactNode; film: ReactNode; history?: ReactNode; objects: ReactNode; steps: ReactNode }) {
   return (
     <>
       <div className="heading">
@@ -151,6 +189,7 @@ function ProcedureView({ version, actions, notices, film, objects, steps }: { ve
       <div className="split procedure">
         <div className="sticky">
           {film}
+          {history}
           <section className="panel">
             <h2>Objects</h2>
             <p className="muted small">Correct a label if the model named an object wrongly.</p>
@@ -160,6 +199,20 @@ function ProcedureView({ version, actions, notices, film, objects, steps }: { ve
         <ol className="steps">{steps}</ol>
       </div>
     </>
+  );
+}
+
+/** Where SAM found the object, moment by moment. A blank cell means it was not found, not that it was gone. */
+function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: string; onSeek: (time: number) => void }) {
+  if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
+  return (
+    <div className="object-timeline" role="group" aria-label={`Timeline for ${label}`}>
+      {view.cells.map((cell) => (
+        <button key={cell.time} type="button" className="object-cell" title={`${clock(cell.time)}${cell.url ? "" : ", not found"}`} aria-label={`${clock(cell.time)}${cell.url ? "" : ", not found"}`} onClick={() => onSeek(cell.time)}>
+          {cell.url && <img src={cell.url} alt="" loading="lazy" />}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -297,7 +350,7 @@ function StepCard({ index, step, edit, roles, onChange, onSeek }: { index: numbe
           checks={required.length > 0 ? required.map((item, position) => (
             <p key={`${item.id ?? "new"}-${position}`} className="condition">
               {conditionText(item, roles)}
-              <span className="origin">{item.origin === "human" || edit.completion_conditions ? "Human-specified" : item.source_evidence_class === "DIRECTLY_OBSERVED" ? "From Meta, directly observed" : "From Meta"}</span>
+              <span className="origin">{item.origin === "human" || edit.completion_conditions ? "Human-specified" : item.source_evidence_class === "DIRECTLY_OBSERVED" ? "From Meta, directly observed" : item.source_evidence_class === "INFERRED" ? "From Meta, inferred. Please confirm" : "From Meta"}</span>
             </p>
           )) : <p className="warning">No checkable condition. This step reports CANNOT VERIFY until you set one.</p>}
           conditionEdit={

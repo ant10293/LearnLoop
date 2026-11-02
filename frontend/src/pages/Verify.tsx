@@ -5,7 +5,7 @@ import { RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { Bone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag, VerdictTag } from "../components/ui";
-import { api, basisLabels, clock, errorLabels, frameUrl, type Answer, type Procedure, type Recording, type Run, type StepResult, type Verification } from "../lib/learnloop";
+import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type Procedure, type Recording, type Run, type StepResult, type Verification } from "../lib/learnloop";
 
 const RESULT_PLACEHOLDERS = 3;
 
@@ -136,7 +136,7 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
       detail={<StepDetail step={step} verification={verification} videoId={recording.video.id} duration={recording.video.duration_sec} onChange={() => client.invalidateQueries({ queryKey: ["verification", verificationId] })} onSeek={() => setTick((value) => value + 1)} />}
       diagnostics={
         <dl>
-          <dt>Model</dt><dd>{verification.config.provider_id} / {verification.config.model_id}, {verification.config.modality}</dd>
+          <dt>Model</dt><dd>{verification.config.provider_id} / {humanizeModel(verification.config.model_id)}, {verification.config.modality}</dd>
           <dt>Source</dt><dd>{recording.run?.source === "cached" ? `Cached Meta response${recording.run.cached_at ? ` from ${recording.run.cached_at}` : ""}` : "Live Meta response"}, {recording.run?.provider_requests ?? 0} requests in this run</dd>
           <dt>Procedure</dt><dd>Version {verification.template_version}, {verification.template_id}</dd>
           <dt>Execution analysis</dt><dd>Run {verification.execution_run_id}, revision {verification.execution_revision_id}</dd>

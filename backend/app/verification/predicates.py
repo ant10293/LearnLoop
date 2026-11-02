@@ -210,6 +210,12 @@ def _state(predicate, execution, subject, video_id: str, attempted: bool) -> Pre
 
 
 _INVERSE = {"above": "below", "below": "above", "left_of": "right_of", "right_of": "left_of"}
+# Hand occlusion makes these two hard to tell apart between recordings. Either one means the part is joined.
+_JOINED = frozenset({"attached", "inside"})
+
+
+def _same_result(kind: str, expected: str) -> bool:
+    return kind == expected or (kind in _JOINED and expected in _JOINED)
 
 
 def _directed(relation, kind: str, subject_ids: set[str], target_ids: set[str]) -> str:
@@ -252,7 +258,7 @@ def _relations(execution, kind: str, subject_ids: set[str], target_ids: set[str]
         ]
     found = []
     for relation in execution.relationships:
-        if enum_value(relation.kind) != kind or relation.other_local_id is None:
+        if not _same_result(enum_value(relation.kind), kind) or relation.other_local_id is None:
             continue
         if direct_only and evidence_class(relation) != "DIRECTLY_OBSERVED":
             continue
@@ -267,7 +273,7 @@ def _relations(execution, kind: str, subject_ids: set[str], target_ids: set[str]
 def _occupants(execution, kind: str, target_ids: set[str], subject_ids: set[str]):
     found = []
     for relation in execution.relationships:
-        if enum_value(relation.kind) != kind or evidence_class(relation) != "DIRECTLY_OBSERVED":
+        if not _same_result(enum_value(relation.kind), kind) or evidence_class(relation) != "DIRECTLY_OBSERVED":
             continue
         if relation.other_local_id is None:
             continue
@@ -288,7 +294,7 @@ def _other_strong(execution, expected: str, subject_ids: set[str], target_ids: s
     pair = subject_ids | target_ids
     for relation in execution.relationships:
         kind = enum_value(relation.kind)
-        if kind == expected or kind not in STRONG_RELATIONS:
+        if _same_result(kind, expected) or kind not in STRONG_RELATIONS:
             continue
         if evidence_class(relation) != "DIRECTLY_OBSERVED" or relation.other_local_id is None:
             continue

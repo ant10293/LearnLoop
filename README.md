@@ -35,7 +35,7 @@ Each step reports **PASS**, **FAIL**, **CANNOT VERIFY**, or **NOT APPLICABLE**, 
 
 `muse-wonder-1.0` is the default because it returned procedure steps more consistently than `muse-spark-1.3` in earlier stored runs, on different footage from what this product supports. The `hackathon_guided` prompt and schema have not yet been run against a live model. See [Known limitations](#known-limitations).
 
-No non-Meta model runs in this build. The `openai` Python package is only the HTTP client for Meta's compatible API. OpenCV, NumPy, and ffmpeg handle media and use no AI models. SAM is off in the product flow.
+No non-Meta model runs in this build. The `openai` Python package is only the HTTP client for Meta's compatible API. OpenCV, NumPy, and ffmpeg handle media and use no AI models. SAM 3.1 (a Meta model) makes the object thumbnails and timelines on demonstrations. It never feeds a verdict.
 
 ## Run it
 
@@ -67,7 +67,7 @@ Live calls are off by default. A live analysis needs all three of these, and cac
 2. Set `LEARNLOOP_LIVE_INFERENCE=1` in `.env`.
 3. Approve the request in the app, which shows the model, the limits, and the cost if known.
 
-Each analysis sends at most one request, with no automatic retry. A valid answer is stored against the exact video checksum, model, prompts, schema, and output limit, then replayed and labeled as cached. An invalid answer is reported, kept for audit, and never stored for replay.
+Each analysis sends one analysis request, with no automatic retry. A demonstration also sends one SAM request at 8 frames per second, started from the boxes in the analysis. A valid answer is stored against the exact video checksum, model, prompts, schema, and output limit, then replayed and labeled as cached. An invalid answer is reported, kept for audit, and never stored for replay.
 
 ## Supported recordings
 

@@ -49,7 +49,8 @@ def learn_template(
     demo = as_document(document)
     roles = _roles(demo)
     role_of = {object_id: role.role_id for role in roles for object_id in role.source_object_ids}
-    steps = [_step(demo, item, role_of) for item in demo.workflow_steps]
+    owners = _relation_owners(demo)
+    steps = [_step(demo, item, role_of, owners) for item in demo.workflow_steps]
     if results_first:
         for step in steps:
             _keep_results(step)
@@ -85,6 +86,12 @@ def _keep_results(step: TemplateStep) -> None:
     ]
     for item in step.completion_conditions:
         item.context_relations = [c for c in item.context_relations if c.get("relation") not in _WEAK_RELATIONS]
+    # A hand often hides the moment of joining. The result can still be checked on a later recording.
+    if not any(item.evidence_requirement == "required" for item in step.completion_conditions):
+        inferred = [item for item in step.completion_conditions if item.source_evidence_class == "INFERRED"]
+        placements = [item for item in inferred if item.type == "physical_relationship"]
+        for item in placements or inferred:
+            item.evidence_requirement = "required"
     if any(
         item.type == "physical_relationship" and item.evidence_requirement == "required"
         for item in step.completion_conditions
@@ -103,15 +110,15 @@ def _title(demo: AnalysisDocument) -> str:
 def _roles(demo: AnalysisDocument) -> list[ObjectRole]:
     needed = _procedure_objects(demo)
     roles = []
-    for item in demo.objects:
-        if item.local_id not in needed:
-            continue
+    kept = [item for item in demo.objects if item.local_id in needed]
+    names = _distinct_labels(kept)
+    for item in kept:
         labels = sorted(state_labels(demo, item.local_id))
         relations = sorted(signature(demo, item.local_id))
         roles.append(
             ObjectRole(
                 role_id=f"role:{item.local_id}",
-                label=item.label or "",
+                label=names[item.local_id],
                 description=item.description or "",
                 visual_characteristics=item.visual_characteristics or "",
                 source_object_ids=[item.local_id],
@@ -124,6 +131,20 @@ def _roles(demo: AnalysisDocument) -> list[ObjectRole]:
             )
         )
     return roles
+
+
+def _distinct_labels(objects) -> dict[str, str]:
+    """Identical parts share a label, so number them to tell them apart on the page."""
+    totals: dict[str, int] = {}
+    for item in objects:
+        totals[item.label or ""] = totals.get(item.label or "", 0) + 1
+    seen: dict[str, int] = {}
+    names = {}
+    for item in objects:
+        label = item.label or ""
+        seen[label] = seen.get(label, 0) + 1
+        names[item.local_id] = f"{label} {seen[label]}" if label and totals[label] > 1 else label
+    return names
 
 
 def _procedure_objects(demo: AnalysisDocument) -> set[str]:
@@ -146,10 +167,8 @@ def _procedure_objects(demo: AnalysisDocument) -> set[str]:
     return related
 
 
-def _step(demo: AnalysisDocument, item, role_of: dict[str, str]) -> TemplateStep:
+def _step_span(demo: AnalysisDocument, item) -> tuple[list, list[str], float | None, float | None]:
     actions = [action for action in demo.actions if action.local_id in set(item.action_local_ids)]
-    action_type = enum_value(actions[0].action_type) if actions else ""
-    incidental = bool(action_type) and action_type in INCIDENTAL_ACTIONS
     objects = list(item.required_objects)
     for action in actions:
         for object_id in action.object_local_ids:
@@ -157,7 +176,29 @@ def _step(demo: AnalysisDocument, item, role_of: dict[str, str]) -> TemplateStep
                 objects.append(object_id)
     start = item.time_start if item.time_start is not None else (actions[0].start if actions else None)
     end = item.time_end if item.time_end is not None else (actions[-1].end if actions else None)
-    predicates = _predicates(demo, objects, role_of, start, end)
+    return actions, objects, start, end
+
+
+def _relation_owners(demo: AnalysisDocument) -> dict[int, str]:
+    """The step that first achieved each arrangement. It stays true later but is not that later step's result."""
+    owners: dict[int, str] = {}
+    for relation in demo.relationships:
+        if relation.other_local_id is None or relation.time_start is None:
+            continue
+        for item in demo.workflow_steps:
+            _actions, objects, start, end = _step_span(demo, item)
+            begin, finish = _window(demo, start, end)
+            if {relation.subject_local_id, relation.other_local_id} <= set(objects) and begin <= relation.time_start <= finish:
+                owners[id(relation)] = item.local_id
+                break
+    return owners
+
+
+def _step(demo: AnalysisDocument, item, role_of: dict[str, str], owners: dict[int, str]) -> TemplateStep:
+    actions, objects, start, end = _step_span(demo, item)
+    action_type = enum_value(actions[0].action_type) if actions else ""
+    incidental = bool(action_type) and action_type in INCIDENTAL_ACTIONS
+    predicates = _predicates(demo, objects, role_of, start, end, owners, item.local_id)
     classification = evidence_class(item)
     notes = []
     if incidental:
@@ -225,7 +266,7 @@ def _steps_from_actions(demo: AnalysisDocument, role_of: dict[str, str]) -> list
     return steps
 
 
-def _predicates(demo, objects, role_of, start, end) -> list[CompletionPredicate]:
+def _predicates(demo, objects, role_of, start, end, owners=None, step_id="") -> list[CompletionPredicate]:
     predicates: list[CompletionPredicate] = []
     window = _window(demo, start, end)
     object_ids = set(objects)
@@ -238,6 +279,7 @@ def _predicates(demo, objects, role_of, start, end) -> list[CompletionPredicate]
         relation
         for relation in involved
         if {relation.subject_local_id, relation.other_local_id} <= object_ids
+        and (owners or {}).get(id(relation), step_id) == step_id
     ]
     for index, relation in enumerate(relations):
         subject = role_of.get(relation.subject_local_id)
@@ -245,6 +287,7 @@ def _predicates(demo, objects, role_of, start, end) -> list[CompletionPredicate]
         if not subject or not target:
             continue
         classification = evidence_class(relation)
+        kind = _result_kind(demo, relation, window)
         context = []
         for other in involved:
             if other is relation:
@@ -270,11 +313,11 @@ def _predicates(demo, objects, role_of, start, end) -> list[CompletionPredicate]
             )
         predicates.append(
             CompletionPredicate(
-                id=f"rel:{index}:{enum_value(relation.kind)}",
+                id=f"rel:{index}:{kind}",
                 type="physical_relationship",
                 subject_role=subject,
                 target_role=target,
-                relation=enum_value(relation.kind),
+                relation=kind,
                 evidence_requirement="required" if classification == "DIRECTLY_OBSERVED" else "optional",
                 source_evidence_class=classification,
                 context_relations=context,
@@ -302,6 +345,20 @@ def _predicates(demo, objects, role_of, start, end) -> list[CompletionPredicate]
             )
         )
     return predicates
+
+
+def _result_kind(demo: AnalysisDocument, relation, window: tuple[float, float]) -> str:
+    """A part the same answer calls inserted during this step sits inside its host."""
+    kind = enum_value(relation.kind)
+    if kind != "attached":
+        return kind
+    inserted = any(
+        item.object_local_id == relation.subject_local_id
+        and item.to_state == "inserted"
+        and overlaps(item.timestamp, item.timestamp, window[0], window[1])
+        for item in demo.transitions
+    )
+    return "inside" if inserted else kind
 
 
 def _window(demo: AnalysisDocument, start, end) -> tuple[float, float]:

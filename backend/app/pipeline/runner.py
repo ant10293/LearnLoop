@@ -201,9 +201,23 @@ def _stage(session, run_id: str, name: str) -> PipelineStageRun:
     return stage
 
 
+async def _object_views(session, run, video, stage) -> None:
+    """Pictures for the page. A failure here never costs the person their analysis."""
+    from app.pipeline.object_views import run_object_views
+
+    try:
+        stage.checkpoint_json = await run_object_views(session, run, video, stage)
+    except Exception as exc:
+        session.rollback()
+        raise StageSkipped(f"Object views were not made: {_error_text(exc, 400)}") from exc
+
+
 async def _dispatch(session, run: AnalysisRun, video: VideoAsset, stage: PipelineStageRun) -> None:
     name = stage.stage
     if is_guided(run):
+        if name == "segmentation" and (run.config_json or {}).get("object_views"):
+            await _object_views(session, run, video, stage)
+            return
         if name in SKIPPED_STAGES:
             raise StageSkipped(SKIPPED_STAGES[name])
         if name == "scene_analysis":

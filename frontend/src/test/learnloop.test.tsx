@@ -1,3 +1,4 @@
+import { boxAt, humanizeModel, learnedProcedures } from "../lib/learnloop";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -49,7 +50,7 @@ const templateStep = {
   completion_conditions: [{ id: "rel:0", type: "physical_relationship", subject_role: "role:green", target_role: "role:base", relation: "attached", state_label: "", evidence_requirement: "required", source_evidence_class: "DIRECTLY_OBSERVED", origin: "model" }],
 };
 const template = (state: string, step = templateStep) => ({
-  id: "t1", version: 1, name: "Cubes", acceptance_status: state === "accepted" ? "accepted" : "draft", review_state: state, source_video_id: "v1",
+  id: "t1", version: 1, name: "Cubes", acceptance_status: state === "accepted" ? "accepted" : "draft", review_state: state, family_id: "t1", created_at: "2026-11-01T10:00:00", source_run_id: "r1", source_video_id: "v1", source_filename: "demo.mov",
   document: { summary: "Summary", roles, steps: [step], review_log: [] },
 });
 const summary = { id: "p1", name: "Cubes", thumbnail_url: "", step_count: 1, review_state: "accepted", execution_count: 1, latest_outcome: "FAIL" };
@@ -82,7 +83,7 @@ describe("Projects", () => {
       if (url === "/api/learnloop/procedures" && init?.method === "POST") return { body: { ...summary, id: "new" } };
       if (url === "/api/learnloop/procedures") return { body: [summary] };
       if (url.includes("/procedures/new")) return { body: procedure({ recordings: [], templates: [], template: null }) };
-      if (url.includes("/status")) return { body: { model_id: "muse-wonder-1.0", max_clip_seconds: 60 } };
+      if (url.includes("/status")) return { body: { model_id: "muse-wonder-1.0", object_views_enabled: true, max_clip_seconds: 60 } };
       return undefined;
     });
     show("/");
@@ -95,6 +96,9 @@ describe("Projects", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create" }));
     await waitFor(() => expect(calls.some((call) => call.init?.method === "POST")).toBe(true));
     expect(await screen.findByRole("heading", { name: "Teach" })).toBeTruthy();
+    expect(await screen.findByText("SAM 3.1")).toBeTruthy();
+    expect(screen.getByText("Muse Wonder 1.0")).toBeTruthy();
+    expect(humanizeModel("sam-3.1")).toBe("SAM 3.1");
   });
 
   it("reports a failed load instead of spinning", async () => {
@@ -359,3 +363,22 @@ describe("Verify", () => {
     expect(await screen.findByRole("link", { name: "Review the procedure" })).toBeTruthy();
   });
 });
+
+describe("object tracks and earlier procedures", () => {
+  it("finds the box at a moment and none where the object was not found", () => {
+    const track = [{ time: 1, x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, { time: 1.125, x: 0.2, y: 0.1, w: 0.2, h: 0.2 }];
+    expect(boxAt(track, 1.1)?.x).toBe(0.2);
+    expect(boxAt(track, 3)).toBeNull();
+  });
+
+  it("lists each learned procedure once, by its newest version", () => {
+    const base = template("ai_draft");
+    const list = learnedProcedures([
+      { ...base, id: "a1", family_id: "a", version: 1 },
+      { ...base, id: "a2", family_id: "a", version: 2 },
+      { ...base, id: "b1", family_id: "b", version: 1 },
+    ] as never);
+    expect(list.map((item) => item.id)).toEqual(["b1", "a2"]);
+  });
+});
+

@@ -77,7 +77,7 @@ def list_templates(session: Session, project_id: str) -> list[dict]:
         .where(LearnedWorkflowTemplate.project_id == project_id)
         .order_by(LearnedWorkflowTemplate.created_at)
     ).all()
-    return [template_payload(row) for row in rows]
+    return [template_payload(row, session.get(VideoAsset, row.source_video_id)) for row in rows]
 
 
 def get_template(session: Session, template_id: str) -> dict:

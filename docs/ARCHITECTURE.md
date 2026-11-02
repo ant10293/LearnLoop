@@ -7,7 +7,8 @@ FastAPI ── SQLite ── local media files
   │
   ├─ Worker: one job per analysis, one attempt
   │    metadata → sample frames → guided call → validation → artifacts
-  │    (tracking, SAM, fusion, reinspection and audio stages are recorded as skipped)
+  │    (tracking, fusion, reinspection and audio stages are recorded as skipped;
+  │     demonstrations also get SAM object views, which never feed a verdict)
   │
   ├─ guided.py: stored answer for the exact inputs, or one approved Meta call
   ├─ verification/learn.py: analysis → versioned procedure template
@@ -16,7 +17,7 @@ FastAPI ── SQLite ── local media files
 
 ## Analysis: `hackathon_guided`
 
-`backend/app/pipeline/guided.py` makes one call to Meta with a strict, closed JSON schema (`GuidedTaskOutput`) that omits boxes and per-frame tracks. Its field names match the canonical `AnalysisDocument`, so there is one representation of an analysis. The strict contract validator runs on live and cached answers alike. Nothing is repaired or fabricated.
+`backend/app/pipeline/guided.py` makes one call to Meta with a strict, closed JSON schema (`GuidedTaskOutput`) that omits per-frame tracks. Its only boxes are first sightings, which start the SAM object views. Its field names match the canonical `AnalysisDocument`, so there is one representation of an analysis. The strict contract validator runs on live and cached answers alike. Nothing is repaired or fabricated.
 
 Failure handling:
 

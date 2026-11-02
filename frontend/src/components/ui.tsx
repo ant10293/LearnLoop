@@ -1,6 +1,6 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { clock, reviewLabels, verdictLabels, verdictTone, type ReviewState } from "../lib/learnloop";
+import { boxAt, clock, reviewLabels, verdictLabels, verdictTone, type FilmTrack, type ReviewState } from "../lib/learnloop";
 import { Bone } from "./Skeleton";
 
 export function Logo() {
@@ -45,7 +45,44 @@ export function ErrorNote({ message }: { message: string }) {
 }
 
 /** A video that jumps to `time` whenever a new request arrives, including the same time twice. Without `src` it is still loading. */
-export function Film({ src, time, seek, caption, label }: { src?: string; time?: number | null; seek?: number; caption: ReactNode; label: string }) {
+const BOX_COLORS = ["#ffb020", "#22d3ee", "#f472b6", "#a3e635", "#c084fc", "#fb7185", "#60a5fa", "#fde047"];
+
+/** Tracked boxes over the picture. A video letterboxes inside its element, so they follow the picture, not the element. */
+function FilmBoxes({ video, tracks }: { video: RefObject<HTMLVideoElement | null>; tracks: FilmTrack[] }) {
+  const [view, setView] = useState({ left: 0, top: 0, width: 0, height: 0, time: 0 });
+  useEffect(() => {
+    let frame = 0;
+    const tick = () => {
+      const node = video.current;
+      if (node && node.videoWidth) {
+        const scale = Math.min(node.clientWidth / node.videoWidth, node.clientHeight / node.videoHeight);
+        const width = node.videoWidth * scale;
+        const height = node.videoHeight * scale;
+        const next = { left: node.offsetLeft + (node.clientWidth - width) / 2, top: node.offsetTop + (node.clientHeight - height) / 2, width, height, time: node.currentTime };
+        setView((current) => (Object.keys(next) as (keyof typeof next)[]).every((key) => current[key] === next[key]) ? current : next);
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [video]);
+  return (
+    <div className="film-boxes" aria-hidden="true" style={{ left: view.left, top: view.top, width: view.width, height: view.height }}>
+      {tracks.map((item, index) => {
+        const box = boxAt(item.track, view.time);
+        if (!box) return null;
+        const color = BOX_COLORS[index % BOX_COLORS.length];
+        return (
+          <div key={item.label + index} className="film-box" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%`, borderColor: color }}>
+            <span style={{ background: color }}>{item.label}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+export function Film({ src, time, seek, caption, label, tracks }: { src?: string; time?: number | null; seek?: number; caption: ReactNode; label: string; tracks?: FilmTrack[] }) {
   const ref = useRef<HTMLVideoElement>(null);
   useEffect(() => {
     const node = ref.current;
@@ -60,7 +97,7 @@ export function Film({ src, time, seek, caption, label }: { src?: string; time?:
   return (
     <figure className="film">
       <figcaption><strong>{label}</strong><span className="mono">{src === undefined ? <Bone width="3ch" /> : clock(time)}</span></figcaption>
-      {src ? <video ref={ref} src={src} controls muted playsInline aria-label={label} /> : <div className="film-empty">{src === undefined ? <Bone className="bone-fill" /> : "No recording"}</div>}
+      {src ? <div className="film-stage"><video ref={ref} src={src} controls muted playsInline aria-label={label} />{tracks && tracks.length > 0 && <FilmBoxes video={ref} tracks={tracks} />}</div> : <div className="film-empty">{src === undefined ? <Bone className="bone-fill" /> : "No recording"}</div>}
       <p className="muted small">{caption}</p>
     </figure>
   );

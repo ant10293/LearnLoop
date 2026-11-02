@@ -10,6 +10,7 @@ from app.schemas.analysis import AnalysisDocument
 from app.verification import learn_template, verify_execution
 from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.reinspect import apply_finding, plan_reinspections
+from app.verification.roles import map_roles
 from fastapi.testclient import TestClient
 
 from tests.verification_fixtures import (
@@ -166,7 +167,23 @@ def test_j_similar_objects_keep_distinct_roles_and_ties_stay_ambiguous():
             action("X_b", "place", 2, 4, ["E_b", "E_plate"]),
         ],
     )
-    tie = verify_execution(learn_template(tie_demo, promote_supported=True, accept=True), tie_execution)
+    twins = verify_execution(learn_template(tie_demo, promote_supported=True, accept=True), tie_execution)
+    twin_roles = [role for role in twins["roles"] if role["label"].startswith("pin")]
+    assert [role["label"] for role in twin_roles] == ["pin 1", "pin 2"]
+    assert all(role["status"] == "assigned" for role in twin_roles), twin_roles
+    assert twin_roles[0]["object_local_ids"] != twin_roles[1]["object_local_ids"]
+    assert all(len(role["hypotheses"]) >= 2 for role in twin_roles)
+    assert twins["overall"] == "PASS"
+
+    # One learned pin and two matching instances: nothing says which one it is.
+    one_pin = document(
+        objects=[obj("D_a", "pin", "metal pin", "short metal pin"), obj("D_plate", "plate", "base plate", "flat plate")],
+        observations=[obs("D_a", 8), obs("D_plate", 8)],
+        relationships=[rel("D_a", "D_plate", "touching", 2, 20)],
+        actions=[action("A_a", "place", 0, 2, ["D_a", "D_plate"])],
+        steps=[step("step_a", "Place pin", ["D_a", "D_plate"], ["A_a"], 0, 2, "pin touching plate")],
+    )
+    tie = verify_execution(learn_template(one_pin, promote_supported=True, accept=True), tie_execution)
     pin_roles = [role for role in tie["roles"] if role["label"] == "pin"]
     assert pin_roles
     assert all(role["status"] == "ambiguous" for role in pin_roles), pin_roles
@@ -449,3 +466,71 @@ def test_l_past_verification_keeps_the_template_revision_it_used(client):
     evidence = client.get(f"/api/verifications/{body['id']}/evidence")
     assert evidence.status_code == 200
     assert evidence.json()
+
+
+def _hidden_insertion_answer(pin_relation: str = "attached") -> AnalysisDocument:
+    """Hand occlusion on the insertions, and an earlier arrangement that stays true to the end."""
+    parts = [("clear", "clear piece"), ("body", "gray body"), ("fork", "black fork"), ("wheel_a", "wheel"), ("wheel_b", "wheel"), ("pin", "white pin")]
+    return document(
+        objects=[obj(local_id, label, label, label) for local_id, label in parts],
+        observations=[obs(local_id, 20) for local_id, _label in parts],
+        relationships=[
+            rel("clear", "body", "attached", 3, 20, "INFERRED"),
+            rel("fork", "body", "attached", 6, 20),
+            rel("wheel_a", "fork", "attached", 9, 20),
+            rel("wheel_b", "fork", "attached", 11, 20),
+            rel("pin", "fork", pin_relation, 16, 20, "INFERRED"),
+        ],
+        transitions=[
+            {**transition("clear", "separate", "inserted", 3), "evidence": rel("clear", "body", "attached", 3, 20, "INFERRED")["evidence"]},
+            {**transition("pin", "separate", "inserted", 16), "evidence": rel("pin", "fork", "attached", 16, 20, "INFERRED")["evidence"]},
+        ],
+        steps=[
+            step("step_clear", "Insert clear piece", ["clear", "body"], [], 1, 4, "seated"),
+            step("step_fork", "Attach fork", ["fork", "body"], [], 4, 7, "joined"),
+            step("step_wheel_a", "Attach first wheel", ["wheel_a", "fork", "body"], [], 7, 10, "joined"),
+            step("step_wheel_b", "Attach second wheel", ["wheel_b", "fork", "body"], [], 10, 13, "joined"),
+            step("step_pin", "Insert pin", ["pin", "body", "fork"], [], 15, 17, "seated"),
+        ],
+    )
+
+
+def _required_checks(template, step_id: str) -> list[tuple[str, str, str]]:
+    found = next(item for item in template.steps if item.step_id == step_id)
+    return [
+        (item.subject_role, item.relation, item.target_role)
+        for item in found.completion_conditions
+        if item.evidence_requirement == "required"
+    ]
+
+
+def test_each_step_checks_only_the_arrangement_it_achieved():
+    template = learn_template(_hidden_insertion_answer(), results_first=True)
+    assert _required_checks(template, "step_pin") == [("role:pin", "inside", "role:fork")]
+    assert _required_checks(template, "step_wheel_a") == [("role:wheel_a", "attached", "role:fork")]
+
+
+def test_a_hand_hidden_insertion_gets_a_check_but_is_not_made_required():
+    template = learn_template(_hidden_insertion_answer(), results_first=True, promote_supported=True)
+    assert _required_checks(template, "step_clear") == [("role:clear", "inside", "role:body")]
+    assert next(item for item in template.steps if item.step_id == "step_clear").required is False
+
+
+def test_identical_parts_are_numbered_and_do_not_tie_forever():
+    answer = _hidden_insertion_answer()
+    template = learn_template(answer, results_first=True)
+    labels = {role.role_id: role.label for role in template.roles}
+    assert (labels["role:wheel_a"], labels["role:wheel_b"]) == ("wheel 1", "wheel 2")
+    mapped = {item.role_id: item for item in map_roles(template, answer)}
+    assert mapped["role:wheel_a"].status == mapped["role:wheel_b"].status == "assigned"
+    assert mapped["role:wheel_a"].object_local_ids != mapped["role:wheel_b"].object_local_ids
+
+
+def test_a_seated_part_reported_as_attached_is_not_a_wrong_placement():
+    template = learn_template(_hidden_insertion_answer(), results_first=True)
+    attempt = _hidden_insertion_answer()
+    for item in attempt.relationships:
+        item.evidence.classification = "DIRECTLY_OBSERVED"
+    report = verify_execution(template, attempt)
+    pin = next(item for item in report["steps"] if item["step_id"] == "step_pin")
+    assert pin["verdict"] == "PASS"

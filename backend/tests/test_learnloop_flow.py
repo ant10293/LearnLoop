@@ -7,6 +7,7 @@ They say nothing about what a Meta model infers from real footage.
 import asyncio
 import json
 import subprocess
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import TestClient
@@ -33,6 +34,7 @@ def _observed(local_id, timestamp, visibility="visible", kind="DIRECTLY_OBSERVED
         "object_local_id": local_id,
         "timestamp": timestamp,
         "visibility": visibility,
+        "bbox": None,
         "description": "authored",
         "evidence": _evidence(kind, stamps=[timestamp]),
     }
@@ -181,6 +183,7 @@ def lab(tmp_path, monkeypatch):
     settings.auto_seed = False
     settings.ingest_inline = True
     monkeypatch.setattr(settings, "live_inference", True)
+    monkeypatch.setattr(settings, "object_views", False)
     rebind_engine(settings.sqlalchemy_url)
     from app.main import create_app, init_database
     from app.pipeline import guided
@@ -525,3 +528,121 @@ def test_learning_twice_from_one_analysis_gives_one_procedure(lab):
     second = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": run["id"]}).json()
     assert first["id"] == second["id"]
     assert len(client.get(f"/api/learnloop/procedures/{procedure}").json()["templates"]) == 1
+
+
+def test_analyzing_a_recording_again_learns_again_and_the_newest_acceptance_wins(lab):
+    client, stub, tmp = lab
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    video = _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration")
+    first_run = _analyze(client, video)
+    first = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": first_run["id"]}).json()
+    client.patch(f"/api/workflow-templates/{first['id']}", json={"name": "Edited"})
+    client.patch(f"/api/workflow-templates/{first['id']}", json={"name": "Edited again", "acceptance_status": "accepted"})
+    from app.pipeline import guided
+
+    for path in guided.data_path("inference_cache").glob("*.json"):
+        path.unlink()
+    second_run = _analyze(client, video)
+    assert second_run["id"] != first_run["id"]
+    second = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": second_run["id"]}).json()
+    assert second["id"] != first["id"] and second["source_run_id"] == second_run["id"]
+    page = client.get(f"/api/learnloop/procedures/{procedure}").json()
+    assert page["template"]["id"] == second["id"]
+    accepted = client.patch(f"/api/workflow-templates/{second['id']}", json={"acceptance_status": "accepted"}).json()
+
+    from app.api.product import _accepted_template
+    from app.db import SessionLocal
+
+    with SessionLocal() as session:
+        assert _accepted_template(session, procedure).id == accepted["id"]
+
+
+def _sam_line(frame: int, boxes: list[tuple[int, int]]) -> str:
+    body = "".join(
+        f"{track}<|box;x1={left};y1=10;x2={left + 50};y2=60;w=160;h=120;score=0.9|><|mask;data=|>" for track, left in boxes
+    )
+    return f"<{frame}f>{body}"
+
+
+def test_a_demonstration_follows_every_box_in_one_sam_request_and_replays_it(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    calls = []
+    answer_text = "\n".join(_sam_line(frame, [(0, 10), (2, 100)]) for frame in range(4))
+
+    class FakeSam:
+        def __init__(self, secret, timeout_s=180):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            calls.append((prompt, kwargs))
+            return SimpleNamespace(text=answer_text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    parsed = json.loads(stub.text)
+    ids = [item["local_id"] for item in parsed["objects"]]
+    box = {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    parsed["observations"] = [
+        {**_observed(local_id, 0.5), "bbox": box} for local_id in ids[:3]
+    ] + [_observed(ids[3], 9.5)]
+    stub.text = json.dumps(parsed)
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Views"}).json()["id"]
+    video = _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration")
+    run = _analyze(client, video)
+    assert run["status"] == "completed", run["error"]
+    assert run["stages"]["segmentation"] == "completed"
+    assert len(calls) == 1
+    assert calls[0][0].count("<|box;") == 3 and calls[0][1]["prompt_kind"] == "spatial"
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    assert views["objects"][ids[0]]["seen_cells"] and views["objects"][ids[2]]["seen_cells"]
+    assert not views["objects"][ids[1]]["seen_cells"] and not views["objects"][ids[3]]["seen_cells"]
+    assert client.get(views["objects"][ids[0]]["thumbnail_url"]).status_code == 200
+    assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [0, 0.125, 0.25, 0.375]
+    assert views["objects"][ids[1]]["track"] == []
+    assert client.get(f"/api/learnloop/runs/{run['id']}/objects/manifest.json").status_code == 404
+
+    again = _analyze(client, video)
+    assert len(calls) == 1
+    replayed = client.get(f"/api/learnloop/runs/{again['id']}/objects").json()
+    assert replayed["replayed_requests"] == 1 and replayed["objects"][ids[0]]["seen_cells"]
+
+
+def test_the_thumbnail_is_the_first_view_not_the_largest():
+    from app.pipeline import object_views
+    from app.providers.sam import SamRecord
+
+    def sighting(time, side, shade):
+        box = {"x": 0.1, "y": 0.1, "w": side, "h": side}
+        return object_views.Sighting(time, box, SamRecord(int(time * 8), "0", 0, 0, 1, 1, 100, 100, 0.9, "", "", 0, 0, ""))
+
+    assert object_views._first([sighting(2, 0.5, 0), sighting(1, 0.1, 0)]).timestamp == 1
+
+
+def test_sam_failure_keeps_the_analysis(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+
+    class DownSam:
+        def __init__(self, secret, timeout_s=180):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            raise RuntimeError("SAM is down")
+
+    monkeypatch.setattr(object_views, "SamAdapter", DownSam)
+    parsed = json.loads(stub.text)
+    first = parsed["objects"][0]["local_id"]
+    parsed["observations"] = [{**_observed(first, 0.5), "bbox": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}]
+    stub.text = json.dumps(parsed)
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Down"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    assert "SAM is down" in views["error"]
+    assert all(not item["seen_cells"] for item in views["objects"].values())
