@@ -30,7 +30,7 @@ _NOTES = [
     "Observed temporal order is stored and does not constrain a later execution.",
     "Only dependencies categorized as necessary_physical constrain order.",
     "Passing a step requires an observable completion condition, not an action label alone.",
-    "Appearance embeddings are not copied into the template. Role matching reads them only when a later analysis stored a cosine.",
+    "Appearance embeddings are not copied into the template, and role matching does not use them.",
 ]
 _WEAK_RELATIONS = frozenset({"near", "occluded_by", "unknown", "held_by"})
 

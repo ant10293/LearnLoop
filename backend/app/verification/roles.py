@@ -94,7 +94,7 @@ def _assign(
 ) -> RoleAssignment:
     open_options = [option for option in options if option[2] not in claimed]
     hypotheses = _hypotheses(options)
-    embedding_note = "Appearance embeddings were not in the analysis document."
+    embedding_note = "Role matching does not use appearance embeddings."
     if role.cardinality == "group":
         chosen = [option for option in open_options if option[0] >= ASSIGN_THRESHOLD and _text_support(option[1])]
         for _score, _features, object_id in chosen:
