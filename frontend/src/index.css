@@ -1,0 +1,1022 @@
+@import "tailwindcss";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+
+:root {
+  color-scheme: dark;
+  --bg: #090b10;
+  --panel: #12151c;
+  --panel-2: #181c25;
+  --line: #2a3140;
+  --text: #e7ecf3;
+  --muted: #8b95a8;
+  --teal: #3ddc97;
+  --amber: #e6b450;
+  --rose: #e06c75;
+  --blue: #7eb6ff;
+  --overlay: color-mix(in srgb, var(--bg) 78%, transparent);
+  font-family: "IBM Plex Sans", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; min-height: 100vh; background: var(--bg); }
+button, input, select, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+a { color: inherit; text-decoration: none; }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+
+/* Model responses arrive as one JSON line. Stack them and scroll down the pane. */
+.log-body {
+  margin-top: 0.5rem;
+  max-height: 24rem;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.runs-table {
+  width: max-content;
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  line-height: 1.35;
+}
+.runs-table th,
+.runs-table td {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.runs-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+.runs-table tbody th,
+.runs-table tbody td {
+  border-bottom: 1px solid var(--line);
+  font-weight: 400;
+}
+.runs-table tbody tr:last-child th,
+.runs-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.runs-table .num {
+  text-align: right;
+}
+/* Actions is right-aligned, so the count sits on the date unless this column starts later. */
+.runs-table .date {
+  padding-left: 4.5rem;
+}
+.runs-table tbody tr {
+  position: relative;
+}
+.runs-table tbody tr:hover th,
+.runs-table tbody tr:hover td,
+.runs-table tbody tr:focus-within th,
+.runs-table tbody tr:focus-within td {
+  background: var(--panel-2);
+}
+.runs-table a.run-link,
+.runs-table button.run-link {
+  color: inherit;
+  font-weight: 500;
+}
+.runs-table button.run-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+}
+.runs-table a.run-link::after,
+.runs-table button.run-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+}
+.runs-table a.run-link:focus-visible,
+.runs-table button.run-link:focus-visible {
+  outline: none;
+}
+.runs-table td.log-cell {
+  white-space: normal;
+  max-width: 0;
+}
+.runs-table td.log-cell .log-body {
+  margin-top: 0;
+}
+.runs-table tbody tr:focus-within {
+  outline: 2px solid var(--teal);
+  outline-offset: -2px;
+}
+.btn {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 8px;
+  padding: 0.4rem 0.7rem;
+}
+/* Pending views render static buttons as spans. Match the button box so padding takes up space. */
+span.btn { display: inline-block; }
+.btn:hover { border-color: #465066; }
+.btn.primary { background: #16382c; border-color: #2f6b52; color: var(--teal); }
+.btn.danger { border-color: var(--rose); color: var(--rose); }
+.btn.danger:hover { border-color: var(--rose); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.field {
+  width: 100%;
+  background: #0d1016;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+/* Native range controls are taller than a 16px row. Don't lock the height or the thumb gets cropped. */
+.seek {
+  display: block;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--blue);
+}
+.field-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  font-size: 0.875rem;
+  color: var(--muted);
+}
+.field-label > .field {
+  color: var(--text);
+}
+select.field {
+  display: block;
+  width: 100%;
+  /* One column of the experiment form (max-w-3xl with gap-3), matching Reasoning effort. */
+  max-width: calc((48rem - 0.75rem) / 2);
+  min-width: 0;
+  appearance: none;
+  padding-right: 2.15rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M4 6.25 8 10.25 12 6.25' fill='none' stroke='%238b95a8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.7rem center;
+  background-size: 1rem;
+}
+select.field.w-auto,
+input.field.w-auto {
+  width: auto;
+}
+select.field.stretch {
+  max-width: none;
+}
+@layer components {
+  input.field {
+    max-width: 20rem;
+    min-width: 0;
+  }
+  input.field.stretch {
+    max-width: none;
+  }
+  .flex:not(.flex-col) > input.field {
+    align-self: center;
+  }
+}
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  border-radius: 999px;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.tag.observed { color: var(--teal); border-color: #245c48; }
+.tag.inferred { color: var(--amber); border-color: #6a5424; }
+.tag.unknown { color: var(--rose); border-color: #6a3036; }
+.tag.fixture { color: var(--amber); border-color: #6a5424; }
+
+/* Confidence on an object still. Sits inside the image, top right, over any background. */
+.shot-frame {
+  position: relative;
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  line-height: 0;
+}
+.shot-score {
+  position: absolute;
+  top: 0.35rem;
+  right: 0.35rem;
+  z-index: 1;
+  padding: 0.12rem 0.35rem;
+  border-radius: 4px;
+  background: color-mix(in srgb, #090b10 78%, transparent);
+  color: #fff;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 1.2;
+  pointer-events: none;
+}
+
+/* Asset upload, from automated-content-builder's drop zone, on this lab's dark surfaces. */
+.drop-zone {
+  border: 1.5px dashed color-mix(in srgb, var(--text) 22%, transparent);
+  border-radius: 14px;
+  background: var(--panel);
+  min-height: 168px;
+  display: grid;
+  place-content: center;
+  gap: 0.65rem;
+  padding: 1.25rem 0.75rem;
+  text-align: center;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+.drop-zone:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.drop-zone.is-dragover {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 10%, var(--panel));
+}
+.drop-zone.is-compact {
+  min-height: 0;
+  padding: 1rem 0.75rem;
+}
+.drop-zone-icon {
+  width: 3.1rem;
+  height: 3.6rem;
+  margin: 0 auto;
+  border-radius: 6px;
+  background:
+    linear-gradient(var(--panel-2), var(--panel-2)) padding-box,
+    linear-gradient(var(--line), var(--line)) border-box;
+  border: 1px solid var(--line);
+  position: relative;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.28);
+}
+.drop-zone-icon::after {
+  content: "";
+  position: absolute;
+  right: -0.35rem;
+  bottom: -0.35rem;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background-color: var(--teal);
+  box-shadow: inset 0 0 0 2px var(--panel);
+  background-image: linear-gradient(#fff, #fff), linear-gradient(#fff, #fff);
+  background-size: 2px 0.55rem, 0.55rem 2px;
+  background-position: center, center;
+  background-repeat: no-repeat;
+}
+.drop-zone.is-dragover .drop-zone-icon::after {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--teal) 10%, var(--panel));
+}
+.drop-zone-copy {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+  text-wrap: balance;
+}
+.drop-zone-supported {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+button.linkish {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--teal);
+  font: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+.drop-zone-foot {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  margin-top: 0.55rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.drop-zone-status {
+  margin: 0.65rem 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.drop-zone-status.is-error { color: var(--rose); }
+.drop-zone-settings {
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--text) 12%, transparent);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.drop-item {
+  margin-top: 0.75rem;
+  background: color-mix(in srgb, var(--text) 4%, var(--panel));
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 0.75rem 0.85rem;
+}
+.drop-item-main {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+}
+.drop-item-thumb {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 8px;
+  object-fit: contain;
+  background: var(--line);
+  display: block;
+  flex-shrink: 0;
+}
+.drop-item-meta {
+  display: grid;
+  gap: 0.15rem;
+  min-width: 0;
+}
+.drop-item-meta strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.drop-item-meta span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.drop-item-meta span.is-error { color: var(--rose); }
+.drop-item-remove {
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.25rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0.2rem 0.35rem;
+}
+.drop-item-remove:hover { color: var(--text); }
+.drop-item-remove:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.drop-progress {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  margin-top: 0.65rem;
+}
+.drop-progress-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgb(from var(--text) r g b / 0.2);
+  overflow: hidden;
+}
+.drop-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--teal) 85%, black);
+  transition: width 220ms ease;
+}
+.drop-progress span {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.library-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(0 0 0 / 0.66);
+}
+.library-picker {
+  display: flex;
+  flex-direction: column;
+  width: min(58rem, 100%);
+  max-height: min(40rem, calc(100vh - 2.5rem));
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #10141b;
+  box-shadow: 0 24px 60px rgb(0 0 0 / 0.45);
+}
+.library-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(7.25rem, 1fr));
+  gap: 1.15rem 0.9rem;
+  overflow: auto;
+  padding: 1.1rem 1.15rem 1.25rem;
+}
+.library-picker-cell {
+  position: relative;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  padding: 0.35rem;
+  text-align: left;
+  cursor: pointer;
+}
+.library-picker-cell:hover,
+.library-picker-cell.is-selected { z-index: 1; }
+.library-picker-cell:hover { background: rgb(255 255 255 / 0.03); }
+.library-picker-cell:focus-visible {
+  outline: 2px solid var(--teal);
+  outline-offset: 2px;
+}
+.library-picker-cell.is-selected {
+  border-color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 10%, transparent);
+}
+.library-picker-thumb {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 1;
+  width: 100%;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #000;
+}
+.library-picker-thumb img,
+.library-picker-thumb > .bone {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.library-picker-name {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  width: 100%;
+  margin-top: 4px;
+  overflow: hidden;
+  color: var(--teal);
+  font-family: "IBM Plex Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.library-picker-empty {
+  grid-column: 1 / -1;
+  margin: 2rem 0;
+  color: var(--muted);
+  text-align: center;
+}
+.library-picker-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  padding: 0.75rem 0.9rem;
+  border-top: 1px solid var(--line);
+  background: #10141b;
+}
+
+/* Every mosaic is the same 20rem box. One row (1–3 thumbnails) fills it; two rows split it. */
+.thumb-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  height: 20rem;
+  grid-auto-rows: minmax(0, 1fr);
+  overflow: hidden;
+}
+.thumb-grid > img {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  object-fit: cover;
+  object-position: center;
+  background: #000;
+}
+.thumb-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 20rem;
+  background: #000;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.project-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+}
+.project-card > .thumb-grid,
+.project-card > .thumb-empty {
+  margin-top: auto;
+  margin-bottom: auto;
+}
+.project-grid,
+.video-grid {
+  display: grid;
+  gap: 0.75rem;
+  justify-content: start;
+}
+.project-grid {
+  grid-template-columns: repeat(auto-fit, minmax(18rem, 47.25rem));
+}
+.video-grid {
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 23.625rem));
+}
+.video-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+.video-card.is-static {
+  cursor: default;
+  touch-action: auto;
+}
+.video-card > a {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  color: inherit;
+  text-decoration: none;
+}
+/* The preview grows to the card; the filename and specs stay on the bottom edge. */
+.video-face {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+}
+.video-face-media {
+  position: relative;
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #000;
+}
+.video-face-media > img,
+.video-face-media > .bone {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.video-face-media > .thumb-grid {
+  height: 100%;
+  min-height: 20rem;
+}
+.video-face-meta {
+  flex: none;
+}
+.video-card img,
+.video-card-ghost img {
+  -webkit-user-drag: none;
+  pointer-events: none;
+}
+body.is-sorting,
+body.is-sorting * { cursor: grabbing; }
+.video-card-slot {
+  border: 1px dashed var(--teal);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--teal) 16%, var(--panel));
+}
+.video-card-ghost {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  overflow: hidden;
+  opacity: 0.96;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+}
+.video-card-delete {
+  position: absolute;
+  top: 0.45rem;
+  right: 0.45rem;
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: 1.85rem;
+  height: 1.85rem;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 8px;
+  background: rgba(9, 11, 16, 0.82);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
+}
+.video-card-delete:hover { background: var(--rose); }
+.video-card-delete:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.cost-total {
+  display: flex;
+  flex-shrink: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0;
+  border: none;
+  background: none;
+  text-align: left;
+}
+.cost-total.is-end {
+  align-items: flex-end;
+  text-align: right;
+}
+.cost-total.is-overlay {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+}
+.cost-total-label {
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.2;
+}
+.cost-total:hover { color: var(--teal); }
+.cost-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+.cost-overlay-panel {
+  position: fixed;
+  z-index: 81;
+  overflow: auto;
+}
+
+/* Full-screen image preview, from potheads-ceramics' admin image overlay. */
+.asset-preview {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.asset-preview-topbar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 10px 16px;
+}
+.asset-preview-close,
+.asset-preview-action,
+.asset-preview-nav,
+.asset-preview-zoom {
+  background: none;
+  border: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.asset-preview-close {
+  color: #9aa0a6;
+  padding: 6px;
+  border-radius: 50%;
+  transition: background 0.15s, color 0.15s;
+}
+.asset-preview-close:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+.asset-preview-filename {
+  color: #fff;
+  font-size: 1.1rem;
+  max-width: 40vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-preview-actions {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.asset-preview-action {
+  color: #9aa0a6;
+  padding: 8px;
+  border-radius: 50%;
+  transition: background 0.15s, color 0.15s;
+}
+.asset-preview-action:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+.asset-preview-viewport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  overflow: auto;
+  padding: 3rem 4rem;
+}
+.asset-preview-viewport .shot-frame {
+  transition: transform 0.15s ease;
+}
+.asset-preview-img {
+  max-width: 90vw;
+  max-height: 85vh;
+  min-width: min(512px, 90vw);
+  min-height: min(512px, 70vh);
+  object-fit: contain;
+  transition: transform 0.15s ease;
+  user-select: none;
+}
+.asset-preview-nav {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  transform: translateY(-50%);
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+.asset-preview-nav:hover { background: rgba(255, 255, 255, 0.25); }
+.asset-preview-nav.is-prev { left: 16px; }
+.asset-preview-nav.is-next { right: 16px; }
+.asset-preview-controls {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  z-index: 1;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 24px;
+  padding: 4px 6px;
+}
+.asset-preview-zoom {
+  color: #fff;
+  font-size: 1.2rem;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  transition: background 0.15s;
+}
+.asset-preview-zoom:hover { background: rgba(255, 255, 255, 0.15); }
+
+/* Keep the inspect frame inside the viewport. Absolute positioning stops the video's native size from stretching the page. */
+.stage-frame {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: min(64dvh, calc(100dvh - 16rem));
+  overflow: hidden;
+}
+.stage-frame > .asset-preview-nav {
+  z-index: 5;
+}
+.stage-frame video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.stage-frame.is-zoomed,
+.stage-frame.is-zoomed video {
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.stage-frame.is-panning,
+.stage-frame.is-panning video {
+  cursor: grabbing;
+}
+.stage-zoom {
+  position: absolute;
+  z-index: 4;
+  right: 0.5rem;
+  bottom: 0.5rem;
+}
+.stage-zoom [role="group"] {
+  background: var(--overlay);
+}
+
+/* Labeled crops for whatever the playhead is showing, pinned to the image corner. */
+.frame-objects {
+  position: absolute;
+  z-index: 3;
+  left: 0.5rem;
+  bottom: 0.5rem;
+  max-width: calc(100% - 6.5rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.35rem 0.45rem 0.4rem;
+  border-radius: 8px;
+  background: var(--overlay);
+}
+.frame-objects-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+.frame-objects-title {
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--muted);
+}
+.frame-objects-toggle {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  line-height: 0;
+}
+.frame-objects-toggle:hover {
+  color: var(--text);
+}
+.frame-objects-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 0.4rem;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.frame-object {
+  display: flex;
+  width: 3rem;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: center;
+}
+.frame-object img {
+  display: block;
+  height: 3rem;
+  width: 3rem;
+  object-fit: cover;
+  object-position: center;
+  border-radius: 4px;
+  border: 1px solid var(--line);
+}
+.frame-object span {
+  display: block;
+  max-width: 3rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text);
+}
+
+/* Height follows the surrounding type, so a bone stays the size of the text it replaces. */
+.bone {
+  display: inline-block;
+  height: 0.7em;
+  max-width: 100%;
+  border-radius: 0.25rem;
+  vertical-align: middle;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--text) 8%, var(--panel-2)) 0%,
+    color-mix(in srgb, var(--text) 18%, var(--panel-2)) 50%,
+    color-mix(in srgb, var(--text) 8%, var(--panel-2)) 100%
+  );
+  background-size: 220% 100%;
+  animation: bone-shine 1.4s ease-in-out infinite;
+}
+.bone-fill {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 0;
+}
+/* Same box as the control it stands in for, so a loading form does not jump when the options arrive. */
+.field.bone.is-placeholder {
+  display: block;
+  width: 100%;
+  height: 2.25rem;
+  max-width: calc((48rem - 0.75rem) / 2);
+  padding: 0;
+  border-radius: 8px;
+}
+.field.bone.is-placeholder.stretch,
+.field.bone.is-placeholder.is-tall,
+.field.bone.is-placeholder.is-textarea {
+  max-width: none;
+}
+.field.bone.is-placeholder.is-tall {
+  height: 12rem;
+}
+.field.bone.is-placeholder.is-textarea {
+  height: 4rem;
+}
+.field.bone.is-placeholder.is-compact {
+  width: 10rem;
+  max-width: 10rem;
+}
+.field.bone.is-placeholder.is-input {
+  max-width: 20rem;
+}
+.thumb-grid > .bone {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+@keyframes bone-shine {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .bone {
+    animation: none;
+    background: color-mix(in srgb, var(--text) 10%, var(--panel-2));
+  }
+}
+
+.workflow-edge-label {
+  position: absolute;
+  padding: 2px 6px;
+  border-radius: 2px;
+  background: #fff;
+  color: #1a192b;
+  font-size: 10px;
+  line-height: 1.2;
+  white-space: nowrap;
+  pointer-events: none;
+}

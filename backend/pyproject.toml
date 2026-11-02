@@ -1,0 +1,61 @@
+[project]
+name = "learnloop"
+version = "1.0.0"
+description = "Local-first research lab for learning physical procedures from video."
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.32",
+  "sqlalchemy>=2.0.36",
+  "alembic>=1.14",
+  "pydantic>=2.10",
+  "pydantic-settings>=2.6",
+  "python-multipart>=0.0.17",
+  "opencv-python-headless>=4.10",
+  "numpy>=2.0",
+  "pillow>=11.0",
+  "httpx>=0.28",
+  "certifi>=2024.2.2",
+  "cryptography>=44.0",
+  "openai>=1.60",
+  "anthropic>=0.45",
+  "google-genai>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.3",
+  "pytest-asyncio>=0.25",
+  "ruff>=0.9",
+]
+sam = [
+  "meta-sam-parser>=0.0.6",
+]
+audio = [
+  "faster-whisper>=1.1",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["app", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"app/demo/*" = ["E501"]
