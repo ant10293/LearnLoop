@@ -37,8 +37,9 @@ h3 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.4rem; }
 p { margin: 0.3rem 0; }
 .lead { font-size: 1.05rem; color: var(--muted); margin-bottom: 1rem; }
 
-.topbar { display: flex; align-items: center; gap: 1rem; padding: 0.8rem 1.5rem; background: var(--surface); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 600; font-size: 1.05rem; letter-spacing: -0.01em; }
+.topbar { display: flex; align-items: center; gap: 1rem; padding: 1.1rem max(1.5rem, calc((100% - 1240px) / 2 + 1.5rem)) 0; }
+.brand { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 600; font-size: 1.1rem; letter-spacing: -0.01em; }
+.logo { width: 1.6rem; height: 1.6rem; color: var(--accent); flex: none; }
 .crumb { color: var(--muted); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .flow { margin-left: auto; display: flex; gap: 0.25rem; }
 .flow a { padding: 0.35rem 0.8rem; border-radius: 6px; color: var(--muted); font-size: 0.9rem; }

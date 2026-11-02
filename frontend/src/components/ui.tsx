@@ -2,11 +2,21 @@ import { useEffect, useRef, type ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import { clock, reviewLabels, verdictLabels, verdictTone, type ReviewState } from "../lib/learnloop";
 
+export function Logo() {
+  return (
+    <svg className="logo" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M18.36 5.64A9 9 0 1 1 12 3" />
+      <path d="M9.6 .8 12.2 3 9.6 5.2" />
+      <path d="m8 12.2 2.8 2.8 5.2-5.6" />
+    </svg>
+  );
+}
+
 export function Layout({ children, procedureId, title }: { children: ReactNode; procedureId?: string; title?: string }) {
   return (
     <div className="app">
       <header className="topbar">
-        <Link to="/" className="brand">LearnLoop</Link>
+        <Link to="/" className="brand"><Logo />LearnLoop</Link>
         {title && <span className="crumb">{title}</span>}
         {procedureId && (
           <nav className="flow" aria-label="Procedure steps">
