@@ -19,7 +19,7 @@ from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
 from app.pipeline import guided
 from app.providers.types import UnsupportedMode
 from app.services import verification_store as store
-from app.services.ingest import accept_upload, ingest_file, playback_path, schedule_ingest
+from app.services.ingest import accept_reference, accept_upload, ingest_file, playback_path, referenced_file, schedule_ingest
 from app.services.storage import data_path, safe_filename
 from app.video.frames import extract_frame
 from app.video.probe import VideoError
@@ -33,6 +33,11 @@ def db() -> Session:
 
 class ProcedureBody(BaseModel):
     name: str
+
+
+class ReferenceBody(BaseModel):
+    path: str
+    role: str
 
 
 class AnalyzeBody(BaseModel):
@@ -136,6 +141,47 @@ async def upload_recording(
     if not settings.ingest_inline:
         schedule_ingest(video.id)
     return _recording(session, session.get(ProcedureRecording, video.id))
+
+
+@router.post("/procedures/{project_id}/recordings/reference")
+def reference_recording(project_id: str, payload: ReferenceBody, session: Session = Depends(db)) -> dict:
+    """Use a file where it already is. Nothing is copied."""
+    _project(session, project_id)
+    if payload.role not in {"demonstration", "execution"}:
+        raise HTTPException(400, "A recording is a demonstration or an execution.")
+    try:
+        path = referenced_file(payload.path)
+        if settings.ingest_inline:
+            video = ingest_file(session, project_id, path.name, path, reference=True)
+        else:
+            video = accept_reference(session, project_id, path)
+    except VideoError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    session.merge(ProcedureRecording(video_id=video.id, project_id=project_id, role=payload.role))
+    session.commit()
+    if not settings.ingest_inline:
+        schedule_ingest(video.id)
+    return _recording(session, session.get(ProcedureRecording, video.id))
+
+
+@router.delete("/recordings/{video_id}")
+def delete_recording(video_id: str, session: Session = Depends(db)) -> dict:
+    """Remove a recording, its analyses, and reports on it. A procedure's source recording stays."""
+    from app.api.routes import delete_run, delete_video
+
+    row = session.get(ProcedureRecording, video_id)
+    if row is None:
+        raise HTTPException(404, "recording not found")
+    learned = session.scalar(select(LearnedWorkflowTemplate).where(LearnedWorkflowTemplate.source_video_id == video_id))
+    if learned is not None:
+        raise HTTPException(409, "The procedure was learned from this recording, so it is kept. Upload a new demonstration to replace it.")
+    for report in session.scalars(select(VerificationRunRow).where(VerificationRunRow.execution_video_id == video_id)).all():
+        session.delete(report)
+    for run in session.scalars(select(AnalysisRun).where(AnalysisRun.video_id == video_id)).all():
+        delete_run(run.id, session)
+    session.delete(row)
+    session.commit()
+    return delete_video(video_id, session)
 
 
 @router.get("/recordings/{video_id}")

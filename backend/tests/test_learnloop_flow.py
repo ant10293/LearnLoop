@@ -477,3 +477,41 @@ def test_the_meta_key_is_read_from_dotenv(tmp_path, monkeypatch):
     assert credentials.env_secret("meta") == ""
     (tmp_path / ".env").write_text("MODEL_API_KEY=from-dotenv\n")
     assert credentials.env_secret("meta") == "from-dotenv"
+
+
+def test_a_recording_can_be_referenced_and_removed(lab):
+    client, stub, tmp = lab
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    path = _video(tmp / "kept.mp4", "red")
+    made = client.post(f"/api/learnloop/procedures/{procedure}/recordings/reference", json={"path": str(path), "role": "demonstration"})
+    assert made.status_code == 200, made.text
+    video = made.json()["video"]["id"]
+    assert made.json()["video"]["thumbnail_url"]
+    assert client.get(f"/api/learnloop/videos/{video}/frame?t=1").status_code == 200
+    assert client.delete(f"/api/learnloop/recordings/{video}").status_code == 200
+    assert path.exists()
+    assert client.get(f"/api/learnloop/procedures/{procedure}").json()["recordings"] == []
+
+
+def test_removing_an_attempt_removes_its_report_but_the_source_recording_stays(lab):
+    client = lab[0]
+    procedure, template = _accepted(lab)
+    report = _check(lab, procedure, template, CORRECT, "blue")
+    assert client.delete(f"/api/learnloop/recordings/{report['execution_video_id']}").status_code == 200
+    detail = client.get(f"/api/learnloop/procedures/{procedure}").json()
+    assert detail["verifications"] == [] and detail["execution_count"] == 0
+    assert client.delete(f"/api/learnloop/recordings/{template['source_video_id']}").status_code == 409
+
+
+def test_frames_come_out_of_a_limited_range_playback_file(tmp_path):
+    from app.video.frames import extract_frame, make_proxy
+    from app.video.probe import presentation_timestamps
+
+    source = _video(tmp_path / "source.mp4", "red")
+    proxy = tmp_path / "proxy.mp4"
+    make_proxy(source, proxy)
+    dest = tmp_path / "frame.jpg"
+    extract_frame(proxy, 1.0, dest)
+    assert dest.stat().st_size > 0
+    times = presentation_timestamps(source)
+    assert len(times) == 100 and times == sorted(times)

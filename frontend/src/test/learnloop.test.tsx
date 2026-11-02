@@ -105,8 +105,10 @@ describe("Projects", () => {
 });
 
 describe("Teach", () => {
+  let storageMode = "copy";
   const data = () => procedure({ recordings: [{ role: "demonstration", video, run: null }], templates: [], template: null, verifications: [] });
   const base = (url: string) => {
+    if (url.endsWith("/api/settings")) return { body: { video_storage: storageMode } };
     if (url.includes("/status")) return { body: { model_id: "muse-wonder-1.0", max_clip_seconds: 60 } };
     if (url.endsWith("/procedures/p1")) return { body: data() };
     if (url.endsWith("/recordings/v1")) return { body: { role: "demonstration", video, run: null } };
@@ -131,6 +133,31 @@ describe("Teach", () => {
     expect(sent[0].get("role")).toBe("demonstration");
     act(() => request.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 2 }));
     expect(await screen.findByRole("progressbar")).toHaveTextContent("50%");
+  });
+
+  it("references the original path without uploading when that is the setting", async () => {
+    storageMode = "reference";
+    const calls = mockApi((url) => {
+      if (url === "/api/videos/locate") return { body: { path: "/clips/demo.mp4" } };
+      if (url.endsWith("/recordings/reference")) return { body: { role: "demonstration", video, run: null } };
+      return base(url);
+    });
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:clip", revokeObjectURL: () => undefined }));
+    const { container } = show("/procedures/p1/teach");
+    const choice = await screen.findByRole("radio", { name: /Reference the original path/ });
+    await waitFor(() => expect(choice).toBeChecked());
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "demo.mp4", { type: "video/mp4" })] } });
+    await waitFor(() => expect(calls.some((call) => call.url.endsWith("/recordings/reference"))).toBe(true));
+    const sent = calls.find((call) => call.url.endsWith("/recordings/reference"));
+    expect(JSON.parse(String(sent?.init?.body))).toEqual({ path: "/clips/demo.mp4", role: "demonstration" });
+    storageMode = "copy";
+  });
+
+  it("removes a recording with its x button", async () => {
+    const calls = mockApi((url, init) => (init?.method === "DELETE" ? { body: { deleted: "v1" } } : base(url)));
+    show("/procedures/p1/teach");
+    fireEvent.click(await screen.findByRole("button", { name: "Remove demo.mp4" }));
+    await waitFor(() => expect(calls.some((call) => call.init?.method === "DELETE" && call.url.endsWith("/recordings/v1"))).toBe(true));
   });
 
   it("asks before a billable call and never sends one without a yes", async () => {
@@ -191,6 +218,7 @@ describe("Procedure review", () => {
 
 describe("Verify", () => {
   const handler = (step = stepResult, overall = "FAIL", assisted = false): Handler => (url) => {
+    if (url.endsWith("/api/settings")) return { body: { video_storage: "copy" } };
     if (url.endsWith("/procedures/p1")) return { body: procedure() };
     if (url.endsWith("/verifications/c1")) return { body: report(step, overall, assisted) };
     return undefined;

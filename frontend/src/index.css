@@ -331,6 +331,13 @@ button.linkish {
 }
 .drop-zone-icon { box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1); }
 .upload-gap { margin-top: 0.8rem; }
+.upload-section { display: grid; gap: 0.8rem; }
+.storage { border: 1px solid var(--line); border-radius: 10px; padding: 0.5rem 0.9rem 0.8rem; display: grid; gap: 0.55rem; min-width: 0; background: var(--surface); }
+.storage legend { padding: 0 0.3rem; font-size: 0.85rem; font-weight: 500; }
+.storage-choice { display: flex; align-items: flex-start; gap: 0.5rem; font-size: 0.9rem; cursor: pointer; }
+.storage-choice input { margin-top: 0.25rem; }
+.storage-choice strong { display: block; font-weight: 500; }
+.storage-choice .muted { display: block; }
 .upload-preview { margin-bottom: 0.8rem; }
 
 @media (max-width: 860px) {

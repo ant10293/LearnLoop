@@ -167,15 +167,16 @@ def parse_presentation_times(stdout: str) -> list[float]:
     return times
 
 
-def presentation_timestamps(path: Path, cache: Path | None = None) -> list[float]:
-    """Actual frame presentation times. Cached because ffprobe frame scans are expensive."""
-    if cache and cache.exists():
-        try:
-            data = json.loads(cache.read_text())
-            if isinstance(data, list) and data:
-                return [float(item) for item in data]
-        except (OSError, json.JSONDecodeError, TypeError, ValueError):
-            pass
+def _packet_times(path: Path) -> list[float]:
+    """Times from the container, without decoding. Packets are in decode order, so they are sorted."""
+    proc = _run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "packet=pts_time", "-of", "csv=p=0", str(path)])
+    if proc.returncode != 0:
+        return []
+    return sorted(parse_presentation_times(proc.stdout))
+
+
+def _decoded_times(path: Path) -> list[float]:
+    """The slow scan, for a file whose packets carry no times. It decodes every frame."""
     proc = _run(
         [
             "ffprobe",
@@ -197,6 +198,19 @@ def presentation_timestamps(path: Path, cache: Path | None = None) -> list[float
         sample = next((line.strip() for line in proc.stdout.splitlines() if line.strip()), "")
         detail = f" Unparsed line: {sample[:160]}" if sample else ""
         raise VideoError(f"could not read frame timestamps.{detail}")
+    return times
+
+
+def presentation_timestamps(path: Path, cache: Path | None = None) -> list[float]:
+    """Actual frame presentation times. Cached because ffprobe frame scans are expensive."""
+    if cache and cache.exists():
+        try:
+            data = json.loads(cache.read_text())
+            if isinstance(data, list) and data:
+                return [float(item) for item in data]
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            pass
+    times = _packet_times(path) or _decoded_times(path)
     if cache:
         cache.parent.mkdir(parents=True, exist_ok=True)
         cache.write_text(json.dumps(times))

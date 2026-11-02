@@ -176,7 +176,8 @@ def ingest_file(
     for ordinal, sample in enumerate(preview):
         _step(on_progress, 36 + (54 * ordinal / total), f"Extracting frames ({ordinal + 1}/{len(preview)})")
         dest = data_path("frames", video.id, f"{ordinal:04d}_{sample.timestamp:.3f}.jpg")
-        extract_frame(original, sample.timestamp, dest, accurate=True)
+        # These are upload previews. The playback file has the same times and decodes far faster than 4K.
+        extract_frame(resolve_stored(proxy_rel) if proxy_rel else original, sample.timestamp, dest, accurate=True)
         _keep(produced, dest)
         frame_paths.append(dest)
         session.add(
@@ -251,6 +252,11 @@ def accept_upload(session: Session, project_id: str | None, filename: str, sourc
     session.add(video)
     session.commit()
     session.refresh(video)
+    try:
+        video.thumbnail_path = _preview_still(dest, video.id)
+        session.commit()
+    except VideoError as exc:
+        log.warning("preview still for %s failed: %s", video.id, exc)
     return video
 
 

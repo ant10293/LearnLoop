@@ -9,7 +9,11 @@ import { api, basisLabels, clock, errorLabels, frameUrl, type Answer, type Proce
 export function VerifyPage() {
   const { id = "" } = useParams();
   const client = useQueryClient();
-  const procedure = useQuery({ queryKey: ["procedure", id], queryFn: () => api.procedure(id) });
+  const procedure = useQuery({
+    queryKey: ["procedure", id],
+    queryFn: () => api.procedure(id),
+    refetchInterval: (query) => (query.state.data?.recordings.some((item) => !["ready", "failed"].includes(item.video.ingest_status)) ? 1000 : false),
+  });
   const [selected, setSelected] = useState("");
   const accepted = [...(procedure.data?.templates ?? [])].reverse().find((item) => item.acceptance_status === "accepted");
   const attempts = (procedure.data?.recordings ?? []).filter((item) => item.role === "execution");
@@ -50,8 +54,9 @@ export function VerifyPage() {
         procedureId={id}
         role="execution"
         prompt="Drag and drop an attempt here or"
-        onUploaded={async (created) => {
-          setSelected(created.video.id);
+        recordings={attempts}
+        onChange={async (created) => {
+          if (created) setSelected(created.video.id);
           await client.invalidateQueries({ queryKey: ["procedure", id] });
         }}
       />

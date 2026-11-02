@@ -26,6 +26,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 const post = <T,>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
 
+export type VideoStorage = "copy" | "reference";
 export type ReviewState = "ai_draft" | "human_reviewed" | "accepted" | "";
 export type Verdict = "PASS" | "FAIL" | "CANNOT_VERIFY" | "NOT_APPLICABLE";
 export type Answer = "installed" | "not_installed" | "cannot_determine";
@@ -213,13 +214,14 @@ export const api = {
   procedures: () => request<ProcedureSummary[]>("/api/learnloop/procedures"),
   createProcedure: (name: string) => post<ProcedureSummary>("/api/learnloop/procedures", { name }),
   procedure: (id: string) => request<Procedure>(`/api/learnloop/procedures/${id}`),
-  upload: (id: string, role: Recording["role"], file: File, onProgress?: (ratio: number) => void) =>
+  upload: (id: string, role: Recording["role"], file: File, onProgress?: (ratio: number) => void, onStart?: (abort: () => void) => void) =>
     new Promise<Recording>((resolve, reject) => {
       const form = new FormData();
       form.append("role", role);
       form.append("file", file);
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `/api/learnloop/procedures/${id}/recordings`);
+      onStart?.(() => xhr.abort());
       xhr.responseType = "json";
       xhr.upload.onprogress = (event) => {
         if (event.lengthComputable) onProgress?.(event.loaded / event.total);
@@ -230,8 +232,14 @@ export const api = {
         else reject(new Error(typeof payload?.detail === "string" ? payload.detail : `The upload failed (${xhr.status}).`));
       };
       xhr.onerror = () => reject(new Error("The upload failed. Check that the server is running."));
+      xhr.onabort = () => reject(new DOMException("Upload cancelled", "AbortError"));
       xhr.send(form);
     }),
+  storage: () => request<{ video_storage: VideoStorage }>("/api/settings"),
+  saveStorage: (mode: VideoStorage) => request<{ video_storage: VideoStorage }>("/api/settings", { method: "PUT", body: JSON.stringify({ video_storage: mode }) }),
+  locate: (file: File) => post<{ path: string }>("/api/videos/locate", { name: file.name, size: file.size, mtime_ms: Math.round(file.lastModified) }),
+  reference: (id: string, role: Recording["role"], path: string) => post<Recording>(`/api/learnloop/procedures/${id}/recordings/reference`, { path, role }),
+  removeRecording: (videoId: string) => request<{ deleted: string }>(`/api/learnloop/recordings/${videoId}`, { method: "DELETE" }),
   analyze: (videoId: string, allowLive: boolean) => post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive }),
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),

@@ -43,8 +43,8 @@ export function TeachPage() {
             procedureId={id}
             role="demonstration"
             prompt={demo ? "Drag and drop a new demonstration here or" : "Drag and drop a video here or"}
-            preparing={demo?.video}
-            onUploaded={() => client.invalidateQueries({ queryKey: ["procedure", id] })}
+            recordings={demo ? [demo] : []}
+            onChange={() => client.invalidateQueries({ queryKey: ["procedure", id] })}
           />
         </section>
         <section className="panel">
