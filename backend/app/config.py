@@ -27,6 +27,11 @@ class Settings(BaseSettings):
     # Meta bills SAM video per frame. No rate is published in this repository, so
     # cost stays unknown until this is set. Frame and request limits always apply.
     sam_price_per_frame_usd: float | None = None
+    # A live Meta call spends credits. Nothing is sent unless this is set on purpose.
+    live_inference: bool = False
+    guided_max_output_tokens: int = 24_000
+    # Research endpoints from the source lab. The product does not use them.
+    research_routes: bool = False
 
     @property
     def resolved_data_dir(self) -> Path:

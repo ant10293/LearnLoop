@@ -14,16 +14,10 @@ from app.models.runs import ProviderSecret, ProviderStatus
 from app.models.util import utcnow
 
 ENV_KEYS = {
-    "openai": "OPENAI_API_KEY",
-    "anthropic": "ANTHROPIC_API_KEY",
-    "gemini": "GEMINI_API_KEY",
     "meta": "MODEL_API_KEY",
-    "openai_compatible": "OPENAI_COMPATIBLE_API_KEY",
-    "cursor": "CURSOR_API_KEY",
 }
 
 ENV_FALLBACKS = {
-    "gemini": ["GOOGLE_API_KEY"],
     "meta": ["META_MODEL_API_KEY"],
 }
 

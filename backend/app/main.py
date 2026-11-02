@@ -10,10 +10,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
-from app.api.audio import router as audio_router
-from app.api.recovery import router as recovery_router
+from app.api.product import router as product_router
 from app.api.routes import router
-from app.api.tasks import router as task_router
 from app.api.verification import router as verification_router
 from app.config import settings
 from app.demo.seed import seed_if_empty
@@ -62,7 +60,7 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="LearnLoop Research Lab", version=__version__, lifespan=lifespan)
+    app = FastAPI(title="LearnLoop", version=__version__, lifespan=lifespan)
 
     @app.middleware("http")
     async def _api_json_not_cached(request, call_next):
@@ -80,10 +78,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
     app.include_router(router)
-    app.include_router(task_router)
     app.include_router(verification_router)
-    app.include_router(audio_router)
-    app.include_router(recovery_router)
+    app.include_router(product_router)
+    if settings.research_routes:
+        from app.api.audio import router as audio_router
+        from app.api.recovery import router as recovery_router
+        from app.api.tasks import router as task_router
+
+        app.include_router(task_router)
+        app.include_router(audio_router)
+        app.include_router(recovery_router)
     return app
 
 

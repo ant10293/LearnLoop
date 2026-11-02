@@ -153,6 +153,20 @@ CATALOG: dict[tuple[str, str], ModelCapabilities] = {
         output_price_per_mtok=10.0,
         notes="Native video uses the Gemini Files API and is polled until ACTIVE. Frame mode is a separate modality.",
     ),
+    ("meta", "muse-wonder-1.0"): _caps(
+        model_id="muse-wonder-1.0",
+        provider_id="meta",
+        image=True,
+        native_video=True,
+        structured_output=True,
+        max_images=16,
+        context_tokens=1_048_576,
+        reasoning_efforts=MUSE_EFFORTS,
+        supports_temperature=False,
+        input_price_per_mtok=None,
+        output_price_per_mtok=None,
+        notes=_MUSE_NOTE,
+    ),
     ("meta", "muse-spark-1.3"): _caps(
         model_id="muse-spark-1.3",
         provider_id="meta",
@@ -255,6 +269,10 @@ for _cursor_model in ("composer-2.5", "auto"):
         supports_temperature=False,
         notes=_CURSOR_NOTE,
     )
+
+
+# The submission build runs Meta models only.
+CATALOG = {key: value for key, value in CATALOG.items() if key[0] in {"meta", "deterministic", "fixture", "manual_json"}}
 
 
 def cursor_accepts_video(model_id: str) -> bool:

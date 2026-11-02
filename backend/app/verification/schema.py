@@ -42,6 +42,7 @@ class CompletionPredicate(BaseModel):
     evidence_requirement: Literal["required", "optional"] = "required"
     source_evidence_class: str = "UNKNOWN"
     context_relations: list[dict] = Field(default_factory=list)
+    origin: Literal["model", "human"] = "model"
 
 
 class TemplateDependency(BaseModel):
@@ -73,6 +74,10 @@ class TemplateStep(BaseModel):
     demo_time_start: float | None = None
     demo_time_end: float | None = None
     parallel_group: str = ""
+    completion_text: str = ""
+    observed_text: str = ""
+    removed: bool = False
+    human_edited: list[str] = Field(default_factory=list)
 
 
 class ObjectRole(BaseModel):
@@ -87,6 +92,7 @@ class ObjectRole(BaseModel):
     state_labels: list[str] = Field(default_factory=list)
     relation_signature: list[str] = Field(default_factory=list)
     reference_area: float | None = None
+    original_label: str = ""
 
 
 class LearnedTemplate(BaseModel):
@@ -100,6 +106,7 @@ class LearnedTemplate(BaseModel):
     roles: list[ObjectRole] = Field(default_factory=list)
     steps: list[TemplateStep] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
+    review_log: list[dict] = Field(default_factory=list)
 
 
 class RoleHypothesis(BaseModel):
@@ -139,6 +146,7 @@ class PredicateJudgement(BaseModel):
     corrected: bool = False
     evidence: list[EvidenceRef] = Field(default_factory=list)
     support_onsets: list[float] = Field(default_factory=list)
+    human: bool = False
 
 
 class StepResult(BaseModel):
@@ -166,3 +174,6 @@ class StepResult(BaseModel):
     execution_time: float | None = None
     predicates: list[PredicateJudgement] = Field(default_factory=list)
     machine_verdict: str = ""
+    # model_evidence: the verifier read model-reported evidence. human_confirmed: a reviewer's
+    # observation decided it. human_override: a reviewer set the verdict. none: nothing decided it.
+    basis: Literal["model_evidence", "human_confirmed", "human_override", "none"] = "none"

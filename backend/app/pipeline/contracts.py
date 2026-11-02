@@ -23,6 +23,7 @@ from app.schemas.generation import (
     ActionsOutput,
     AmbiguitiesOutput,
     DiscoveryOutput,
+    GuidedTaskOutput,
     InterpretationOutput,
     ReinspectionOutput,
     SinglePassOutput,
@@ -196,6 +197,7 @@ def _contract(name: str, model: type[BaseModel]) -> OutputContract:
 DISCOVERY = _contract("learnloop_discovery", DiscoveryOutput)
 INTERPRETATION = _contract("learnloop_interpretation", InterpretationOutput)
 SINGLE_PASS = _contract("learnloop_single_pass", SinglePassOutput)
+GUIDED_TASK = _contract("learnloop_guided_task", GuidedTaskOutput)
 _STAGE_CONTRACTS = {
     "scene_analysis": DISCOVERY,
     "action_analysis": _contract("learnloop_actions", ActionsOutput),
@@ -204,7 +206,7 @@ _STAGE_CONTRACTS = {
     "ambiguity": _contract("learnloop_ambiguities", AmbiguitiesOutput),
     "reinspection": _contract("learnloop_reinspection", ReinspectionOutput),
 }
-ALL_CONTRACTS = (DISCOVERY, INTERPRETATION, SINGLE_PASS, *_STAGE_CONTRACTS.values())
+ALL_CONTRACTS = (DISCOVERY, INTERPRETATION, SINGLE_PASS, GUIDED_TASK, *_STAGE_CONTRACTS.values())
 
 
 def contract_for(provider_id: str, stage: str, purpose: str, analysis_pass: str | None) -> OutputContract | None:

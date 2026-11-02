@@ -31,6 +31,10 @@ class StepEdit(BaseModel):
     requirement_status: Literal["observed", "required", "optional", "uncertain"] | None = None
     uncertainty_notes: str | None = None
     name: str | None = None
+    expected_action: str | None = None
+    completion_text: str | None = None
+    removed: bool | None = None
+    completion_conditions: list[dict] | None = None
 
 
 class RoleEdit(BaseModel):
@@ -71,6 +75,14 @@ class FindingRequest(BaseModel):
 
 class StepCorrection(BaseModel):
     verdict: Literal["PASS", "FAIL", "CANNOT_VERIFY", "NOT_APPLICABLE"]
+    note: str = ""
+
+
+class HumanObservationBody(BaseModel):
+    answer: Literal["installed", "not_installed", "cannot_determine"]
+    timestamp: float
+    reviewer: str
+    predicate_id: str = ""
     note: str = ""
 
 
@@ -169,6 +181,16 @@ def correct_step(
     session: Session = Depends(db),
 ) -> dict:
     return _call(lambda: store.correct_step(session, verification_id, step_id, payload.verdict, payload.note))
+
+
+@router.post("/api/verifications/{verification_id}/steps/{step_id}/observations")
+def human_observation(
+    verification_id: str,
+    step_id: str,
+    payload: HumanObservationBody,
+    session: Session = Depends(db),
+) -> dict:
+    return _call(lambda: store.record_observation(session, verification_id, step_id, payload.model_dump()))
 
 
 @router.patch("/api/verifications/{verification_id}/roles/{role_id}")

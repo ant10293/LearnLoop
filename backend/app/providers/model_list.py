@@ -238,37 +238,11 @@ def overlay_options(provider_id: str, catalog: list[dict], records: list[dict]) 
 
 
 def _cache_key(provider_id: str, secret: str, base_url: str) -> str:
-    from app.providers.codex_cli import load_codex
-    from app.providers.cursor_cli import load_cursor_cli
-
-    transport = ""
-    binary = ""
-    if provider_id == "openai":
-        settings = load_codex()
-        transport = settings["transport"]
-        binary = settings["binary"]
-    elif provider_id == "cursor":
-        settings = load_cursor_cli()
-        transport = settings["transport"]
-        binary = settings["binary"]
-    elif provider_id == "anthropic":
-        from app.providers.claude_code import load_claude_code
-
-        settings = load_claude_code()
-        transport = settings["transport"]
-        binary = settings["binary"]
     tail = secret[-4:] if secret else ""
-    return f"{provider_id}|{transport}|{binary}|{base_url}|{tail}"
+    return f"{provider_id}|{base_url}|{tail}"
 
 
 def _load(provider_id: str, catalog: list[dict], secret: str, base_url: str) -> list[dict] | None:
-    if provider_id == "cursor":
-        from app.providers.cursor_cli import account_model_options
-
-        options = account_model_options(catalog, secret)
-        if options is catalog:
-            return None
-        return options
     records = _fetch_records(provider_id, secret, base_url)
     if not records:
         return None
@@ -276,26 +250,6 @@ def _load(provider_id: str, catalog: list[dict], secret: str, base_url: str) -> 
 
 
 def _fetch_records(provider_id: str, secret: str, base_url: str) -> list[dict]:
-    if provider_id == "openai":
-        from app.providers.codex_cli import load_codex, model_records_sync
-
-        if load_codex()["transport"] == "codex":
-            return model_records_sync()
-        if not secret:
-            return []
-        return _openai_api_models(secret)
-    if provider_id == "openai_compatible":
-        if not secret or not base_url:
-            return []
-        return _openai_api_models(secret, base_url)
-    if provider_id == "anthropic":
-        if not secret:
-            return []
-        return _anthropic_models(secret)
-    if provider_id == "gemini":
-        if not secret:
-            return []
-        return _gemini_models(secret)
     if provider_id == "meta":
         if not secret:
             return []
@@ -310,49 +264,10 @@ def chat_model(model_id: str) -> bool:
     return name.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-", "codex-"))
 
 
-def _openai_api_models(secret: str, base_url: str = "") -> list[dict]:
-    from openai import OpenAI
-
-    kwargs: dict = {"api_key": secret, "timeout": 20}
-    if base_url:
-        kwargs["base_url"] = base_url
-    page = OpenAI(**kwargs).models.list()
-    ranked: list[tuple[int, str]] = []
-    for item in page.data:
-        model_id = str(getattr(item, "id", "") or "")
-        if not chat_model(model_id):
-            continue
-        created = int(getattr(item, "created", 0) or 0)
-        ranked.append((created, model_id))
-    ranked.sort(key=lambda pair: pair[0], reverse=True)
-    return [{"model_id": model_id} for _created, model_id in ranked]
 
 
-def _anthropic_models(secret: str) -> list[dict]:
-    import anthropic
-
-    page = anthropic.Anthropic(api_key=secret, timeout=20).models.list(limit=100)
-    records = []
-    for item in page.data:
-        label = str(getattr(item, "display_name", "") or "")
-        records.append({"model_id": item.id, "label": label})
-    return records
 
 
-def _gemini_models(secret: str) -> list[dict]:
-    from google import genai
-
-    records = []
-    for model in genai.Client(api_key=secret).models.list():
-        short = str(getattr(model, "name", "") or "").split("/")[-1]
-        actions = list(getattr(model, "supported_actions", None) or [])
-        if actions and "generateContent" not in actions:
-            continue
-        lowered = short.lower()
-        if not short.startswith("gemini") or "embed" in lowered or "aqa" in lowered:
-            continue
-        records.append({"model_id": short, "label": str(getattr(model, "display_name", "") or "")})
-    return records
 
 
 def _meta_models(secret: str) -> list[dict]:

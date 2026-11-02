@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from app.schemas.analysis import AnalysisDocument
 from app.verification.align import align_steps
-from app.verification.predicates import judge_predicate
+from app.verification.predicates import apply_human, judge_predicate
 from app.verification.read import INCIDENTAL_ACTIONS, as_document, enum_value
 from app.verification.roles import assignment_index, map_roles
 from app.verification.schema import (
@@ -48,15 +48,34 @@ def verify_execution(
     execution_video_id: str = "",
     demonstration_video_id: str = "",
     analysis_complete: bool = True,
+    human_observations: list[dict] | None = None,
 ) -> dict:
     spec = template if isinstance(template, LearnedTemplate) else LearnedTemplate.model_validate(template)
+    removed = [step.step_id for step in spec.steps if step.removed]
+    spec = spec.model_copy(update={"steps": [step for step in spec.steps if not step.removed]})
     document = as_document(execution)
     if not analysis_complete:
         return _incomplete(spec, strategy)
     assignments = map_roles(spec, document, role_overrides)
     aligned = align_steps(spec, document, assignments)
-    judgements = {
+    machine = {
         step.step_id: _judge_step(step, document, assignments, aligned, execution_video_id)
+        for step in spec.steps
+    }
+    records: dict[str, list[dict]] = {}
+    for record in human_observations or []:
+        records.setdefault(record["step_id"], []).append(record)
+    judgements = {
+        step.step_id: apply_human(
+            step.step_id,
+            [item.predicate_id for item in machine[step.step_id] if _is_required(step, item)],
+            [item.model_copy(deep=True) for item in machine[step.step_id]],
+            records[step.step_id],
+            document,
+            execution_video_id,
+        )
+        if step.step_id in records
+        else machine[step.step_id]
         for step in spec.steps
     }
     steps = [
@@ -69,6 +88,7 @@ def verify_execution(
             proposals.get(step.step_id) if proposals else None,
             strategy,
             demonstration_video_id,
+            _machine_verdict(step, machine),
         )
         for step in spec.steps
     ]
@@ -88,7 +108,14 @@ def verify_execution(
         "unexpected_actions": unexpected,
         "warnings": _warnings(spec, assignments),
         "provider_invoked": False,
+        "removed_steps": removed,
+        "human_assisted": any(item.basis == "human_confirmed" for item in steps),
     }
+
+
+def _machine_verdict(step: TemplateStep, machine: dict[str, list[PredicateJudgement]]) -> str:
+    required = [item for item in machine[step.step_id] if _is_required(step, item)]
+    return _decide(step, required, _order(step, required, machine))[0]
 
 
 def _judge_step(step: TemplateStep, document, assignments, aligned, video_id: str) -> list[PredicateJudgement]:
@@ -110,13 +137,13 @@ def _step_result(
     proposal: dict | None,
     strategy: str,
     demo_video_id: str,
+    machine_verdict: str = "",
 ) -> StepResult:
     by_role = assignment_index(assignments)
-    required = [item for item in judgements if _is_required(step, item)]
+    required = [item for item in judgements if item.human or _is_required(step, item)]
     order = _order(step, required, all_judgements)
     verdict, category, corrected = _decide(step, required, order)
     explanation = _explanation(step, required, order, verdict)
-    machine = verdict
     verdict, category, explanation = _strategy(strategy, verdict, category, explanation, proposal, alignment)
     state = _execution_state(verdict, corrected or order == "corrected", alignment)
     if corrected or order == "corrected":
@@ -164,8 +191,15 @@ def _step_result(
         demo_time_end=step.demo_time_end,
         execution_time=execution_time,
         predicates=judgements,
-        machine_verdict=machine,
+        machine_verdict=machine_verdict or verdict,
+        basis=_basis(required, verdict),
     )
+
+
+def _basis(judgements: list[PredicateJudgement], verdict: str) -> str:
+    if any(item.human for item in judgements):
+        return "human_confirmed"
+    return "model_evidence" if verdict in {"PASS", "FAIL"} else "none"
 
 
 def _is_required(step: TemplateStep, judgement: PredicateJudgement) -> bool:
@@ -269,7 +303,7 @@ def _expected(step: TemplateStep, roles: dict[str, RoleAssignment]) -> str:
             parts.append(f"{subject} {predicate.relation} {target}".strip())
         else:
             parts.append(f"{subject} reaches {predicate.state_label or predicate.to_state}".strip())
-    return "; ".join(parts) or step.expected_action or step.name
+    return "; ".join(parts) or step.completion_text or step.expected_action or step.name
 
 
 def _label(roles: dict[str, RoleAssignment], role_id: str) -> str:

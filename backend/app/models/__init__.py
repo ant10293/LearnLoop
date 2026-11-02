@@ -1,5 +1,6 @@
 """Import all models so metadata is complete."""
 
+from app.models.product import HumanObservation, ProcedureRecording  # noqa: F401
 from app.models.audio import AudioAlignment, TranscriptSegment
 from app.models.domain import (
     ActionRow,

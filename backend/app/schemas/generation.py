@@ -216,3 +216,37 @@ class AmbiguitiesOutput(_Closed):
 class ReinspectionOutput(_Closed):
     summary: str
     ambiguities: list[GeneratedAmbiguity]
+
+
+class GuidedObject(_Closed):
+    local_id: str
+    label: str
+    description: str
+    visual_characteristics: str
+    initial_state: str
+    final_state: str
+    uncertain_identity: bool
+
+
+class GuidedObservation(_Closed):
+    """Where one object is at a moment. No box: verification reads results, not tracks."""
+
+    object_local_id: str
+    timestamp: float
+    visibility: Visibility
+    description: str
+    evidence: GeneratedEvidence
+
+
+class GuidedTaskOutput(_Closed):
+    """The short task analysis for fixed-camera procedures. Field names match AnalysisDocument."""
+
+    summary: str
+    objects: list[GuidedObject]
+    observations: list[GuidedObservation]
+    transitions: list[GeneratedTransition]
+    relationships: list[GeneratedRelationship]
+    actions: list[GeneratedAction]
+    workflow_steps: list[GeneratedStep]
+    dependencies: list[GeneratedDependency]
+    ambiguities: list[GeneratedAmbiguity]

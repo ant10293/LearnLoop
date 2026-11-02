@@ -63,7 +63,22 @@ def _relation(predicate, execution, subject, target, roles, video_id: str) -> Pr
             support_onsets=[item.time_start for item in supports],
             error_category="TEMPORARY_ERROR_CORRECTED" if corrected else "",
         )
-    occupants = _occupants(execution, predicate.relation, target_ids, subject_ids)
+    swapped = [
+        item for item in _reversed_relations(execution, predicate.relation, subject_ids, target_ids)
+        if item.time_end >= window[0] - 1e-6
+    ]
+    if swapped and _visible(execution, target_ids, window):
+        return PredicateJudgement(
+            predicate_id=predicate.id,
+            status="fail",
+            error_category="INCORRECT_PLACEMENT",
+            note="The mapped instances are arranged the opposite way around from the learned condition.",
+            evidence=[_relation_evidence(item, video_id) for item in swapped],
+            support_onsets=[item.time_start for item in swapped],
+        )
+    # A part that belongs to another step can share the anchor. Only a part with no role is a wrong component.
+    in_procedure = {object_id for role in roles.values() for object_id in role.object_local_ids}
+    occupants = _occupants(execution, predicate.relation, target_ids, subject_ids | in_procedure)
     if occupants and _visible(execution, target_ids, window):
         return PredicateJudgement(
             predicate_id=predicate.id,
@@ -194,7 +209,47 @@ def _state(predicate, execution, subject, video_id: str, attempted: bool) -> Pre
     return _cannot(predicate, "No directly observed state establishes this completion condition.")
 
 
+_INVERSE = {"above": "below", "below": "above", "left_of": "right_of", "right_of": "left_of"}
+
+
+def _directed(relation, kind: str, subject_ids: set[str], target_ids: set[str]) -> str:
+    """For a directional kind: same, reversed, or other. "A below B" states "B above A"."""
+    forward = enum_value(relation.kind) == kind
+    subject, other = relation.subject_local_id, relation.other_local_id
+    if (forward and subject in subject_ids and other in target_ids) or (
+        not forward and other in subject_ids and subject in target_ids
+    ):
+        return "same"
+    if (forward and subject in target_ids and other in subject_ids) or (
+        not forward and other in target_ids and subject in subject_ids
+    ):
+        return "reversed"
+    return "other"
+
+
+def _reversed_relations(execution, kind: str, subject_ids: set[str], target_ids: set[str]):
+    if kind not in _INVERSE or not subject_ids:
+        return []
+    return [
+        relation
+        for relation in execution.relationships
+        if enum_value(relation.kind) in {kind, _INVERSE[kind]}
+        and relation.other_local_id is not None
+        and evidence_class(relation) == "DIRECTLY_OBSERVED"
+        and _directed(relation, kind, subject_ids, target_ids) == "reversed"
+    ]
+
+
 def _relations(execution, kind: str, subject_ids: set[str], target_ids: set[str], direct_only: bool):
+    if kind in _INVERSE and subject_ids:
+        return [
+            relation
+            for relation in execution.relationships
+            if enum_value(relation.kind) in {kind, _INVERSE[kind]}
+            and relation.other_local_id is not None
+            and (not direct_only or evidence_class(relation) == "DIRECTLY_OBSERVED")
+            and _directed(relation, kind, subject_ids, target_ids) == "same"
+        ]
     found = []
     for relation in execution.relationships:
         if enum_value(relation.kind) != kind or relation.other_local_id is None:
@@ -274,6 +329,71 @@ def _context_visible(predicate, execution, roles: dict[str, RoleAssignment], anc
         if matches:
             return True
     return False
+
+
+def apply_human(
+    step_id: str,
+    predicate_ids: list[str],
+    judgements: list[PredicateJudgement],
+    records: list[dict],
+    execution: AnalysisDocument,
+    video_id: str,
+) -> list[PredicateJudgement]:
+    """Fold reviewer observations in as evidence.
+
+    A record counts only when it cites a moment in the final interval, because
+    a completion condition is about the end state. An earlier one is noted and
+    leaves the machine reading in place.
+    """
+    start = _final_window(execution)[0]
+    by_id = {item.predicate_id: item for item in judgements}
+    targets = predicate_ids or [f"human:{step_id}"]
+    for record in records:
+        chosen = [record["predicate_id"]] if record.get("predicate_id") in targets else targets
+        for predicate_id in chosen:
+            current = by_id.get(predicate_id)
+            if float(record["timestamp"]) < start - 1e-6:
+                if current is not None:
+                    current.note = (
+                        f"{current.note} A reviewer observation at {record['timestamp']:.2f}s was not used: "
+                        f"it is before the final interval, which starts at {start:.2f}s."
+                    ).strip()
+                continue
+            by_id[predicate_id] = _human_judgement(predicate_id, record, current, video_id)
+    return list(by_id.values())
+
+
+def _human_judgement(predicate_id: str, record: dict, current, video_id: str) -> PredicateJudgement:
+    answer = record["answer"]
+    status = {"installed": "pass", "not_installed": "fail"}.get(answer, "cannot")
+    words = {
+        "installed": "A reviewer confirmed the condition holds",
+        "not_installed": "A reviewer confirmed the condition does not hold",
+    }.get(answer, "A reviewer could not determine the condition")
+    category = ""
+    if status == "fail":
+        category = (current.error_category if current and current.status == "fail" else "") or "MISSING_COMPONENT"
+    elif status == "cannot":
+        category = "UNVERIFIABLE_OPERATION"
+    note = f"{words} at {record['timestamp']:.2f}s."
+    if record.get("note"):
+        note += f" {record['note']}"
+    return PredicateJudgement(
+        predicate_id=predicate_id,
+        status=status,
+        error_category=category,
+        note=note,
+        human=True,
+        evidence=[
+            EvidenceRef(
+                video_id=video_id,
+                timestamp=float(record["timestamp"]),
+                observation=note,
+                evidence_class="DIRECTLY_OBSERVED" if status != "cannot" else "UNKNOWN",
+                provenance="HUMAN_ANNOTATION",
+            )
+        ],
+    )
 
 
 def _final_window(execution: AnalysisDocument) -> tuple[float, float]:

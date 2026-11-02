@@ -8,6 +8,7 @@ import time
 import httpx
 from openai import AsyncOpenAI
 
+from app.config import settings
 from app.providers.common import data_url, translate
 from app.providers.model_list import capabilities_for
 from app.providers.types import (
@@ -38,7 +39,8 @@ class MetaProvider:
         return caps
 
     def _client(self, secret: str, timeout: float) -> AsyncOpenAI:
-        return AsyncOpenAI(api_key=secret, base_url=META_BASE, timeout=timeout)
+        # The SDK retries by default. A retry is another billable request, so it stays off.
+        return AsyncOpenAI(api_key=secret, base_url=META_BASE, timeout=timeout, max_retries=0)
 
     async def validate(self, secret: str) -> None:
         try:
@@ -71,6 +73,10 @@ class MetaProvider:
         return sorted(set(names))
 
     async def generate(self, secret: str, request: GenerationRequest) -> ProviderResponse:
+        if not settings.live_inference:
+            raise UnsupportedMode(
+                "Live Meta calls are off. Set LEARNLOOP_LIVE_INFERENCE=1 to allow them. Nothing was sent."
+            )
         caps = self.capabilities(request.model_id)
         if request.modality == "native_video":
             if not caps.native_video:
@@ -88,7 +94,7 @@ class MetaProvider:
             "instructions": request.system_prompt,
             "input": [{"role": "user", "content": content}],
             "store": False,
-            "max_output_tokens": MAX_OUTPUT_TOKENS,
+            "max_output_tokens": request.max_output_tokens or MAX_OUTPUT_TOKENS,
         }
         if request.reasoning_effort:
             if request.reasoning_effort not in caps.reasoning_efforts:

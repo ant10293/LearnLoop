@@ -1,0 +1,325 @@
+"""The product surface: procedures, recordings, and one analysis call at a time."""
+
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from app.api.serialize import video_dict
+from app.config import settings
+from app.db import get_session
+from app.models.media import Project, VideoAsset
+from app.models.product import ProcedureRecording
+from app.models.runs import AnalysisRun, ModelRequestRow, PipelineStageRun
+from app.models.util import new_id
+from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
+from app.pipeline import guided
+from app.providers.types import UnsupportedMode
+from app.services import verification_store as store
+from app.services.ingest import accept_upload, ingest_file, playback_path, schedule_ingest
+from app.services.storage import data_path, safe_filename
+from app.video.frames import extract_frame
+from app.video.probe import VideoError
+
+router = APIRouter(prefix="/api/learnloop", tags=["learnloop"])
+
+
+def db() -> Session:
+    yield from get_session()
+
+
+class ProcedureBody(BaseModel):
+    name: str
+
+
+class AnalyzeBody(BaseModel):
+    # False means: use a stored answer or say what a live call would involve.
+    allow_live: bool = False
+
+
+class LearnBody(BaseModel):
+    run_id: str
+
+
+class VerifyBody(BaseModel):
+    run_id: str
+
+
+@router.get("/status")
+def status(session: Session = Depends(db)) -> dict:
+    from app.services.credentials import load_secret
+
+    secret, _source = load_secret(session, "meta")
+    return {
+        "profile": guided.PROFILE,
+        "model_id": guided.DEFAULT_MODEL,
+        "modality": guided.MODALITY,
+        "max_clip_seconds": guided.MAX_CLIP_SECONDS,
+        "live_enabled": settings.live_inference,
+        "meta_key_configured": bool(secret),
+        "providers": ["meta"],
+    }
+
+
+@router.get("/procedures")
+def list_procedures(session: Session = Depends(db)) -> list[dict]:
+    rows = session.scalars(select(Project).order_by(Project.created_at.desc())).all()
+    return [_summary(session, row) for row in rows if _is_procedure(session, row)]
+
+
+@router.post("/procedures")
+def create_procedure(payload: ProcedureBody, session: Session = Depends(db)) -> dict:
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(400, "Name the procedure.")
+    row = Project(name=name[:200], description="learnloop_procedure", is_task=False)
+    session.add(row)
+    session.commit()
+    return _summary(session, row)
+
+
+@router.get("/procedures/{project_id}")
+def get_procedure(project_id: str, session: Session = Depends(db)) -> dict:
+    project = _project(session, project_id)
+    recordings = _recordings(session, project_id)
+    templates = store.list_templates(session, project_id)
+    verifications = store.list_verifications(session, project_id)
+    return {
+        **_summary(session, project),
+        "recordings": [_recording(session, item) for item in recordings],
+        "templates": templates,
+        "template": templates[-1] if templates else None,
+        "verifications": verifications,
+    }
+
+
+@router.post("/procedures/{project_id}/recordings")
+async def upload_recording(
+    project_id: str,
+    role: str = Form(...),
+    file: UploadFile = File(...),
+    session: Session = Depends(db),
+) -> dict:
+    _project(session, project_id)
+    if role not in {"demonstration", "execution"}:
+        raise HTTPException(400, "A recording is a demonstration or an execution.")
+    temp = data_path("imports", f"upload_{new_id()}_{safe_filename(file.filename or 'video')}")
+    temp.parent.mkdir(parents=True, exist_ok=True)
+    size = 0
+    try:
+        with temp.open("wb") as handle:
+            while chunk := await file.read(1024 * 1024):
+                size += len(chunk)
+                if size > settings.max_upload_bytes:
+                    raise HTTPException(413, "This file is larger than the upload limit.")
+                handle.write(chunk)
+        if size == 0:
+            raise HTTPException(400, "This file is empty.")
+        if settings.ingest_inline:
+            video = ingest_file(session, project_id, file.filename or "video.mp4", temp)
+        else:
+            video = accept_upload(session, project_id, file.filename or "video.mp4", temp)
+    except VideoError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    finally:
+        if temp.exists():
+            temp.unlink()
+    existing = session.get(ProcedureRecording, video.id)
+    if existing is None:
+        session.add(ProcedureRecording(video_id=video.id, project_id=project_id, role=role))
+    else:
+        existing.role = role
+    session.commit()
+    if not settings.ingest_inline:
+        schedule_ingest(video.id)
+    return _recording(session, session.get(ProcedureRecording, video.id))
+
+
+@router.get("/recordings/{video_id}")
+def get_recording(video_id: str, session: Session = Depends(db)) -> dict:
+    row = session.get(ProcedureRecording, video_id)
+    if row is None:
+        raise HTTPException(404, "recording not found")
+    return _recording(session, row)
+
+
+@router.post("/recordings/{video_id}/analyze")
+def analyze(video_id: str, payload: AnalyzeBody, session: Session = Depends(db)) -> dict:
+    """Replay a stored answer, or send one call that the person approved. Never both, never twice."""
+    recording = session.get(ProcedureRecording, video_id)
+    video = session.get(VideoAsset, video_id)
+    if recording is None or video is None:
+        raise HTTPException(404, "recording not found")
+    if (video.ingest_status or "ready") != "ready":
+        raise HTTPException(409, "This recording is still being prepared.")
+    if float(video.duration_sec or 0) > guided.MAX_CLIP_SECONDS:
+        raise HTTPException(
+            400,
+            f"This recording is {video.duration_sec:.0f} seconds. LearnLoop supports up to {guided.MAX_CLIP_SECONDS:.0f} seconds.",
+        )
+    template_row = None
+    if recording.role == "execution":
+        template_row = _accepted_template(session, recording.project_id)
+        if template_row is None:
+            raise HTTPException(409, "Accept the learned procedure before analyzing a new attempt.")
+    document = template_row.document_json if template_row else None
+    plan = guided.plan(video, template=document)
+    if not plan["cached"] and not (payload.allow_live and settings.live_inference):
+        raise HTTPException(409, {"code": "live_call_required", "plan": plan})
+    try:
+        run = guided.create_guided_run(
+            session,
+            video,
+            template=document,
+            template_id=template_row.id if template_row else "",
+            allow_live=payload.allow_live,
+        )
+    except (ValueError, UnsupportedMode) as exc:
+        raise HTTPException(400, str(exc)) from exc
+    return _run_payload(session, run)
+
+
+@router.get("/runs/{run_id}")
+def get_run(run_id: str, session: Session = Depends(db)) -> dict:
+    run = session.get(AnalysisRun, run_id)
+    if run is None:
+        raise HTTPException(404, "analysis not found")
+    return _run_payload(session, run)
+
+
+@router.post("/procedures/{project_id}/learn")
+def learn(project_id: str, payload: LearnBody, session: Session = Depends(db)) -> dict:
+    try:
+        return store.create_template(session, project_id, payload.run_id, promote_supported=True, results_first=True)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+
+
+@router.post("/templates/{template_id}/verify")
+def verify(template_id: str, payload: VerifyBody, session: Session = Depends(db)) -> dict:
+    try:
+        return store.start_verification(
+            session,
+            template_id,
+            {"execution_run_id": payload.run_id, "strategy": "tracked", "require_accepted": True},
+        )
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
+
+
+@router.get("/videos/{video_id}/frame")
+def frame(video_id: str, t: float = 0, session: Session = Depends(db)) -> FileResponse:
+    """The recorded picture at a timestamp, for evidence snapshots."""
+    video = session.get(VideoAsset, video_id)
+    if video is None:
+        raise HTTPException(404, "recording not found")
+    stamp = min(max(t, 0), max(float(video.duration_sec or 0) - 0.05, 0))
+    dest = data_path("evidence_frames", video_id, f"{stamp:.2f}.jpg")
+    if not dest.exists():
+        try:
+            extract_frame(playback_path(video), stamp, dest)
+        except Exception as exc:
+            raise HTTPException(500, f"The frame could not be read: {exc}") from exc
+    return FileResponse(dest, media_type="image/jpeg")
+
+
+def _project(session: Session, project_id: str) -> Project:
+    row = session.get(Project, project_id)
+    if row is None:
+        raise HTTPException(404, "procedure not found")
+    return row
+
+
+def _is_procedure(session: Session, row: Project) -> bool:
+    return row.description == "learnloop_procedure"
+
+
+def _recordings(session: Session, project_id: str) -> list[ProcedureRecording]:
+    return list(
+        session.scalars(
+            select(ProcedureRecording)
+            .where(ProcedureRecording.project_id == project_id)
+            .order_by(ProcedureRecording.created_at)
+        )
+    )
+
+
+def _latest_run(session: Session, video_id: str) -> AnalysisRun | None:
+    return session.scalar(
+        select(AnalysisRun).where(AnalysisRun.video_id == video_id).order_by(AnalysisRun.created_at.desc())
+    )
+
+
+def _recording(session: Session, row: ProcedureRecording) -> dict:
+    video = session.get(VideoAsset, row.video_id)
+    run = _latest_run(session, row.video_id)
+    return {
+        "role": row.role,
+        "video": video_dict(video) if video else None,
+        "run": _run_payload(session, run) if run else None,
+    }
+
+
+def _accepted_template(session: Session, project_id: str) -> LearnedWorkflowTemplate | None:
+    return session.scalar(
+        select(LearnedWorkflowTemplate)
+        .where(
+            LearnedWorkflowTemplate.project_id == project_id,
+            LearnedWorkflowTemplate.acceptance_status == "accepted",
+        )
+        .order_by(LearnedWorkflowTemplate.version.desc())
+    )
+
+
+def _run_payload(session: Session, run: AnalysisRun) -> dict:
+    config = run.config_json or {}
+    stages = session.scalars(select(PipelineStageRun).where(PipelineStageRun.run_id == run.id)).all()
+    sent = session.query(ModelRequestRow).filter(ModelRequestRow.run_id == run.id).count()
+    return {
+        "id": run.id,
+        "video_id": run.video_id,
+        "status": run.status,
+        "error": run.error,
+        "provider_id": run.provider_id,
+        "model_id": run.model_id,
+        "modality": run.modality,
+        "profile": config.get("analysis_profile") or "",
+        "source": config.get("inference_source") or "",
+        "cached_at": config.get("cached_at") or "",
+        "provider_requests": sent,
+        "reference_template_id": config.get("reference_template_id") or "",
+        "stages": {stage.stage: stage.status for stage in stages},
+        "created_at": run.created_at.isoformat(),
+    }
+
+
+def _summary(session: Session, project: Project) -> dict:
+    recordings = _recordings(session, project.id)
+    demo = next((item for item in recordings if item.role == "demonstration"), None)
+    video = session.get(VideoAsset, demo.video_id) if demo else None
+    template = session.scalar(
+        select(LearnedWorkflowTemplate)
+        .where(LearnedWorkflowTemplate.project_id == project.id)
+        .order_by(LearnedWorkflowTemplate.created_at.desc())
+    )
+    latest = session.scalar(
+        select(VerificationRunRow)
+        .where(VerificationRunRow.project_id == project.id)
+        .order_by(VerificationRunRow.created_at.desc())
+    )
+    steps = [step for step in (template.document_json.get("steps") or []) if not step.get("removed")] if template else []
+    return {
+        "id": project.id,
+        "name": project.name,
+        "created_at": project.created_at.isoformat(),
+        "thumbnail_url": f"/api/media/videos/{video.id}/thumbnail" if video and video.thumbnail_path else "",
+        "step_count": len(steps),
+        "review_state": store.review_state(template.document_json) if template else "",
+        "execution_count": sum(item.role == "execution" for item in recordings),
+        "latest_outcome": latest.overall_result if latest else "",
+    }

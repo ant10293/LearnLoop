@@ -10,6 +10,7 @@ import cv2
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models.domain import Artifact, SegmentationMask
 from app.models.media import FrameAsset, VideoAsset
 from app.models.runs import AnalysisRevision, AnalysisRun, Job, PipelineStageRun
@@ -22,6 +23,7 @@ from app.perception.roster import drop_contained_objects, omit_workspace_and_han
 from app.perception.types import TrackingCancelled
 from app.pipeline.actions import collapse_repeated_actions
 from app.pipeline.contracts import StructuredOutputError
+from app.pipeline.guided import SKIPPED_STAGES, is_guided, run_guided_call
 from app.pipeline.infer import (
     SEMANTIC_LISTS,
     BudgetExceeded,
@@ -201,6 +203,23 @@ def _stage(session, run_id: str, name: str) -> PipelineStageRun:
 
 async def _dispatch(session, run: AnalysisRun, video: VideoAsset, stage: PipelineStageRun) -> None:
     name = stage.stage
+    if is_guided(run):
+        if name in SKIPPED_STAGES:
+            raise StageSkipped(SKIPPED_STAGES[name])
+        if name == "scene_analysis":
+            document = await run_guided_call(session, run, video)
+            save_semantic_raw(run.id, document)
+            save_working(run.id, document)
+            _remember(session, run, document, name)
+            stage.checkpoint_json = {
+                "provider": run.provider_id,
+                "model": run.model_id,
+                "modality": run.modality,
+                "source": (run.config_json or {}).get("inference_source"),
+                "objects": len(document.objects),
+                "workflow_steps": len(document.workflow_steps),
+            }
+            return
     if name == "metadata":
         stage.checkpoint_json = {
             "duration_sec": video.duration_sec,
@@ -570,6 +589,8 @@ async def _segment(session, run, video, stage) -> None:
     if not run.active_revision_id:
         raise StageSkipped("No analysis revision is available to segment.")
     if mode in {"sam", "sam_video"}:
+        if not settings.live_inference:
+            raise UnsupportedMode("Live Meta calls are off. SAM was not run.")
         if not _has_meta_key(session):
             raise UnsupportedMode(
                 "SAM 3.1 was selected, but no Meta Model API key is configured. "

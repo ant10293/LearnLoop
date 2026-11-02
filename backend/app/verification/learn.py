@@ -32,6 +32,7 @@ _NOTES = [
     "Passing a step requires an observable completion condition, not an action label alone.",
     "Appearance embeddings are not copied into the template. Role matching reads them only when a later analysis stored a cosine.",
 ]
+_WEAK_RELATIONS = frozenset({"near", "occluded_by", "unknown", "held_by"})
 
 
 def learn_template(
@@ -43,11 +44,15 @@ def learn_template(
     source_run_id: str = "",
     source_revision_id: str = "",
     source_video_id: str = "",
+    results_first: bool = False,
 ) -> LearnedTemplate:
     demo = as_document(document)
     roles = _roles(demo)
     role_of = {object_id: role.role_id for role in roles for object_id in role.source_object_ids}
     steps = [_step(demo, item, role_of) for item in demo.workflow_steps]
+    if results_first:
+        for step in steps:
+            _keep_results(step)
     if not steps:
         steps = _steps_from_actions(demo, role_of)
     _attach_dependencies(demo, steps)
@@ -68,6 +73,25 @@ def learn_template(
         steps=steps,
         notes=list(_NOTES),
     )
+
+
+def _keep_results(step: TemplateStep) -> None:
+    """A placement is the result to check. Weak relations are dropped and a state label only supports it."""
+    step.completion_conditions = [
+        item
+        for item in step.completion_conditions
+        if not (item.type == "physical_relationship" and item.relation in _WEAK_RELATIONS)
+        and not (item.type == "state_transition" and item.to_state == "other")
+    ]
+    for item in step.completion_conditions:
+        item.context_relations = [c for c in item.context_relations if c.get("relation") not in _WEAK_RELATIONS]
+    if any(
+        item.type == "physical_relationship" and item.evidence_requirement == "required"
+        for item in step.completion_conditions
+    ):
+        for item in step.completion_conditions:
+            if item.type != "physical_relationship":
+                item.evidence_requirement = "optional"
 
 
 def _title(demo: AnalysisDocument) -> str:
@@ -154,6 +178,8 @@ def _step(demo: AnalysisDocument, item, role_of: dict[str, str]) -> TemplateStep
         preconditions=list(item.preconditions),
         expected_action=item.expected_action or (actions[0].description if actions else ""),
         expected_action_type=action_type,
+        completion_text=item.completion_condition or "",
+        observed_text=item.observed_result or "",
         completion_conditions=predicates,
         verification_requirements={
             "action_evidence": "optional",

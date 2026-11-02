@@ -58,19 +58,6 @@ from app.perception.corrections import decide_hypothesis, merge_instances, split
 from app.perception.types import TrackingCancelled
 from app.pipeline.perception_stage import run_spatial_stage
 from app.providers.catalog import lookup, models_for
-from app.providers.claude_code import (
-    begin_login,
-    load_claude_code,
-    probe,
-    save_claude_code,
-    submit_login_code,
-)
-from app.providers.codex_cli import begin_login as begin_codex_login
-from app.providers.codex_cli import load_codex, save_codex
-from app.providers.codex_cli import probe as probe_codex
-from app.providers.cursor_cli import begin_login as begin_cursor_login
-from app.providers.cursor_cli import load_cursor_cli, save_cursor_cli
-from app.providers.cursor_cli import probe as probe_cursor
 from app.providers.model_list import options_for
 from app.providers.registry import get_provider, is_local, provider_ids
 from app.providers.types import ProviderError, UnsupportedMode
@@ -734,9 +721,6 @@ def list_providers(session: Session = Depends(db)) -> list[dict]:
                 "base_url": status.extra_base_url if status else "",
                 "local": is_local(provider_id),
                 "models": models,
-                **({"codex": load_codex()} if provider_id == "openai" else {}),
-                **({"claude_code": load_claude_code()} if provider_id == "anthropic" else {}),
-                **({"cursor_cli": load_cursor_cli()} if provider_id == "cursor" else {}),
         }
         if provider_id == "meta":
             from app.providers.sam import sam_capabilities
@@ -744,81 +728,6 @@ def list_providers(session: Session = Depends(db)) -> list[dict]:
             entry["sam"] = sam_capabilities()
         payload.append(entry)
     return payload
-
-
-@router.get("/providers/openai/codex")
-async def codex_status() -> dict:
-    return await probe_codex()
-
-
-@router.put("/providers/openai/codex")
-def put_codex(payload: dict) -> dict:
-    try:
-        return save_codex(payload.get("binary") or "codex", payload.get("transport") or "api")
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.post("/providers/openai/codex/link")
-async def link_codex(payload: dict | None = Body(default=None)) -> dict:
-    force = bool((payload or {}).get("force"))
-    try:
-        return await begin_codex_login(force=force)
-    except ProviderError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.get("/providers/anthropic/claude-code")
-async def claude_code_status() -> dict:
-    return await probe()
-
-
-@router.put("/providers/anthropic/claude-code")
-def put_claude_code(payload: dict) -> dict:
-    try:
-        return save_claude_code(payload.get("binary") or "claude", payload.get("transport") or "api")
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.post("/providers/anthropic/claude-code/link")
-async def link_claude_code(payload: dict | None = Body(default=None)) -> dict:
-    force = bool((payload or {}).get("force"))
-    try:
-        return await begin_login(force=force)
-    except ProviderError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.post("/providers/anthropic/claude-code/link/code")
-async def claude_code_login_code(payload: dict | None = Body(default=None)) -> dict:
-    try:
-        return await submit_login_code((payload or {}).get("code") or "")
-    except ProviderError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.get("/providers/cursor/cli")
-async def cursor_cli_status(session: Session = Depends(db)) -> dict:
-    secret, _source = load_secret(session, "cursor")
-    return await probe_cursor(secret)
-
-
-@router.put("/providers/cursor/cli")
-def put_cursor_cli(payload: dict) -> dict:
-    try:
-        return save_cursor_cli(payload.get("binary") or "agent", payload.get("transport") or "login")
-    except ValueError as exc:
-        raise HTTPException(400, str(exc)) from exc
-
-
-@router.post("/providers/cursor/cli/link")
-async def link_cursor_cli(payload: dict | None = Body(default=None)) -> dict:
-    force = bool((payload or {}).get("force"))
-    try:
-        return await begin_cursor_login(force=force)
-    except ProviderError as exc:
-        raise HTTPException(400, str(exc)) from exc
 
 
 @router.post("/providers/{provider_id}/credentials")
@@ -849,11 +758,7 @@ async def validate_provider(provider_id: str, session: Session = Depends(db)) ->
         record_validation(session, provider_id, True, "")
         return {"ok": True, "provider_id": provider_id, "detail": "local provider"}
     secret, source = load_secret(session, provider_id)
-    cursor_login = provider_id == "cursor" and load_cursor_cli()["transport"] == "login"
-    codex_login = provider_id == "openai" and load_codex()["transport"] == "codex"
-    if cursor_login or codex_login:
-        secret, source = "", "cli"
-    elif not secret:
+    if not secret:
         record_validation(session, provider_id, False, "no credentials configured")
         raise HTTPException(400, "no credentials configured")
     try:

@@ -10,6 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.media import Project, VideoAsset
+from app.models.product import HumanObservation
 from app.models.runs import AnalysisRevision, AnalysisRun
 from app.models.util import utcnow
 from app.models.verification import (
@@ -25,7 +26,7 @@ from app.verification.engine import verify_execution
 from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.learn import learn_template
 from app.verification.reinspect import apply_finding, plan_reinspections
-from app.verification.schema import LearnedTemplate
+from app.verification.schema import CompletionPredicate, LearnedTemplate
 
 
 def create_template(
@@ -36,6 +37,7 @@ def create_template(
     name: str = "",
     promote_supported: bool = False,
     accept: bool = False,
+    results_first: bool = False,
 ) -> dict:
     project = _project(session, project_id)
     run, revision = _completed_run(session, run_id, project.id)
@@ -48,6 +50,7 @@ def create_template(
         source_run_id=run.id,
         source_revision_id=revision.id,
         source_video_id=run.video_id,
+        results_first=results_first,
     )
     row = LearnedWorkflowTemplate(
         project_id=project.id,
@@ -81,36 +84,43 @@ def get_template(session: Session, template_id: str) -> dict:
     return template_payload(_template(session, template_id))
 
 
+CONTENT_FIELDS = ("name", "expected_action", "completion_text", "removed", "completion_conditions", "required")
+
+
 def revise_template(session: Session, template_id: str, patch: dict) -> dict:
+    """Every edit is a new version. The model's version stays as it was."""
     current = _template(session, template_id)
     document = LearnedTemplate.model_validate(current.document_json)
-    if patch.get("name"):
+    log: list[dict] = []
+    if patch.get("name") and patch["name"] != document.name:
+        log.append(_edit("name", "", document.name, patch["name"]))
         document.name = patch["name"]
-    if patch.get("acceptance_status") in {"draft", "accepted"}:
-        document.acceptance_status = patch["acceptance_status"]
     steps = {step.step_id: step for step in document.steps}
+    roles = {role.role_id: role for role in document.roles}
     for change in patch.get("steps") or []:
         step = steps.get(change.get("step_id") or "")
         if step is None:
             continue
-        if "required" in change:
-            step.required = bool(change["required"])
-        if change.get("requirement_status") in {"observed", "required", "optional", "uncertain"}:
-            step.requirement_status = change["requirement_status"]
-            step.required = step.requirement_status == "required"
-        if "uncertainty_notes" in change:
-            step.uncertainty_notes = change.get("uncertainty_notes") or ""
-        if "name" in change and change["name"]:
-            step.name = change["name"]
-    roles = {role.role_id: role for role in document.roles}
+        _revise_step(step, change, roles, log)
     for change in patch.get("roles") or []:
         role = roles.get(change.get("role_id") or "")
         if role is None:
             continue
-        if change.get("cardinality") in {"one", "group"}:
+        if change.get("cardinality") in {"one", "group"} and change["cardinality"] != role.cardinality:
+            log.append(_edit("cardinality", role.role_id, role.cardinality, change["cardinality"]))
             role.cardinality = change["cardinality"]
-        if "label" in change and change["label"]:
+        if change.get("label") and change["label"] != role.label:
+            log.append(_edit("label", role.role_id, role.label, change["label"]))
+            role.original_label = role.original_label or role.label
             role.label = change["label"]
+    if log:
+        # Changed content has not been accepted, whatever the parent's status was.
+        document.acceptance_status = "draft"
+    if patch.get("acceptance_status") in {"draft", "accepted"}:
+        if patch["acceptance_status"] != document.acceptance_status:
+            log.append(_edit("acceptance_status", "", document.acceptance_status, patch["acceptance_status"]))
+        document.acceptance_status = patch["acceptance_status"]
+    document.review_log = [*document.review_log, *[{**item, "from_version": current.version} for item in log]]
     version = _next_version(session, current.family_id)
     row = LearnedWorkflowTemplate(
         project_id=current.project_id,
@@ -129,8 +139,76 @@ def revise_template(session: Session, template_id: str, patch: dict) -> dict:
     return template_payload(row)
 
 
+def _edit(field: str, target: str, before, after) -> dict:
+    return {"field": field, "target": target, "before": before, "after": after, "provenance": "HUMAN_CORRECTION"}
+
+
+def _revise_step(step, change: dict, roles: dict, log: list[dict]) -> None:
+    def record(field: str, after) -> None:
+        log.append(_edit(field, step.step_id, getattr(step, field), after))
+        setattr(step, field, after)
+        if field not in step.human_edited:
+            step.human_edited.append(field)
+
+    if change.get("requirement_status") in {"observed", "required", "optional", "uncertain"}:
+        if change["requirement_status"] != step.requirement_status:
+            record("requirement_status", change["requirement_status"])
+        step.required = step.requirement_status == "required"
+    elif change.get("required") is not None and bool(change["required"]) != step.required:
+        record("required", bool(change["required"]))
+    if "uncertainty_notes" in change and change["uncertainty_notes"] is not None:
+        step.uncertainty_notes = change["uncertainty_notes"]
+    for field in ("name", "expected_action", "completion_text"):
+        if change.get(field) and change[field] != getattr(step, field):
+            record(field, change[field])
+    if change.get("removed") is not None and bool(change["removed"]) != step.removed:
+        record("removed", bool(change["removed"]))
+    if change.get("completion_conditions") is not None:
+        conditions = []
+        for index, item in enumerate(change["completion_conditions"]):
+            if item.get("subject_role") not in roles or (item.get("target_role") and item["target_role"] not in roles):
+                raise ValueError("A completion condition names an object that is not in this procedure.")
+            if not item.get("relation") and not item.get("state_label"):
+                raise ValueError("A completion condition needs a relation or a state.")
+            conditions.append(
+                CompletionPredicate(
+                    id=item.get("id") or f"human:{index}",
+                    type="physical_relationship" if item.get("relation") else "final_state",
+                    subject_role=item["subject_role"],
+                    target_role=item.get("target_role") or "",
+                    relation=item.get("relation") or "",
+                    state_label=item.get("state_label") or "",
+                    to_state=item.get("state_label") or "",
+                    evidence_requirement="required",
+                    source_evidence_class="HUMAN_SPECIFIED",
+                    context_relations=item.get("context_relations") or [],
+                    origin="human",
+                )
+            )
+        log.append(
+            _edit(
+                "completion_conditions",
+                step.step_id,
+                [item.model_dump() for item in step.completion_conditions],
+                [item.model_dump() for item in conditions],
+            )
+        )
+        step.completion_conditions = conditions
+        if "completion_conditions" not in step.human_edited:
+            step.human_edited.append("completion_conditions")
+
+
+def review_state(document: dict) -> str:
+    """ai_draft, human_reviewed, or accepted. Only a reviewer's action moves it off ai_draft."""
+    if document.get("acceptance_status") == "accepted":
+        return "accepted"
+    return "human_reviewed" if document.get("review_log") else "ai_draft"
+
+
 def start_verification(session: Session, template_id: str, payload: dict) -> dict:
     template = _template(session, template_id)
+    if payload.get("require_accepted") and template.acceptance_status != "accepted":
+        raise ValueError("Accept the procedure before checking a recording against it.")
     run = session.get(AnalysisRun, payload["execution_run_id"])
     if run is None or run.project_id != template.project_id:
         raise LookupError("execution run not found")
@@ -231,6 +309,7 @@ def export_verification(session: Session, verification_id: str) -> dict:
         "template": template.document_json,
         "verification": verification_payload(session, row),
         "evidence": list_evidence(session, row.id),
+        "human_observations": _observations(session, row.id),
         "machine_report": row.machine_report_json,
     }
 
@@ -321,6 +400,7 @@ def correct_step(session: Session, verification_id: str, step_id: str, verdict: 
             item["explanation"] = note or item.get("explanation") or ""
             item["error_category"] = "" if verdict != "FAIL" else (item.get("error_category") or "INCORRECT_PHYSICAL_STATE")
             item["review_required"] = False
+            item["basis"] = "human_override"
         steps.append(item)
     if not found:
         raise LookupError("step not found")
@@ -348,7 +428,7 @@ def correct_role(session: Session, verification_id: str, role_id: str, object_lo
     overrides[role_id] = object_local_id
     config["role_overrides"] = overrides
     previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
-    report = _run_engine(template, revision, run, config)
+    report = _run_engine(template, revision, run, config, _observations(session, row.id))
     for step in report["steps"]:
         old = previous.get(step["step_id"])
         if not old:
@@ -370,6 +450,87 @@ def correct_role(session: Session, verification_id: str, role_id: str, object_lo
     _replace_details(session, row, report)
     session.commit()
     return verification_payload(session, row)
+
+
+ANSWERS = {"installed", "not_installed", "cannot_determine"}
+
+
+def record_observation(session: Session, verification_id: str, step_id: str, payload: dict) -> dict:
+    """Store what a reviewer saw and let the verifier read it. The button does not set a verdict."""
+    if payload.get("answer") not in ANSWERS:
+        raise ValueError("unsupported answer")
+    if not (payload.get("reviewer") or "").strip():
+        raise ValueError("Name the reviewer so the record can be audited.")
+    row = _verification(session, verification_id)
+    if not any(step.get("step_id") == step_id for step in (row.report_json or {}).get("steps") or []):
+        raise LookupError("step not found")
+    run = session.get(AnalysisRun, row.execution_run_id)
+    revision = session.get(AnalysisRevision, row.execution_revision_id)
+    template = _template(session, row.template_id)
+    if run is None or revision is None:
+        raise LookupError("execution analysis not found")
+    session.add(
+        HumanObservation(
+            verification_id=row.id,
+            step_id=step_id,
+            predicate_id=payload.get("predicate_id") or "",
+            answer=payload["answer"],
+            timestamp=float(payload["timestamp"]),
+            video_id=row.execution_video_id,
+            revision_id=row.execution_revision_id,
+            reviewer=payload["reviewer"].strip(),
+            note=payload.get("note") or "",
+        )
+    )
+    session.flush()
+    previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id))
+    for step in report["steps"]:
+        old = previous.get(step["step_id"]) or {}
+        history = list(old.get("history") or [])
+        if old.get("verdict") != step["verdict"]:
+            history.append(
+                {
+                    "verdict": old.get("verdict"),
+                    "error_category": old.get("error_category"),
+                    "provenance": "DETERMINISTIC",
+                    "note": "Verdict before a reviewer observation.",
+                }
+            )
+        step["history"] = history
+    report["verification_id"] = row.id
+    report["template_id"] = template.id
+    report["template_version"] = template.version
+    report["execution_run_id"] = run.id
+    report["execution_revision_id"] = revision.id
+    row.report_json = report
+    row.overall_result = report["overall"]
+    _replace_details(session, row, report)
+    session.commit()
+    return verification_payload(session, row)
+
+
+def _observations(session: Session, verification_id: str) -> list[dict]:
+    rows = session.scalars(
+        select(HumanObservation)
+        .where(HumanObservation.verification_id == verification_id)
+        .order_by(HumanObservation.created_at)
+    ).all()
+    return [
+        {
+            "id": row.id,
+            "step_id": row.step_id,
+            "predicate_id": row.predicate_id,
+            "answer": row.answer,
+            "timestamp": row.timestamp,
+            "video_id": row.video_id,
+            "revision_id": row.revision_id,
+            "reviewer": row.reviewer,
+            "note": row.note,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]
 
 
 def save_ground_truth(session: Session, verification_id: str, payload: dict) -> dict:
@@ -419,6 +580,7 @@ def template_payload(row: LearnedWorkflowTemplate, video: VideoAsset | None = No
         "parent_id": row.parent_id,
         "name": row.name,
         "acceptance_status": row.acceptance_status,
+        "review_state": review_state(row.document_json or {}),
         "source_run_id": row.source_run_id,
         "source_revision_id": row.source_revision_id,
         "source_video_id": row.source_video_id,
@@ -459,6 +621,7 @@ def verification_payload(session: Session, row: VerificationRunRow, brief: bool 
         ]
         return payload
     payload["report"] = row.report_json
+    payload["human_observations"] = _observations(session, row.id)
     return payload
 
 
@@ -475,7 +638,7 @@ def _fill(session: Session, row: VerificationRunRow, run: AnalysisRun) -> None:
     row.execution_video_id = run.video_id
     row.status = "running"
     row.started_at = row.started_at or utcnow()
-    report = _run_engine(template, revision, run, row.config_json or {})
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id))
     report["verification_id"] = row.id
     report["template_id"] = template.id
     report["template_version"] = template.version
@@ -506,7 +669,13 @@ def _fill(session: Session, row: VerificationRunRow, run: AnalysisRun) -> None:
     _replace_details(session, row, report)
 
 
-def _run_engine(template: LearnedWorkflowTemplate, revision: AnalysisRevision, run: AnalysisRun, config: dict) -> dict:
+def _run_engine(
+    template: LearnedWorkflowTemplate,
+    revision: AnalysisRevision,
+    run: AnalysisRun,
+    config: dict,
+    human: list[dict] | None = None,
+) -> dict:
     return verify_execution(
         template.document_json,
         revision.document_json,
@@ -516,6 +685,7 @@ def _run_engine(template: LearnedWorkflowTemplate, revision: AnalysisRevision, r
         execution_video_id=run.video_id,
         demonstration_video_id=template.source_video_id,
         analysis_complete=True,
+        human_observations=human or [],
     )
 
 

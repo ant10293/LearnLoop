@@ -219,3 +219,21 @@ def test_g_wrong_instance_in_the_relation_is_an_incorrect_component():
     assert sleeve["error_category"] == "INCORRECT_COMPONENT"
     role = next(item for item in report["roles"] if item["label"] == "sleeve")
     assert role["status"] == "unresolved"
+
+
+def test_a_reversed_directional_arrangement_is_a_misplacement_and_an_inverse_kind_is_support():
+    demo = document(
+        objects=[obj("a", "top block", "red", "red"), obj("b", "bottom block", "blue", "blue")],
+        observations=[obs("a", 9), obs("b", 9)],
+        relationships=[rel("a", "b", "above", 3, 9)],
+        actions=[action("act", "attach", 2, 3, ["a", "b"])],
+        steps=[step("s", "Stack", ["a", "b"], ["act"], 2, 3, "Stack the blocks")],
+    )
+    template = learn_template(demo, promote_supported=True, accept=True)
+    objects = [obj("a", "top block", "red", "red"), obj("b", "bottom block", "blue", "blue")]
+    seen = [obs("a", 9), obs("b", 9)]
+    acts = [action("act", "attach", 2, 3, ["a", "b"])]
+    swapped = document(objects=objects, observations=seen, relationships=[rel("b", "a", "above", 3, 9)], actions=acts)
+    assert verify_execution(template, swapped)["steps"][0]["error_category"] == "INCORRECT_PLACEMENT"
+    inverse = document(objects=objects, observations=seen, relationships=[rel("b", "a", "below", 3, 9)], actions=acts)
+    assert verify_execution(template, inverse)["steps"][0]["verdict"] == "PASS"

@@ -116,6 +116,7 @@ class GenerationRequest:
     reasoning_effort: str | None = None
     image_detail: str = "high"
     timeout_s: float = 180
+    max_output_tokens: int | None = None
     metadata: dict = field(default_factory=dict)
 
 
