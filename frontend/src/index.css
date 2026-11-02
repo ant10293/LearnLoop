@@ -64,6 +64,14 @@ p { margin: 0.3rem 0; }
 .btn.small { padding: 0.25rem 0.55rem; font-size: 0.8rem; }
 .field { padding: 0.45rem 0.6rem; background: var(--surface); border: 1px solid var(--line); border-radius: 6px; font-size: 0.9rem; min-width: 0; }
 .field:focus, .btn:focus-visible, a:focus-visible, .result:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+/* The native chevron can't be positioned, so every select draws its own. Skeletons keep the box but not the chevron. */
+select, select.field { appearance: none; padding-right: 1.9rem; }
+select:not(.bone) {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12' fill='none' stroke='%23646a73' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2.5 4.5 6 8l3.5-3.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.54rem center;
+  background-size: 0.75rem;
+}
 .row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .model-picker { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.75rem; margin-bottom: 0.75rem; }
 .stack { display: flex; flex-direction: column; gap: 0.2rem; margin: 0.5rem 0; }
@@ -140,6 +148,8 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .condition { background: var(--bg); padding: 0.35rem 0.55rem; border-radius: 6px; display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin: 0.15rem 0; }
 .origin { color: var(--muted); font-size: 0.75rem; }
 .condition-edit .field { flex: 1 1 8rem; font-size: 0.82rem; }
+.order-edit { border: 0; padding: 0; margin: 0; }
+.order-edit legend { padding: 0; }
 .object { display: block; margin-top: 0.4rem; }
 .object .field { width: 100%; }
 .object-head { display: flex; align-items: center; gap: 0.5rem; }
