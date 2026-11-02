@@ -515,3 +515,13 @@ def test_frames_come_out_of_a_limited_range_playback_file(tmp_path):
     assert dest.stat().st_size > 0
     times = presentation_timestamps(source)
     assert len(times) == 100 and times == sorted(times)
+
+
+def test_learning_twice_from_one_analysis_gives_one_procedure(lab):
+    client, stub, tmp = lab
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    first = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": run["id"]}).json()
+    second = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": run["id"]}).json()
+    assert first["id"] == second["id"]
+    assert len(client.get(f"/api/learnloop/procedures/{procedure}").json()["templates"]) == 1

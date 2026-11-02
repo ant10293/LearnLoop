@@ -238,6 +238,14 @@ def get_run(run_id: str, session: Session = Depends(db)) -> dict:
 
 @router.post("/procedures/{project_id}/learn")
 def learn(project_id: str, payload: LearnBody, session: Session = Depends(db)) -> dict:
+    # Teach and Procedure can both ask. One analysis gives one learned procedure.
+    existing = session.scalar(
+        select(LearnedWorkflowTemplate)
+        .where(LearnedWorkflowTemplate.project_id == project_id, LearnedWorkflowTemplate.source_run_id == payload.run_id)
+        .order_by(LearnedWorkflowTemplate.version)
+    )
+    if existing is not None:
+        return store.template_payload(existing)
     try:
         return store.create_template(session, project_id, payload.run_id, promote_supported=True, results_first=True)
     except LookupError as exc:

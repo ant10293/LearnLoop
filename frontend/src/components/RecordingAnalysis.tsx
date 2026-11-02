@@ -10,6 +10,16 @@ const STAGES: [string, string][] = [
   ["validation", "Check the structured answer"],
 ];
 
+export function AnalysisStages({ run }: { run: Run }) {
+  return (
+    <ol className="stages" aria-label="Analysis progress">
+      {STAGES.map(([key, label]) => (
+        <li key={key} className={run.stages[key] ?? "pending"}>{label}</li>
+      ))}
+    </ol>
+  );
+}
+
 /** Prepare a recording, then run one analysis. A billable call waits for an explicit yes. */
 export function RecordingAnalysis({ recording, onDone, action }: { recording: Recording; onDone: (run: Run) => void | Promise<void>; action: string }) {
   const videoId = recording.video.id;
@@ -71,11 +81,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
       )}
       {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => setPlan(null)} />}
       {run.data && (
-        <ol className="stages" aria-label="Analysis progress">
-          {STAGES.map(([key, label]) => (
-            <li key={key} className={run.data?.stages[key] ?? "pending"}>{label}</li>
-          ))}
-        </ol>
+        <AnalysisStages run={run.data} />
       )}
       {status === "failed" && (
         <div className="error" role="alert">

@@ -208,6 +208,34 @@ describe("Procedure review", () => {
     expect(patch.steps).toEqual([{ step_id: "s1", name: "Seat the cube" }]);
   });
 
+  const untaught = (status: string, error = "") =>
+    procedure({ templates: [], template: null, verifications: [], recordings: [{ role: "demonstration", video, run: { ...run, id: "r1", video_id: "v1", status, error, stages: { scene_analysis: "running" } } }] });
+
+  it("shows teaching in progress", async () => {
+    mockApi((url) => (url.endsWith("/procedures/p1") ? { body: untaught("running") } : undefined));
+    show("/procedures/p1/procedure");
+    expect(await screen.findByText("Learning from demo.mp4")).toBeTruthy();
+    expect(screen.getByText("Meta analysis")).toHaveClass("running");
+    expect(screen.queryByText("Nothing has been learned yet.")).toBeNull();
+  });
+
+  it("learns once when the analysis finished after leaving Teach", async () => {
+    const calls = mockApi((url) => {
+      if (url.endsWith("/procedures/p1")) return { body: untaught("completed") };
+      if (url.endsWith("/learn")) return { body: template("ai_draft") };
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    await waitFor(() => expect(calls.some((call) => call.url.endsWith("/learn"))).toBe(true));
+    expect(JSON.parse(String(calls.find((call) => call.url.endsWith("/learn"))?.init?.body))).toEqual({ run_id: "r1" });
+  });
+
+  it("shows why teaching failed", async () => {
+    mockApi((url) => (url.endsWith("/procedures/p1") ? { body: untaught("failed", "the answer stopped before it finished.") } : undefined));
+    show("/procedures/p1/procedure");
+    expect(await screen.findByRole("alert")).toHaveTextContent("the answer stopped before it finished.");
+  });
+
   it("says when a step has nothing the verifier can check", async () => {
     const bare = { ...templateStep, completion_conditions: [] };
     mockApi((url) => (url.endsWith("/procedures/p1") ? { body: procedure({ template: template("ai_draft", bare), templates: [template("ai_draft", bare)] }) } : undefined));

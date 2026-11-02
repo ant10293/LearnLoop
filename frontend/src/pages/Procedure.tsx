@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { AnalysisStages } from "../components/RecordingAnalysis";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
-import { api, clock, conditionText, relationLabels, type Condition, type Role, type Template, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
+import { api, clock, conditionText, relationLabels, type Condition, type Procedure, type Recording, type Role, type Template, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
 type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[] };
 
@@ -10,8 +11,18 @@ export function ProcedurePage() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
   const client = useQueryClient();
-  const procedure = useQuery({ queryKey: ["procedure", id], queryFn: () => api.procedure(id) });
+  const procedure = useQuery({
+    queryKey: ["procedure", id],
+    queryFn: () => api.procedure(id),
+    refetchInterval: (query) => {
+      const latest = latestDemonstration(query.state.data);
+      return latest && (preparing(latest) || analyzing(latest)) ? 1000 : false;
+    },
+  });
   const template = procedure.data?.template;
+  const latest = latestDemonstration(procedure.data);
+  const learnFrom = latest?.run?.status === "completed" && !procedure.data?.templates.some((item) => item.source_video_id === latest.video.id) ? latest.run.id : "";
+  const learning = useRef("");
   const [steps, setSteps] = useState<Record<string, StepEdit>>({});
   const [labels, setLabels] = useState<Record<string, string>>({});
   const [title, setTitle] = useState("");
@@ -24,13 +35,30 @@ export function ProcedurePage() {
     setTitle("");
   }, [template?.id]);
 
+  // The analysis can finish after the person has left Teach. The procedure is still learned.
+  useEffect(() => {
+    if (!learnFrom || learning.current === learnFrom) return;
+    learning.current = learnFrom;
+    api
+      .learn(id, learnFrom)
+      .then(() => client.invalidateQueries({ queryKey: ["procedure", id] }))
+      .catch((exc: Error) => setError(exc.message));
+  }, [client, id, learnFrom]);
+
   if (procedure.isPending) return <Layout procedureId={id}><p className="muted" role="status">Loading the procedure</p></Layout>;
   if (!template) {
     return (
       <Layout procedureId={id} title={procedure.data?.name}>
         <h1>Procedure</h1>
-        <p className="lead">Nothing has been learned yet.</p>
-        <Link className="btn primary" to={`/procedures/${id}/teach`}>Teach this procedure</Link>
+        {latest && (preparing(latest) || analyzing(latest) || latest.run?.status === "failed" || learnFrom) ? (
+          <TeachingStatus recording={latest} procedureId={id} />
+        ) : (
+          <>
+            <p className="lead">Nothing has been learned yet.</p>
+            <Link className="btn primary" to={`/procedures/${id}/teach`}>Teach this procedure</Link>
+          </>
+        )}
+        <ErrorNote message={error} />
         <ErrorNote message={procedure.error ? (procedure.error as Error).message : ""} />
       </Layout>
     );
@@ -80,6 +108,12 @@ export function ProcedurePage() {
         </div>
       </div>
       <ErrorNote message={error} />
+      {latest && (preparing(latest) || analyzing(latest) || latest.run?.status === "failed" || learnFrom) && (
+        <div className="panel teaching-banner">
+          <p className="small muted">The procedure below is from an earlier demonstration.</p>
+          <TeachingStatus recording={latest} procedureId={id} />
+        </div>
+      )}
       {required.length === 0 && <p className="warning">Mark at least one step as required before accepting.</p>}
       <div className="split procedure">
         <div className="sticky">
@@ -102,6 +136,38 @@ export function ProcedurePage() {
         </ol>
       </div>
     </Layout>
+  );
+}
+
+function latestDemonstration(procedure?: Procedure): Recording | undefined {
+  return [...(procedure?.recordings ?? [])].reverse().find((item) => item.role === "demonstration");
+}
+
+function preparing(recording: Recording): boolean {
+  return !["ready", "failed"].includes(recording.video.ingest_status);
+}
+
+function analyzing(recording: Recording): boolean {
+  return recording.run?.status === "pending" || recording.run?.status === "running";
+}
+
+function TeachingStatus({ recording, procedureId }: { recording: Recording; procedureId: string }) {
+  const { video, run } = recording;
+  if (run?.status === "failed") {
+    return (
+      <div className="error" role="alert">
+        <strong>Learning from {video.filename} failed. No procedure was generated.</strong>
+        <p>{run.error}</p>
+        <Link className="btn small" to={`/procedures/${procedureId}/teach`}>Go to Teach</Link>
+      </div>
+    );
+  }
+  return (
+    <div role="status">
+      <h2>Learning from {video.filename}</h2>
+      {preparing(recording) ? <p className="status-line">Preparing the recording. {video.ingest_detail}</p> : run && <AnalysisStages run={run} />}
+      {run?.status === "completed" && <p className="status-line">Building the procedure.</p>}
+    </div>
   );
 }
 
