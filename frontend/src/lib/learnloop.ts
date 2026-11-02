@@ -1,0 +1,305 @@
+/** Product API. Every value on screen comes from these endpoints. */
+
+export class ApiError extends Error {
+  constructor(message: string, readonly status: number, readonly detail: unknown) {
+    super(message);
+  }
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(path, {
+    ...init,
+    cache: "no-store",
+    headers: init?.body instanceof FormData ? init?.headers : { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+  });
+  if (!response.ok) {
+    let detail: unknown = response.statusText;
+    try {
+      detail = ((await response.json()) as { detail?: unknown }).detail ?? detail;
+    } catch {
+      /* The status text is the best description available. */
+    }
+    throw new ApiError(typeof detail === "string" ? detail : `The request failed (${response.status}).`, response.status, detail);
+  }
+  return (await response.json()) as T;
+}
+
+const post = <T,>(path: string, body: unknown = {}) => request<T>(path, { method: "POST", body: JSON.stringify(body) });
+
+export type ReviewState = "ai_draft" | "human_reviewed" | "accepted" | "";
+export type Verdict = "PASS" | "FAIL" | "CANNOT_VERIFY" | "NOT_APPLICABLE";
+export type Answer = "installed" | "not_installed" | "cannot_determine";
+
+export interface ProcedureSummary {
+  id: string;
+  name: string;
+  thumbnail_url: string;
+  step_count: number;
+  review_state: ReviewState;
+  execution_count: number;
+  latest_outcome: string;
+}
+
+export interface Run {
+  id: string;
+  video_id: string;
+  status: "pending" | "running" | "completed" | "failed" | "canceled";
+  error: string;
+  model_id: string;
+  modality: string;
+  profile: string;
+  source: "" | "pending" | "live" | "cached";
+  cached_at: string;
+  provider_requests: number;
+  reference_template_id: string;
+  stages: Record<string, string>;
+}
+
+export interface VideoInfo {
+  id: string;
+  filename: string;
+  duration_sec: number;
+  playback_url: string;
+  thumbnail_url: string;
+  ingest_status: string;
+  ingest_detail?: string;
+  ingest_error?: string;
+}
+
+export interface Recording {
+  role: "demonstration" | "execution";
+  video: VideoInfo;
+  run: Run | null;
+}
+
+export interface Condition {
+  id: string;
+  type: string;
+  subject_role: string;
+  target_role: string;
+  relation: string;
+  state_label: string;
+  evidence_requirement: "required" | "optional";
+  source_evidence_class: string;
+  origin: "model" | "human";
+}
+
+export interface TemplateStep {
+  step_id: string;
+  name: string;
+  required: boolean;
+  requirement_status: string;
+  object_roles: string[];
+  expected_action: string;
+  completion_text: string;
+  completion_conditions: Condition[];
+  uncertainty: number;
+  uncertainty_notes: string;
+  demo_time_start: number | null;
+  demo_time_end: number | null;
+  removed: boolean;
+  human_edited: string[];
+}
+
+export interface Role {
+  role_id: string;
+  label: string;
+  original_label: string;
+  visual_characteristics: string;
+  uncertain: boolean;
+}
+
+export interface Template {
+  id: string;
+  version: number;
+  name: string;
+  acceptance_status: string;
+  review_state: ReviewState;
+  source_video_id: string;
+  document: { summary: string; roles: Role[]; steps: TemplateStep[]; review_log: unknown[] };
+}
+
+export interface Evidence {
+  timestamp: number | null;
+  observation: string;
+  evidence_class: string;
+  provenance: string;
+}
+
+export interface StepResult {
+  step_id: string;
+  name: string;
+  required: boolean;
+  verdict: Verdict;
+  machine_verdict: string;
+  basis: "model_evidence" | "human_confirmed" | "human_override" | "none";
+  error_category: string;
+  expected: string;
+  observed: string;
+  explanation: string;
+  uncertainty_notes: string;
+  evidence: Evidence[];
+  demo_time_start: number | null;
+  execution_time: number | null;
+  history: { verdict: string; note: string }[];
+}
+
+export interface HumanObservation {
+  id: string;
+  step_id: string;
+  answer: Answer;
+  timestamp: number;
+  reviewer: string;
+  note: string;
+  created_at: string;
+}
+
+export interface VerificationBrief {
+  id: string;
+  template_id: string;
+  template_version: number;
+  execution_video_id: string;
+  execution_run_id: string;
+  overall: string;
+  status: string;
+}
+
+export interface Verification extends VerificationBrief {
+  execution_revision_id: string;
+  error: string;
+  config: { provider_id: string; model_id: string; modality: string };
+  human_observations: HumanObservation[];
+  report: {
+    overall: string;
+    steps: StepResult[];
+    warnings: string[];
+    human_assisted: boolean;
+    removed_steps: string[];
+    demonstration_video_id: string;
+    score: { verified: number; failed: number; unresolved: number };
+    roles: { role_id: string; label: string; status: string; note: string }[];
+  };
+}
+
+export interface Procedure extends ProcedureSummary {
+  recordings: Recording[];
+  templates: Template[];
+  template: Template | null;
+  verifications: VerificationBrief[];
+}
+
+export interface CallPlan {
+  model_id: string;
+  modality: string;
+  video_seconds: number;
+  max_requests: number;
+  automatic_retries: number;
+  max_output_tokens: number;
+  estimated_input_tokens: number;
+  estimated_cost_usd: number | null;
+  live_enabled: boolean;
+}
+
+export interface TemplatePatch {
+  name?: string;
+  acceptance_status?: "accepted" | "draft";
+  steps?: (Partial<Omit<TemplateStep, "completion_conditions">> & { completion_conditions?: Partial<Condition>[] })[];
+  roles?: { role_id: string; label: string }[];
+}
+
+export const api = {
+  status: () => request<{ model_id: string; modality: string; max_clip_seconds: number; live_enabled: boolean; meta_key_configured: boolean }>("/api/learnloop/status"),
+  procedures: () => request<ProcedureSummary[]>("/api/learnloop/procedures"),
+  createProcedure: (name: string) => post<ProcedureSummary>("/api/learnloop/procedures", { name }),
+  procedure: (id: string) => request<Procedure>(`/api/learnloop/procedures/${id}`),
+  upload: (id: string, role: Recording["role"], file: File) => {
+    const form = new FormData();
+    form.append("role", role);
+    form.append("file", file);
+    return request<Recording>(`/api/learnloop/procedures/${id}/recordings`, { method: "POST", body: form });
+  },
+  analyze: (videoId: string, allowLive: boolean) => post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive }),
+  procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
+  run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),
+  learn: (id: string, runId: string) => post<Template>(`/api/learnloop/procedures/${id}/learn`, { run_id: runId }),
+  revise: (templateId: string, patch: TemplatePatch) => request<Template>(`/api/workflow-templates/${templateId}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  verify: (templateId: string, runId: string) => post<Verification>(`/api/learnloop/templates/${templateId}/verify`, { run_id: runId }),
+  verification: (id: string) => request<Verification>(`/api/verifications/${id}`),
+  observe: (id: string, stepId: string, body: { answer: Answer; timestamp: number; reviewer: string; note: string }) =>
+    post<Verification>(`/api/verifications/${id}/steps/${stepId}/observations`, body),
+};
+
+export const frameUrl = (videoId: string, time: number) => `/api/learnloop/videos/${videoId}/frame?t=${time.toFixed(2)}`;
+
+export function clock(value: number | null | undefined): string {
+  if (value == null) return "—";
+  const minutes = Math.floor(value / 60);
+  return `${minutes}:${(value - minutes * 60).toFixed(1).padStart(4, "0")}`;
+}
+
+export const reviewLabels: Record<string, string> = {
+  ai_draft: "AI-generated draft",
+  human_reviewed: "Human-reviewed",
+  accepted: "Accepted",
+};
+
+export const verdictLabels: Record<string, string> = {
+  PASS: "PASS",
+  FAIL: "FAIL",
+  CANNOT_VERIFY: "CANNOT VERIFY",
+  NOT_APPLICABLE: "NOT APPLICABLE",
+  INCONCLUSIVE: "INCONCLUSIVE",
+  INCOMPLETE: "INCOMPLETE",
+  NOT_EVALUATED: "NOT EVALUATED",
+};
+
+export const basisLabels: Record<StepResult["basis"], string> = {
+  model_evidence: "Evidence-backed from Meta analysis",
+  human_confirmed: "Human-confirmed",
+  human_override: "Human override",
+  none: "No deciding evidence",
+};
+
+export const errorLabels: Record<string, string> = {
+  MISSING_COMPONENT: "Missing component",
+  MISSING_STEP: "Missing step",
+  INCORRECT_COMPONENT: "Wrong component",
+  INCORRECT_ORDER: "Wrong order",
+  INCORRECT_PLACEMENT: "Wrong placement",
+  INCOMPLETE_OPERATION: "Incomplete operation",
+  INCORRECT_PHYSICAL_STATE: "Wrong physical state",
+  UNVERIFIABLE_OPERATION: "Not enough evidence",
+  TEMPORARY_ERROR_CORRECTED: "Corrected during the attempt",
+};
+
+export const relationLabels: Record<string, string> = {
+  attached: "attached to",
+  inside: "inside",
+  supported_by: "resting on",
+  above: "above",
+  below: "below",
+  left_of: "left of",
+  right_of: "right of",
+  around: "around",
+  touching: "touching",
+};
+
+export function verdictTone(verdict: string): "pass" | "fail" | "unknown" | "muted" {
+  if (verdict === "PASS") return "pass";
+  if (verdict === "FAIL") return "fail";
+  if (verdict === "CANNOT_VERIFY" || verdict === "INCONCLUSIVE" || verdict === "INCOMPLETE") return "unknown";
+  return "muted";
+}
+
+export function conditionText(condition: Partial<Condition>, roles: Role[]): string {
+  const label = (id?: string) => roles.find((role) => role.role_id === id)?.label ?? id ?? "";
+  if (condition.relation) {
+    return `${label(condition.subject_role)} is ${relationLabels[condition.relation] ?? condition.relation.replaceAll("_", " ")} ${label(condition.target_role)}`;
+  }
+  return `${label(condition.subject_role)} is ${condition.state_label ?? ""}`;
+}
+
+/** The latest analysis a recording can be checked with, if any. */
+export function latestVerification(procedure: Procedure, videoId: string): VerificationBrief | undefined {
+  return procedure.verifications.find((item) => item.execution_video_id === videoId);
+}

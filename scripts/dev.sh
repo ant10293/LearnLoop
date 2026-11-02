@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# One command for this lab. Stops every other copy of this app, then serves
-# the same database every time: data/devlab/learnloop.db.
+# Start LearnLoop. Stops other copies of this checkout, then serves one database: data/app/learnloop.db.
+# Set LEARNLOOP_LIVE_INFERENCE=1 and MODEL_API_KEY in .env to allow live Meta calls. They are off by default.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
-DATA_DIR="$ROOT/data/devlab"
+DATA_DIR="$ROOT/data/app"
 DB_FILE="$DATA_DIR/learnloop.db"
 API_PORT=8000
 APP_PORT=5174
 
 export LEARNLOOP_DATA_DIR="$DATA_DIR"
 export LEARNLOOP_DATABASE_URL="sqlite:///$DB_FILE"
-export LEARNLOOP_AUTO_SEED=1
+export LEARNLOOP_AUTO_SEED=0
 export LEARNLOOP_WORKER_ENABLED=1
 export LEARNLOOP_CORS_ORIGINS="http://127.0.0.1:${APP_PORT},http://localhost:${APP_PORT}"
 unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy \
@@ -22,7 +22,7 @@ unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy \
   __CURSOR_SANDBOX_ENV_RESTORE || true
 
 if [[ ! -x backend/.venv/bin/uvicorn ]]; then
-  echo "Create the backend environment first: /usr/local/bin/python3.12 -m venv backend/.venv && backend/.venv/bin/pip install -e './backend[dev]'" >&2
+  echo "Create the backend environment first: python3.12 -m venv backend/.venv && backend/.venv/bin/pip install -e './backend[dev]'" >&2
   exit 1
 fi
 if [[ ! -d frontend/node_modules ]]; then
