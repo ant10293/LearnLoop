@@ -304,6 +304,7 @@ export const api = {
   objectViews: (runId: string) => request<{ objects: Record<string, ObjectView> }>(`/api/learnloop/runs/${runId}/objects`),
   learn: (id: string, runId: string) => post<Template>(`/api/learnloop/procedures/${id}/learn`, { run_id: runId }),
   revise: (templateId: string, patch: TemplatePatch) => request<Template>(`/api/workflow-templates/${templateId}`, { method: "PATCH", body: JSON.stringify(patch) }),
+  removeTemplate: (templateId: string) => request<{ deleted: string }>(`/api/learnloop/templates/${templateId}`, { method: "DELETE" }),
   verify: (templateId: string, runId: string) => post<Verification>(`/api/learnloop/templates/${templateId}/verify`, { run_id: runId }),
   verification: (id: string) => request<Verification>(`/api/verifications/${id}`),
   observe: (id: string, stepId: string, body: { answer: Answer; timestamp: number; reviewer: string; note: string }) =>

@@ -290,6 +290,24 @@ def learn(project_id: str, payload: LearnBody, session: Session = Depends(db)) -
         raise HTTPException(404, str(exc)) from exc
 
 
+@router.delete("/templates/{template_id}")
+def delete_template(template_id: str, session: Session = Depends(db)) -> dict:
+    """Remove a learned procedure and its reports. Its analysis goes too, or the page would learn it again."""
+    from app.api.routes import delete_run
+
+    try:
+        row = store.delete_template_family(session, template_id)
+    except LookupError as exc:
+        raise HTTPException(404, str(exc)) from exc
+    run_id, video_id = row.source_run_id, row.source_video_id
+    shared = session.scalar(select(LearnedWorkflowTemplate).where(LearnedWorkflowTemplate.source_video_id == video_id))
+    if shared is None and session.get(ProcedureRecording, video_id) is not None:
+        delete_recording(video_id, session)
+    elif session.get(AnalysisRun, run_id) is not None:
+        delete_run(run_id, session)
+    return {"deleted": template_id}
+
+
 @router.post("/templates/{template_id}/verify")
 def verify(template_id: str, payload: VerifyBody, session: Session = Depends(db)) -> dict:
     try:

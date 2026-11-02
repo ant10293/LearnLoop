@@ -84,6 +84,30 @@ def get_template(session: Session, template_id: str) -> dict:
     return template_payload(_template(session, template_id))
 
 
+def delete_template_family(session: Session, template_id: str) -> LearnedWorkflowTemplate:
+    """Remove every version of a learned procedure and the reports made against them."""
+    current = _template(session, template_id)
+    family = session.scalars(select(LearnedWorkflowTemplate).where(LearnedWorkflowTemplate.family_id == current.family_id)).all()
+    reports = list(
+        session.scalars(select(VerificationRunRow.id).where(VerificationRunRow.template_id.in_([row.id for row in family])))
+    )
+    if reports:
+        for model in (
+            StepVerification,
+            VerificationEvidence,
+            VerificationRoleMapping,
+            VerificationReinspection,
+            VerificationGroundTruth,
+            HumanObservation,
+        ):
+            session.execute(delete(model).where(model.verification_id.in_(reports)))
+        session.execute(delete(VerificationRunRow).where(VerificationRunRow.id.in_(reports)))
+    for row in family:
+        session.delete(row)
+    session.commit()
+    return current
+
+
 CONTENT_FIELDS = ("name", "expected_action", "completion_text", "removed", "completion_conditions", "required")
 
 

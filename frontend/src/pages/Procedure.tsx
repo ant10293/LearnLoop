@@ -37,6 +37,7 @@ export function ProcedurePage() {
   const [title, setTitle] = useState("");
   const [seek, setSeek] = useState({ time: null as number | null, tick: 0 });
   const [error, setError] = useState("");
+  const [removeError, setRemoveError] = useState("");
   const [saving, setSaving] = useState(false);
   const views = useQuery({
     queryKey: ["object-views", template?.source_run_id],
@@ -123,6 +124,21 @@ export function ProcedurePage() {
     }
   }
 
+  async function remove() {
+    if (!window.confirm(`Delete “${template!.name}”? All its versions, its demonstration, and its verification reports will be removed. This cannot be undone.`)) return;
+    setSaving(true);
+    setRemoveError("");
+    try {
+      await api.removeTemplate(template!.id);
+      setPicked("");
+      await Promise.all([client.invalidateQueries({ queryKey: ["procedure", id] }), client.invalidateQueries({ queryKey: ["procedures"] })]);
+    } catch (exc) {
+      setRemoveError((exc as Error).message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   const required = template.document.steps.filter((step) => !step.removed && (steps[step.step_id]?.requirement_status ?? step.requirement_status) === "required");
   return (
     <Layout procedureId={id} title={procedure.data?.name}>
@@ -171,6 +187,10 @@ export function ProcedurePage() {
           <StepCard key={step.step_id} index={index} step={step} edit={steps[step.step_id] ?? {}} roles={roles} template={template} onChange={(edit) => change(step.step_id, edit)} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />
         ))}
       />
+      <ErrorNote message={removeError} />
+      <div className="procedure-footer">
+        <button className="btn danger" disabled={saving} onClick={() => void remove()}>Delete procedure</button>
+      </div>
     </Layout>
   );
 }

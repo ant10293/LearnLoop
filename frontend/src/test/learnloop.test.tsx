@@ -107,6 +107,34 @@ describe("Projects", () => {
   });
 });
 
+describe("Deleting a learned procedure", () => {
+  const api = (calls: { deleted: boolean }) => (url: string, init?: RequestInit) => {
+    if (url.endsWith("/api/learnloop/templates/t1") && init?.method === "DELETE") {
+      calls.deleted = true;
+      return { body: { deleted: "t1" } };
+    }
+    if (url.endsWith("/procedures/p1")) return { body: calls.deleted ? procedure({ template: null, templates: [], recordings: [], verifications: [] }) : procedure() };
+    return undefined;
+  };
+
+  it("deletes after confirming and leaves nothing learned", async () => {
+    vi.stubGlobal("confirm", () => true);
+    mockApi(api({ deleted: false }));
+    show("/procedures/p1/procedure");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete procedure" }));
+    expect(await screen.findByText("Nothing has been learned yet.")).toBeTruthy();
+  });
+
+  it("keeps the procedure when the person cancels", async () => {
+    vi.stubGlobal("confirm", () => false);
+    const calls = mockApi(api({ deleted: false }));
+    show("/procedures/p1/procedure");
+    fireEvent.click(await screen.findByRole("button", { name: "Delete procedure" }));
+    expect(calls.some((call) => call.init?.method === "DELETE")).toBe(false);
+    expect(screen.getByRole("button", { name: "Delete procedure" })).toBeTruthy();
+  });
+});
+
 describe("Loading skeletons", () => {
   const loaded = (url: string) => {
     if (url === "/api/learnloop/procedures") return { body: [summary] };

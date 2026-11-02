@@ -326,6 +326,23 @@ def test_human_observation_is_evidence_with_provenance_and_keeps_the_machine_rea
     assert answer_needs_reviewer.status_code == 400
 
 
+def test_deleting_a_learned_procedure_removes_its_versions_reports_and_demonstration(lab):
+    client, stub, tmp = lab
+    procedure, template = _accepted(lab)
+    report = _check(lab, procedure, template, CORRECT, "blue")
+    edited = client.patch(f"/api/workflow-templates/{template['id']}", json={"name": "Renamed"}).json()
+
+    assert client.delete(f"/api/learnloop/templates/{edited['id']}").status_code == 200
+
+    summary = client.get(f"/api/learnloop/procedures/{procedure}").json()
+    assert summary["templates"] == []
+    assert summary["verifications"] == []
+    assert [item["role"] for item in summary["recordings"]] == ["execution"]
+    assert client.get(f"/api/workflow-templates/{template['id']}").status_code == 404
+    assert client.get(f"/api/verifications/{report['id']}").status_code == 404
+    assert client.delete(f"/api/learnloop/templates/{edited['id']}").status_code == 404
+
+
 def test_edits_make_new_versions_and_leave_the_model_version_unchanged(lab):
     client, stub, tmp = lab
     procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
