@@ -366,6 +366,8 @@ describe("Teach", () => {
     });
     show("/procedures/p1/teach");
     fireEvent.click(await screen.findByRole("button", { name: "Learn the procedure" }));
+    // Never analyzed, so there is nothing stored to skip.
+    expect(screen.queryByRole("checkbox", { name: /Analyze from scratch/ })).toBeNull();
     expect(await screen.findByRole("dialog")).toHaveTextContent("At most 1, with no automatic retry");
     expect(screen.getByRole("dialog")).toHaveTextContent("Unknown");
     const analyzes = calls.filter((call) => call.url.endsWith("/analyze"));
@@ -402,6 +404,9 @@ describe("Teach", () => {
         if (!body.allow_live) return { status: 409, body: { detail: { code: "live_call_required", plan: { model_id: "muse-wonder-1.0", modality: "native_video", video_seconds: 10, max_requests: 1, automatic_retries: 0, max_output_tokens: 24000, estimated_input_tokens: 1, estimated_cost_usd: null, live_enabled: true, fresh: body.fresh } } } };
         return { status: 500, body: { detail: "stop here" } };
       }
+      const seen = { role: "demonstration", video, run: null, analyzed_before: true };
+      if (url.endsWith("/procedures/p1")) return { body: procedure({ recordings: [seen], templates: [], template: null, verifications: [] }) };
+      if (url.endsWith("/recordings/v1")) return { body: seen };
       return base(url);
     });
     show("/procedures/p1/teach");

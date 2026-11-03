@@ -74,6 +74,7 @@ export interface Recording {
   role: "demonstration" | "execution";
   video: VideoInfo;
   run: Run | null;
+  analyzed_before?: boolean;
 }
 
 export interface Condition {

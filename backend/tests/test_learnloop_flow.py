@@ -430,7 +430,13 @@ def test_fresh_analysis_skips_stored_answers_after_approval(lab, monkeypatch):
     stub.locate_text = json.dumps({"objects": [{"local_id": first, "bbox": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}]})
     procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
     video = _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration")
+    assert client.get(f"/api/learnloop/recordings/{video}").json()["analyzed_before"] is False
     assert _analyze(client, video)["source"] == "live"
+    # The same bytes in another procedure count as analyzed.
+    other = client.post("/api/learnloop/procedures", json={"name": "Copy"}).json()["id"]
+    (tmp / "copy").mkdir()
+    copy = _upload(client, other, _video(tmp / "copy" / "demo.mp4", "red"), "demonstration")
+    assert client.get(f"/api/learnloop/recordings/{copy}").json()["analyzed_before"] is True
     sent, sam = len(stub.calls), len(calls)
     assert sam == 1
 

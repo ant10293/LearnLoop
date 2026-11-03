@@ -455,7 +455,20 @@ def _recording(session: Session, row: ProcedureRecording) -> dict:
         "role": row.role,
         "video": video_dict(video) if video else None,
         "run": _run_payload(session, run) if run else None,
+        "analyzed_before": _analyzed_before(session, video),
     }
+
+
+def _analyzed_before(session: Session, video: VideoAsset | None) -> bool:
+    """A finished analysis of the same bytes, in any procedure. Only then can a stored answer be replayed."""
+    if video is None or not video.checksum_sha256:
+        return False
+    return session.scalar(
+        select(AnalysisRun.id)
+        .join(VideoAsset, VideoAsset.id == AnalysisRun.video_id)
+        .where(VideoAsset.checksum_sha256 == video.checksum_sha256, AnalysisRun.status == "completed")
+        .limit(1)
+    ) is not None
 
 
 def _accepted_template(session: Session, project_id: str) -> LearnedWorkflowTemplate | None:
