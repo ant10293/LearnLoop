@@ -17,7 +17,8 @@ import numpy as np
 
 from app.perception.types import EncoderUnavailable
 
-PREPROCESS_VERSION = "bgr-mask-224-imagenet-v1"
+# v2: aspect-preserving letterbox, and a supplied mask replaces the background with the ImageNet mean.
+PREPROCESS_VERSION = "rgb-letterbox-mask-224-imagenet-v2"
 HISTOGRAM_PREPROCESS = "bgr-hist8-l2-v1"
 DINOV2_ID = "dinov2_vits14"
 DINOV2_VERSION = "facebookresearch/dinov2:dinov2_vits14"
@@ -69,7 +70,10 @@ def cached_encode(encoder, crops: list[np.ndarray], masks: list[np.ndarray | Non
                 continue
         missing.append(index)
     if missing:
-        computed = encoder.encode([crops[index] for index in missing])
+        chosen = [crops[index] for index in missing]
+        chosen_masks = [masks[index] for index in missing]
+        # Encoders that take masks get them. A list of all None keeps the one-argument call.
+        computed = encoder.encode(chosen, chosen_masks) if any(item is not None for item in chosen_masks) else encoder.encode(chosen)
         if computed.shape != (len(missing), encoder.dimension):
             raise EncoderUnavailable(
                 f"{encoder.encoder_id} returned shape {computed.shape}, "
@@ -85,6 +89,33 @@ def cached_encode(encoder, crops: list[np.ndarray], masks: list[np.ndarray | Non
     return output
 
 
+def preprocess(crop: np.ndarray, mask: np.ndarray | None = None, side: int = 224) -> np.ndarray:
+    """BGR crop to a normalized 3 x side x side float array.
+
+    The longer side is scaled to `side` and the shorter one padded, so a narrow
+    part is not stretched square. A mask the same size as the crop sets every
+    pixel off the object, and the padding, to the ImageNet mean, which is zero
+    after normalization. Without a mask the background pixels stay.
+    """
+    if crop.size == 0:
+        return np.zeros((3, side, side), dtype=np.float32)
+    rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB).astype(np.float32) / 255.0
+    if mask is not None and mask.shape[:2] == crop.shape[:2] and mask.any():
+        keep = (mask > 0)[..., None]
+        rgb = np.where(keep, rgb, IMAGENET_MEAN[None, None, :])
+    height, width = rgb.shape[:2]
+    scale = side / max(height, width)
+    new_w, new_h = max(1, round(width * scale)), max(1, round(height * scale))
+    interpolation = cv2.INTER_AREA if scale < 1 else cv2.INTER_LINEAR
+    resized = cv2.resize(rgb, (new_w, new_h), interpolation=interpolation)
+    canvas = np.empty((side, side, 3), dtype=np.float32)
+    canvas[:] = IMAGENET_MEAN
+    top, left = (side - new_h) // 2, (side - new_w) // 2
+    canvas[top : top + new_h, left : left + new_w] = resized
+    normalized = (canvas - IMAGENET_MEAN) / IMAGENET_STD
+    return np.ascontiguousarray(normalized.transpose(2, 0, 1), dtype=np.float32)
+
+
 class HistogramEncoder:
     """24-D color histogram. This is not a pretrained recognition model."""
 
@@ -93,15 +124,20 @@ class HistogramEncoder:
     preprocess_version = HISTOGRAM_PREPROCESS
     dimension = 24
 
-    def encode(self, crops: list[np.ndarray]) -> np.ndarray:
+    def encode(self, crops: list[np.ndarray], masks: list[np.ndarray | None] | None = None) -> np.ndarray:
         rows = []
-        for crop in crops:
+        for index, crop in enumerate(crops):
             if crop.size == 0:
                 rows.append(np.zeros(self.dimension, dtype=np.float32))
                 continue
+            mask = masks[index] if masks else None
+            if mask is not None and mask.shape[:2] == crop.shape[:2] and mask.any():
+                mask = (mask > 0).astype(np.uint8)
+            else:
+                mask = None
             parts = []
             for channel in range(min(3, crop.shape[2])):
-                hist = cv2.calcHist([crop], [channel], None, [8], [0, 256]).flatten()
+                hist = cv2.calcHist([crop], [channel], mask, [8], [0, 256]).flatten()
                 parts.append(hist)
             vector = np.concatenate(parts).astype(np.float32)
             if vector.shape[0] < self.dimension:
@@ -118,32 +154,30 @@ class Dinov2Encoder:
     preprocess_version = PREPROCESS_VERSION
     dimension = 384
 
-    def __init__(self):
+    def __init__(self, batch_size: int = 32):
         self._model = None
         self._torch = None
         self.device = "cpu"
+        self.batch_size = max(1, batch_size)
 
-    def encode(self, crops: list[np.ndarray]) -> np.ndarray:
+    def encode(self, crops: list[np.ndarray], masks: list[np.ndarray | None] | None = None) -> np.ndarray:
         torch, model = self._load()
-        batch = []
-        for crop in crops:
-            if crop.size == 0:
-                batch.append(torch.zeros(3, 224, 224))
-                continue
-            rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
-            resized = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_AREA)
-            array = resized.astype(np.float32) / 255.0
-            array = (array - IMAGENET_MEAN) / IMAGENET_STD
-            batch.append(torch.from_numpy(array.transpose(2, 0, 1)))
-        tensor = torch.stack(batch).to(self.device)
-        with torch.no_grad():
-            features = model(tensor)
-        if hasattr(features, "detach"):
-            array = features.detach().float().cpu().numpy()
-        else:
-            array = np.asarray(features, dtype=np.float32)
-        if array.ndim == 1:
-            array = array.reshape(1, -1)
+        if not crops:
+            return np.zeros((0, self.dimension), dtype=np.float32)
+        arrays = [preprocess(crop, masks[index] if masks else None) for index, crop in enumerate(crops)]
+        rows = []
+        for start in range(0, len(arrays), self.batch_size):
+            tensor = torch.from_numpy(np.stack(arrays[start : start + self.batch_size])).to(self.device)
+            with torch.no_grad():
+                features = model(tensor)
+            if hasattr(features, "detach"):
+                array = features.detach().float().cpu().numpy()
+            else:
+                array = np.asarray(features, dtype=np.float32)
+            if array.ndim == 1:
+                array = array.reshape(1, -1)
+            rows.append(array)
+        array = np.concatenate(rows, axis=0)
         if array.shape[1] != self.dimension:
             self.dimension = int(array.shape[1])
         return l2_normalize(array.astype(np.float32))
@@ -237,3 +271,20 @@ def load_encoder(encoder_id: str | None):
             raise EncoderUnavailable(status["detail"])
         return Dinov2Encoder()
     raise EncoderUnavailable(f"Encoder '{encoder_id}' is not registered. No substitute was selected.")
+
+
+_SHARED: dict[str, object] = {}
+
+
+def shared_encoder(encoder_id: str = DINOV2_ID):
+    """One loaded model per process, so a gallery build or a validation pass does not load weights per crop."""
+    if encoder_id not in _SHARED:
+        _SHARED[encoder_id] = load_encoder(encoder_id)
+    return _SHARED[encoder_id]
+
+
+if __name__ == "__main__":
+    # python -m app.perception.encoder: load DINOv2 once so its weights are on disk before a demo.
+    encoder = Dinov2Encoder()
+    vectors = encoder.encode([np.zeros((32, 32, 3), dtype=np.uint8)])
+    print(f"{DINOV2_ID} ready on {encoder.device}, {vectors.shape[1]}-D features, preprocessing {PREPROCESS_VERSION}.")

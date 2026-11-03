@@ -46,7 +46,13 @@ python3.12 -m venv backend/.venv
 ```
 
 ```bash
-backend/.venv/bin/pip install -e './backend[dev]'
+backend/.venv/bin/pip install -e './backend[dev,perception]'
+```
+
+Load the DINOv2 weights once, so the first analysis does not download them:
+
+```bash
+backend/.venv/bin/python -m app.perception.encoder
 ```
 
 ```bash

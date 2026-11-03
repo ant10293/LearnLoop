@@ -22,7 +22,14 @@ from app.pipeline import guided, object_views
 from app.pipeline.infer import load_working
 from app.providers.types import UnsupportedMode
 from app.services import verification_store as store
-from app.services.ingest import accept_reference, accept_upload, ingest_file, playback_path, referenced_file, schedule_ingest
+from app.services.ingest import (
+    accept_reference,
+    accept_upload,
+    ingest_file,
+    playback_path,
+    referenced_file,
+    schedule_ingest,
+)
 from app.services.storage import data_path, safe_filename
 from app.video.frames import extract_frame
 from app.video.probe import VideoError
@@ -370,7 +377,11 @@ def learn(project_id: str, payload: LearnBody, session: Session = Depends(db)) -
         .order_by(LearnedWorkflowTemplate.version)
     )
     if existing is not None:
-        return store.template_payload(existing)
+        # Learning again queues no second job, but does queue a missing gallery's first one.
+        from app.services.appearance import ensure_gallery
+
+        ensure_gallery(session, existing.source_run_id)
+        return store.template_payload(existing, None, session)
     try:
         return store.create_template(session, project_id, payload.run_id, promote_supported=True, results_first=True)
     except LookupError as exc:

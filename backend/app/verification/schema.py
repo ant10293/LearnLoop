@@ -148,6 +148,8 @@ class PredicateJudgement(BaseModel):
     evidence: list[EvidenceRef] = Field(default_factory=list)
     support_onsets: list[float] = Field(default_factory=list)
     human: bool = False
+    # Set when an automatic second look at a few frames decided this predicate.
+    reinspected: bool = False
 
 
 class StepResult(BaseModel):
@@ -177,4 +179,4 @@ class StepResult(BaseModel):
     machine_verdict: str = ""
     # model_evidence: the verifier read model-reported evidence. human_confirmed: a reviewer's
     # observation decided it. human_override: a reviewer set the verdict. none: nothing decided it.
-    basis: Literal["model_evidence", "human_confirmed", "human_override", "none"] = "none"
+    basis: Literal["model_evidence", "model_reinspection", "human_confirmed", "human_override", "none"] = "none"

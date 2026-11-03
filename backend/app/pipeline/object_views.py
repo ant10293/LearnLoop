@@ -4,8 +4,10 @@ One Meta call finds each object on the first frame, and SAM follows those boxes
 through a low frame rate copy of the recording. When some object is not on the
 first frame, or SAM stopped following one the analysis still uses later, a
 second call looks at a few later stills chosen from the analysis, and a second
-SAM request follows those boxes forward. This is for looking at, not for judging:
-nothing here enters the analysis or a verdict. A failure leaves the analysis in place.
+SAM request follows those boxes forward. Each box is then checked against DINOv2
+appearance references (appearance_stage.py): a demonstration learns them here, an attempt
+reads its procedure's. A rejected box stays in raw_tracks.json and is not drawn. No box
+decides a verdict. A failure leaves the analysis in place.
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ import cv2
 from app.config import settings
 from app.models.media import VideoAsset
 from app.models.runs import AnalysisRun
+from app.perception import appearance as app_
 from app.perception.sam_masks import cutout_from_mask
 from app.pipeline.contracts import GUIDED_LOCATE, GUIDED_LOCATE_LATER
 from app.providers.sam import (
@@ -98,6 +101,10 @@ class Sighting:
     timestamp: float
     box: dict
     record: SamRecord
+    # Set by the appearance check: validated, recovered, provisional, ambiguous, or rejected.
+    status: str = "provisional"
+    # sam for a box from the first requests, recovery for one SAM followed from a box appearance search found.
+    provenance: str = "sam"
 
 
 def estimated_frames(duration_sec: float) -> int:
@@ -116,8 +123,9 @@ def read_manifest(run_id: str) -> dict | None:
         return None
 
 
-async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, allow_live: bool | None = None) -> dict:
-    """allow_live, when given, replaces the run's own approval. A person approves it again to make views for a finished run."""
+async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, allow_live: bool | None = None, keep_on_empty: bool = False) -> dict:
+    """allow_live, when given, replaces the run's own approval. A person approves it again to make views for a finished run.
+    keep_on_empty leaves the stored views in place when this pass followed nothing, as a rebuild from stored answers may."""
     from app.pipeline.infer import load_working
     from app.services.credentials import load_secret
 
@@ -177,7 +185,11 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
                 tracked[local_id] = [item for item in tracked.get(local_id, []) if item.timestamp < taken] + sightings
     stage.progress_current = 4
     session.commit()
-    manifest = _render(run.id, document, media, tracked, _last_frame_time(video))
+    if keep_on_empty and not any(tracked.values()) and read_manifest(run.id):
+        return {"error": error or "SAM followed nothing.", "kept_existing": True, "requests": requests, "replayed_requests": replayed}
+    checked = _check_appearance(session, run, video, document, media, tracked, seeds)
+    _write_raw(run.id, tracked, checked)
+    manifest = _render(run.id, document, media, tracked, _last_frame_time(video), checked)
     manifest.update(
         {
             "source": model_id,
@@ -191,6 +203,8 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
             "located_later": later,
             "relocated": relocated,
             "error": error,
+            "appearance": checked.diagnostics if checked else {"used": False, "error": "Appearance checks are off."},
+            "gallery": app_.gallery_summary(checked.gallery) if checked and checked.mode == "demonstration" and checked.gallery else (checked.gallery if checked else None),
         }
     )
     (directory / _MANIFEST).write_text(json.dumps(manifest, indent=2))
@@ -500,9 +514,107 @@ def _assign(records: list[SamRecord], seeds: list[Seed], start: int = 0) -> dict
     return tracks
 
 
-def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float) -> dict:
+def _check_appearance(session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, media: Path, tracked, seeds):
+    """Statuses for every SAM box. None when appearance checks are off; a result with used False when they failed."""
+    from app.pipeline.appearance_stage import AppearanceResult, check_tracks
+
+    if not settings.appearance_enabled or not any(tracked.values()):
+        return None
+    labels = {item.local_id: item.label for item in document.objects}
+    template_id = (run.config_json or {}).get("reference_template_id") or ""
+    try:
+        if not template_id:
+            if not settings.auto_gallery:
+                return None
+            return check_tracks(
+                run_id=run.id, media=media, tracked=tracked, seeds=seeds, labels=labels, fps=SAM_FPS, mode="demonstration",
+                source={"video_id": video.id, "checksum": video.checksum_sha256},
+            )
+        reference = execution_reference(session, template_id, document)
+        return check_tracks(
+            run_id=run.id, media=media, tracked=tracked, seeds=seeds, labels=labels, fps=SAM_FPS, mode="execution", reference=reference
+        )
+    except Exception as exc:
+        # Appearance is an extra check. Its failure leaves SAM's boxes, shown as unchecked.
+        log.exception("Appearance checks failed for run %s", run.id)
+        return AppearanceResult(mode="execution" if template_id else "demonstration", error=str(exc)[:400], diagnostics={"used": False, "error": str(exc)[:400]})
+
+
+def execution_reference(session, template_id: str, document: AnalysisDocument):
+    """The learned procedure's references, keyed by the objects of this recording that its roles map to.
+    A role with no mapped object stays in as a rival under its role id. Nothing here is written back."""
+    from app.models.verification import LearnedWorkflowTemplate
+    from app.verification.roles import map_roles
+    from app.verification.schema import LearnedTemplate
+
+    template = session.get(LearnedWorkflowTemplate, template_id)
+    if template is None:
+        return None, {}, {}
+    manifest, by_role = app_.role_galleries(template.document_json or {}, template.source_run_id)
+    if manifest is None or not by_role:
+        return manifest, {}, {}
+    spec = LearnedTemplate.model_validate(template.document_json)
+    galleries: dict = {}
+    labels: dict[str, str] = {}
+    for assignment in map_roles(spec, document):
+        refs = by_role.get(assignment.role_id)
+        if refs is None:
+            continue
+        if assignment.status in {"assigned", "human"} and len(assignment.object_local_ids) == 1:
+            galleries[assignment.object_local_ids[0]] = refs
+        else:
+            galleries[assignment.role_id] = refs
+            labels[assignment.role_id] = assignment.label
+    return manifest, galleries, labels
+
+
+def _write_raw(run_id: str, tracked: dict[str, list[Sighting]], checked) -> None:
+    """Every SAM box as it came back, with the status the appearance check gave it. Nothing here is drawn."""
+    out = {}
+    for local_id, sightings in tracked.items():
+        ordered = sorted(sightings, key=lambda item: item.timestamp)
+        statuses = (checked.statuses.get(local_id) if checked and checked.used else None) or [("provisional", "unchecked")] * len(ordered)
+        out[local_id] = [
+            {
+                "time": round(item.timestamp, 3),
+                "frame_index": item.record.frame_index,
+                "sam_track_id": item.record.track_id,
+                "confidence": item.record.confidence,
+                "box": {key: round(value, 4) for key, value in item.box.items()},
+                "status": status,
+                "reason": reason,
+                "provenance": getattr(item, "provenance", "sam"),
+            }
+            for item, (status, reason) in zip(ordered, statuses, strict=True)
+        ]
+    samples = {}
+    if checked and checked.used:
+        samples = {local_id: rows for local_id, rows in checked.rows.items()}
+    (views_dir(run_id) / "raw_tracks.json").write_text(json.dumps({"sightings": out, "appearance_samples": samples}))
+
+
+_STATUS_RANK = {"validated": 3, "recovered": 3, "ambiguous": 2, "provisional": 1}
+
+
+def _shown(sightings: list[Sighting], checked, local_id: str) -> list[Sighting]:
+    """Boxes drawn as the object. A rejected or ambiguous box is kept in raw_tracks.json, not here."""
+    ordered = sorted(sightings, key=lambda item: item.timestamp)
+    if not checked or not checked.used or local_id not in checked.statuses:
+        for item in ordered:
+            item.status = "provisional"
+        return ordered
+    kept = []
+    for item, (status, _reason) in zip(ordered, checked.statuses[local_id], strict=True):
+        item.status = status
+        if status in app_.SHOWN:
+            kept.append(item)
+    return kept
+
+
+def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float, checked=None) -> dict:
     directory = views_dir(run_id)
     times = _cell_times(last_frame)
+    tracked = {local_id: _shown(sightings, checked, local_id) for local_id, sightings in tracked.items()}
     picks = {local_id: _picks(sightings, times) for local_id, sightings in tracked.items()}
     wanted = set()
     for local_id, sightings in tracked.items():
@@ -525,14 +637,14 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
                     image = name
                     confidence = sighting.record.confidence
                     frame_time = round(sighting.timestamp, 3)
-            cells.append({"time": round(moment, 3), "frame_time": frame_time, "image": image, "confidence": confidence})
+            cells.append({"time": round(moment, 3), "frame_time": frame_time, "image": image, "confidence": confidence, "status": sighting.status if image else None})
         objects[item.local_id] = {
             "thumbnail": _thumbnail(directory, position, sightings, frames),
             "cells": cells,
             "seen_cells": sum(cell["image"] is not None for cell in cells),
             "first_seen": round(_first(sightings).timestamp, 3) if sightings else None,
             "track": [
-                {"time": round(item.timestamp, 3), **{key: round(value, 4) for key, value in item.box.items()}}
+                {"time": round(item.timestamp, 3), **{key: round(value, 4) for key, value in item.box.items()}, "status": item.status}
                 for item in sorted(sightings, key=lambda item: item.timestamp)
             ],
         }
@@ -566,7 +678,8 @@ def _picks(sightings: list[Sighting], times: list[float]) -> list[Sighting | Non
             if index == len(times) - 2:
                 end = min(end, times[-1] - (1 - _CELL_SPREAD) * _CELL_INTERVAL + 1e-9)
             within = [item for item in allowed if moment <= item.timestamp < end]
-            pick = max(within, key=lambda item: (item.record.confidence or 0, -item.timestamp), default=None)
+            # A box the appearance check agreed with comes before one it could not check, then SAM's confidence.
+            pick = max(within, key=lambda item: (_STATUS_RANK.get(item.status, 0), item.record.confidence or 0, -item.timestamp), default=None)
         picks.append(pick)
         # An empty cell breaks the chain, so the next one is held only to its own interval.
         previous = pick.timestamp if pick else None

@@ -23,6 +23,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# DINOv2 appearance references (Meta, frozen weights via torch.hub). Without it, appearance checks report
+# themselves unavailable and nothing else changes. Fetch weights before a demo: python -m app.perception.encoder
+perception = [
+  "torch>=2.4",
+]
 dev = [
   "pytest>=8.3",
   "pytest-asyncio>=0.25",

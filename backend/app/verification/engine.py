@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from app.schemas.analysis import AnalysisDocument
 from app.verification.align import align_steps
-from app.verification.predicates import apply_human, judge_predicate
+from app.verification.predicates import apply_human, apply_reinspection, judge_predicate
 from app.verification.read import INCIDENTAL_ACTIONS, as_document, enum_value
 from app.verification.roles import assignment_index, map_roles
 from app.verification.schema import (
@@ -49,6 +49,7 @@ def verify_execution(
     demonstration_video_id: str = "",
     analysis_complete: bool = True,
     human_observations: list[dict] | None = None,
+    reinspection_findings: list[dict] | None = None,
 ) -> dict:
     spec = template if isinstance(template, LearnedTemplate) else LearnedTemplate.model_validate(template)
     removed = [step.step_id for step in spec.steps if step.removed]
@@ -62,6 +63,9 @@ def verify_execution(
         step.step_id: _judge_step(step, document, assignments, aligned, execution_video_id)
         for step in spec.steps
     }
+    baseline = {step.step_id: _machine_verdict(step, machine) for step in spec.steps}
+    if reinspection_findings:
+        machine = apply_reinspection(spec, machine, reinspection_findings, execution_video_id)
     records: dict[str, list[dict]] = {}
     for record in human_observations or []:
         records.setdefault(record["step_id"], []).append(record)
@@ -88,7 +92,7 @@ def verify_execution(
             proposals.get(step.step_id) if proposals else None,
             strategy,
             demonstration_video_id,
-            _machine_verdict(step, machine),
+            baseline[step.step_id],
         )
         for step in spec.steps
     ]
@@ -199,6 +203,8 @@ def _step_result(
 def _basis(judgements: list[PredicateJudgement], verdict: str) -> str:
     if any(item.human for item in judgements):
         return "human_confirmed"
+    if verdict in {"PASS", "FAIL"} and any(item.reinspected and item.status != "cannot" for item in judgements):
+        return "model_reinspection"
     return "model_evidence" if verdict in {"PASS", "FAIL"} else "none"
 
 

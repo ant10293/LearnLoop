@@ -28,6 +28,7 @@ from app.schemas.generation import (
     GuidedTaskOutput,
     InterpretationOutput,
     ReinspectionOutput,
+    ReinspectOutput,
     SinglePassOutput,
     StatesOutput,
     WorkflowOutput,
@@ -202,6 +203,7 @@ SINGLE_PASS = _contract("learnloop_single_pass", SinglePassOutput)
 GUIDED_TASK = _contract("learnloop_guided_task", GuidedTaskOutput)
 GUIDED_LOCATE = _contract("learnloop_guided_locate", GuidedLocateOutput)
 GUIDED_LOCATE_LATER = _contract("learnloop_guided_locate_later", GuidedLaterLocateOutput)
+REINSPECT = _contract("learnloop_reinspect", ReinspectOutput)
 _STAGE_CONTRACTS = {
     "scene_analysis": DISCOVERY,
     "action_analysis": _contract("learnloop_actions", ActionsOutput),

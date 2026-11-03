@@ -22,6 +22,8 @@ from app.models.verification import (
     VerificationRoleMapping,
     VerificationRunRow,
 )
+from app.perception import appearance as app_
+from app.services.appearance import ensure_gallery, gallery_status
 from app.verification.engine import verify_execution
 from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.learn import learn_template
@@ -67,7 +69,12 @@ def create_template(
     session.flush()
     row.family_id = row.id
     session.commit()
-    return template_payload(row, video)
+    # References are learned with the procedure, with nothing more for a person to do. A failure leaves the procedure.
+    try:
+        ensure_gallery(session, run.id)
+    except Exception:
+        session.rollback()
+    return template_payload(row, video, session)
 
 
 def list_templates(session: Session, project_id: str) -> list[dict]:
@@ -77,11 +84,11 @@ def list_templates(session: Session, project_id: str) -> list[dict]:
         .where(LearnedWorkflowTemplate.project_id == project_id)
         .order_by(LearnedWorkflowTemplate.created_at)
     ).all()
-    return [template_payload(row, session.get(VideoAsset, row.source_video_id)) for row in rows]
+    return [template_payload(row, session.get(VideoAsset, row.source_video_id), session) for row in rows]
 
 
 def get_template(session: Session, template_id: str) -> dict:
-    return template_payload(_template(session, template_id))
+    return template_payload(_template(session, template_id), None, session)
 
 
 def delete_template_family(session: Session, template_id: str) -> LearnedWorkflowTemplate:
@@ -520,7 +527,7 @@ def correct_role(session: Session, verification_id: str, role_id: str, object_lo
     overrides[role_id] = object_local_id
     config["role_overrides"] = overrides
     previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
-    report = _run_engine(template, revision, run, config, _observations(session, row.id))
+    report = _run_engine(template, revision, run, config, _observations(session, row.id), _findings(session, row.id))
     for step in report["steps"]:
         old = previous.get(step["step_id"])
         if not old:
@@ -574,7 +581,7 @@ def record_observation(session: Session, verification_id: str, step_id: str, pay
     )
     session.flush()
     previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
-    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id))
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), _findings(session, row.id))
     for step in report["steps"]:
         old = previous.get(step["step_id"]) or {}
         history = list(old.get("history") or [])
@@ -661,8 +668,10 @@ def evaluate_verification(session: Session, verification_id: str, ground_truth_i
     return {"metrics": metrics, "strategies": compared}
 
 
-def template_payload(row: LearnedWorkflowTemplate, video: VideoAsset | None = None) -> dict:
+def template_payload(row: LearnedWorkflowTemplate, video: VideoAsset | None = None, session: Session | None = None) -> dict:
+    appearance = gallery_status(session, row.source_run_id) if session is not None else app_.gallery_summary(app_.read_gallery(row.source_run_id)[0])
     return {
+        "appearance": appearance,
         "id": row.id,
         "project_id": row.project_id,
         "family_id": row.family_id,
@@ -734,6 +743,7 @@ def _fill(session: Session, row: VerificationRunRow, run: AnalysisRun) -> None:
     report["template_version"] = template.version
     report["execution_run_id"] = run.id
     report["execution_revision_id"] = revision.id
+    report["appearance"] = _appearance_evidence(session, template, run)
     if (row.config_json or {}).get("reinspect"):
         plans = plan_reinspections(report, max_steps=int((row.config_json or {}).get("max_reinspections") or 4))
         report["reinspections"] = plans
@@ -749,14 +759,111 @@ def _fill(session: Session, row: VerificationRunRow, run: AnalysisRun) -> None:
                     previous_verdict=plan.get("previous_verdict") or "",
                 )
             )
-    row.report_json = report
     if not row.machine_report_json:
         row.machine_report_json = report
+    from app.services.reinspection import schedule
+
+    # The first report is kept as made. A second look, when it runs, writes a revision of report_json.
+    report = {**report, "reinspection": schedule(session, row, report)}
+    row.report_json = report
     row.overall_result = report.get("overall") or "INCOMPLETE"
     row.status = "completed"
     row.finished_at = utcnow()
     row.error = ""
     _replace_details(session, row, report)
+
+
+def apply_reinspections(session: Session, row: VerificationRunRow, outcome: dict) -> None:
+    """Make the report again with every answered second look, keeping verdicts before it in each step's history.
+    A reviewer's observation or override still comes after it."""
+    template = _template(session, row.template_id)
+    run = session.get(AnalysisRun, row.execution_run_id)
+    revision = session.get(AnalysisRevision, row.execution_revision_id)
+    previous = dict(row.report_json or {})
+    block = {
+        **(previous.get("reinspection") or {}),
+        "status": outcome.get("status") or "completed",
+        "reason": outcome.get("reason") or "",
+        "outcomes": outcome.get("outcomes") or [],
+        "finished_at": utcnow().isoformat(),
+    }
+    if run is None or revision is None:
+        row.report_json = {**previous, "reinspection": {**block, "status": "failed", "reason": "The attempt's analysis is missing."}}
+        session.commit()
+        return
+    overridden = {step["step_id"]: step for step in previous.get("steps") or [] if step.get("basis") == "human_override"}
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), _findings(session, row.id))
+    old = {step["step_id"]: step for step in previous.get("steps") or []}
+    changed = []
+    steps = []
+    for step in report["steps"]:
+        before = old.get(step["step_id"]) or {}
+        if step["step_id"] in overridden:
+            # A reviewer set this verdict. A second look does not replace it.
+            steps.append(overridden[step["step_id"]])
+            continue
+        history = list(before.get("history") or [])
+        if before.get("verdict") != step["verdict"]:
+            history.append(
+                {
+                    "verdict": before.get("verdict"),
+                    "error_category": before.get("error_category"),
+                    "provenance": "DETERMINISTIC",
+                    "note": "Verdict before an automatic second look.",
+                }
+            )
+            changed.append({"step_id": step["step_id"], "before": before.get("verdict"), "after": step["verdict"]})
+        step["history"] = history
+        steps.append(step)
+    from app.verification.reinspect import _overall, _score
+
+    report["steps"] = steps
+    report["overall"] = _overall(steps)
+    report["score"] = _score(steps)
+    for key in ("verification_id", "template_id", "template_version", "execution_run_id", "execution_revision_id", "appearance"):
+        if key in previous:
+            report[key] = previous[key]
+    report["reinspection"] = {**block, "changed": changed, "overall_before": previous.get("overall")}
+    row.report_json = report
+    row.overall_result = report["overall"]
+    _replace_details(session, row, report)
+    session.commit()
+
+
+def _findings(session: Session, verification_id: str) -> list[dict]:
+    rows = session.scalars(
+        select(VerificationReinspection)
+        .where(VerificationReinspection.verification_id == verification_id, VerificationReinspection.status == "answered")
+        .order_by(VerificationReinspection.created_at)
+    ).all()
+    return [finding for item in rows for finding in (item.output_json or {}).get("findings") or []]
+
+
+def _appearance_evidence(session: Session, template: LearnedWorkflowTemplate, run: AnalysisRun) -> dict:
+    """What the appearance check of this attempt found, by role. It is identity evidence only: it cannot pass or fail a step."""
+    from app.pipeline.object_views import read_manifest
+
+    gallery = gallery_status(session, template.source_run_id)
+    manifest = read_manifest(run.id) or {}
+    checked = manifest.get("appearance") or {}
+    roles = {}
+    if checked.get("used"):
+        for local_id, tally in (checked.get("by_object") or {}).items():
+            total = sum(tally.values()) or 1
+            roles[local_id] = {
+                "validated_share": round((tally.get("validated", 0) + tally.get("recovered", 0)) / total, 3),
+                "rejected_share": round(tally.get("rejected", 0) / total, 3),
+                "ambiguous_share": round(tally.get("ambiguous", 0) / total, 3),
+                "sightings": total,
+            }
+    return {
+        "gallery": {key: gallery.get(key) for key in ("status", "gallery_id", "objects_learned", "objects", "reason") if key in gallery},
+        "used": bool(checked.get("used")),
+        "error": checked.get("error") or "",
+        "recovery": manifest.get("recovery") or {},
+        "objects": roles,
+        "note": "Appearance matches say which box is which part. They never pass or fail a step.",
+    }
 
 
 def _run_engine(
@@ -765,6 +872,7 @@ def _run_engine(
     run: AnalysisRun,
     config: dict,
     human: list[dict] | None = None,
+    findings: list[dict] | None = None,
 ) -> dict:
     return verify_execution(
         template.document_json,
@@ -776,6 +884,7 @@ def _run_engine(
         demonstration_video_id=template.source_video_id,
         analysis_complete=True,
         human_observations=human or [],
+        reinspection_findings=findings or [],
     )
 
 

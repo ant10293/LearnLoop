@@ -1,8 +1,8 @@
 """hackathon_guided: one Meta call for a short fixed-camera procedure.
 
-No local tracking, no reinspection, and no automatic retry. A demonstration
-also gets SAM object views for the page (see object_views.py); they never feed
-a verdict. A response
+No local tracking and no automatic retry. A demonstration gets SAM object views
+for the page and appearance references (see object_views.py); an attempt gets the
+same views, checked against those references. Boxes never decide a verdict. A response
 is stored and replayed only for the exact video, model, prompt, and schema it
 answered. A cached answer is labeled cached. A failed answer is reported, kept
 on its request row, and never cached.
@@ -127,6 +127,7 @@ def plan(
 
     system, user = _prompts(video, template)
     key = cache_key(video.checksum_sha256, model_id, system, user)
+    follows = follows_objects(segmentation_model_id, template)
     request = GenerationRequest(model_id=model_id, system_prompt=system, user_prompt=user, modality=MODALITY)
     return {
         "profile": PROFILE,
@@ -145,11 +146,11 @@ def plan(
         "cached": not fresh and find_cached(key) is not None,
         "fresh": fresh,
         "live_enabled": settings.live_inference,
-        "segmentation_model_id": segmentation_model_id if not template else "",
-        # A second follows, forward only, only when some object is boxed after the first frame.
-        "object_view_requests": 2 if segmentation_model_id and not template else 0,
+        "segmentation_model_id": segmentation_model_id if follows else "",
+        # A second follows, forward only, only when some object is boxed after the first frame. Recovery may add more.
+        "object_view_requests": 2 + settings.recovery_max_sam_requests if follows else 0,
         # One still on the first frame, and a second only when some object is not on it or SAM loses one.
-        "object_view_locate_requests": 2 if segmentation_model_id and not template else 0,
+        "object_view_locate_requests": 2 if follows else 0,
         "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)),
     }
 
@@ -208,13 +209,21 @@ def create_guided_run(
         "max_output_tokens": settings.guided_max_output_tokens,
         "max_retries": 0,
         "inference_source": "pending",
-        "object_views": bool(segmentation_model_id) and not template,
-        "segmentation_model_id": segmentation_model_id if not template else "",
+        "object_views": follows_objects(segmentation_model_id, template),
+        "segmentation_model_id": segmentation_model_id if follows_objects(segmentation_model_id, template) else "",
     }
     session.add(Job(run_id=run.id, max_attempts=1))
     session.commit()
     session.refresh(run)
     return run
+
+
+def follows_objects(segmentation_model_id: str, template: dict | None) -> bool:
+    """A demonstration is followed with SAM for its views and its appearance references. An attempt is followed
+    only when appearance checks are on, so its boxes can be checked against the procedure's references."""
+    if not segmentation_model_id:
+        return False
+    return not template or settings.appearance_enabled
 
 
 def is_guided(run: AnalysisRun) -> bool:

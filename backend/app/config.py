@@ -35,6 +35,31 @@ class Settings(BaseSettings):
     # Research endpoints from the source lab. The product does not use them.
     research_routes: bool = False
 
+    # Appearance references from DINOv2 ViT-S/14 (Meta, frozen weights). A cosine between two
+    # embeddings is a similarity, not a probability, so these thresholds are tuning values.
+    appearance_enabled: bool = True
+    # Build a gallery of trusted crops from each demonstration's SAM tracks, with no person in the loop.
+    auto_gallery: bool = True
+    # Search near a rejected or lost track for the object and follow it again with SAM.
+    appearance_recovery: bool = True
+    # Ask the analysis model a narrow question about unresolved required steps, with a few frames.
+    auto_reinspect: bool = True
+    appearance_max_references: int = 6
+    appearance_min_crop_px: int = 20
+    appearance_sample_fps: float = 3.0
+    appearance_batch_size: int = 32
+    # A sighting matches its own references at or above accept, and beats every rival by margin.
+    appearance_accept: float = 0.6
+    appearance_margin: float = 0.05
+    # Below this, a sighting does not look like its object at all.
+    appearance_floor: float = 0.4
+    recovery_max_intervals: int = 4
+    recovery_max_candidates: int = 48
+    # Extra SAM requests recovery may send in one object-views pass. Each bills frames.
+    recovery_max_sam_requests: int = 1
+    reinspect_max_calls: int = 3
+    reinspect_max_frames: int = 6
+
     @property
     def resolved_data_dir(self) -> Path:
         path = self.data_dir

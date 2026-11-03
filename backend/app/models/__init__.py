@@ -1,6 +1,5 @@
 """Import all models so metadata is complete."""
 
-from app.models.product import HumanObservation, ProcedureRecording  # noqa: F401
 from app.models.audio import AudioAlignment, TranscriptSegment
 from app.models.domain import (
     ActionRow,
@@ -24,6 +23,7 @@ from app.models.domain import (
     WorkflowStepRow,
 )
 from app.models.media import FrameAsset, Project, VideoAsset
+from app.models.product import HumanObservation, ProcedureRecording  # noqa: F401
 from app.models.recovery import (
     RecoveryDismissal,
     RecoveryExperiment,

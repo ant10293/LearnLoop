@@ -9,6 +9,8 @@ response becomes an AnalysisDocument.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 from app.schemas.enums import (
@@ -273,3 +275,20 @@ class GuidedTaskOutput(_Closed):
     workflow_steps: list[GeneratedStep]
     dependencies: list[GeneratedDependency]
     ambiguities: list[GeneratedAmbiguity]
+
+
+class ReinspectFinding(_Closed):
+    """One required condition read from a few frames of an attempt."""
+
+    step_id: str
+    predicate_id: str
+    outcome: Literal["supported", "contradicted", "inconclusive"]
+    visibility: Literal["visible", "partial", "occluded", "out_of_frame"]
+    evidence_timestamps: list[float]
+    reason: str
+    limitations: list[str]
+    evidence_class: Literal["DIRECTLY_OBSERVED", "INFERRED", "UNKNOWN"]
+
+
+class ReinspectOutput(_Closed):
+    findings: list[ReinspectFinding]

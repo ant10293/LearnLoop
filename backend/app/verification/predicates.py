@@ -373,6 +373,60 @@ def apply_human(
     return list(by_id.values())
 
 
+def apply_reinspection(spec, machine: dict[str, list[PredicateJudgement]], findings: list[dict], video_id: str) -> dict:
+    """Fold validated reinspection findings into predicates the first reading could not decide.
+
+    A finding replaces only a "cannot" judgement: it never overturns a reading the first
+    analysis already supported or contradicted. Supported and contradicted need directly
+    observed, visible evidence at frames that were sent; anything else stays cannot, with
+    the reason noted. A reinspected pass carries no onset, so it neither satisfies nor
+    breaks an order constraint: the frames show an end state, not when it was reached.
+    """
+    updated = {step_id: [item.model_copy(deep=True) for item in items] for step_id, items in machine.items()}
+    for finding in findings:
+        items = updated.get(finding.get("step_id") or "")
+        if items is None:
+            continue
+        for index, current in enumerate(items):
+            if current.predicate_id != finding.get("predicate_id") or current.status != "cannot":
+                continue
+            items[index] = _reinspected_judgement(current, finding, video_id)
+    return updated
+
+
+def _reinspected_judgement(current: PredicateJudgement, finding: dict, video_id: str) -> PredicateJudgement:
+    outcome = finding.get("outcome")
+    direct = finding.get("evidence_class") == "DIRECTLY_OBSERVED" and finding.get("visibility") == "visible"
+    stamps = [float(value) for value in finding.get("evidence_timestamps") or []]
+    model = finding.get("model_id") or "the analysis model"
+    reason = (finding.get("reason") or "").strip()
+    if outcome in {"supported", "contradicted"} and direct and stamps:
+        status = "pass" if outcome == "supported" else "fail"
+        words = "directly showed the condition holds" if status == "pass" else "directly showed the condition does not hold"
+        note = f"A second look by {model} at {', '.join(f'{value:.2f}s' for value in stamps)} {words}. {reason}".strip()
+        category = (current.error_category if current.error_category not in {"", "UNVERIFIABLE_OPERATION"} else "INCORRECT_PHYSICAL_STATE") if status == "fail" else ""
+        return PredicateJudgement(
+            predicate_id=current.predicate_id,
+            status=status,
+            error_category=category,
+            note=note,
+            reinspected=True,
+            evidence=[
+                EvidenceRef(
+                    video_id=video_id,
+                    timestamp=value,
+                    observation=reason or note,
+                    evidence_class="DIRECTLY_OBSERVED",
+                    provenance="AI_REINSPECTION",
+                )
+                for value in stamps
+            ],
+        )
+    limits = "; ".join(finding.get("limitations") or [])
+    note = f"{current.note} A second look by {model} did not establish it: {reason or 'no direct view'}{f' ({limits})' if limits else ''}.".strip()
+    return current.model_copy(update={"note": note, "reinspected": True})
+
+
 def _human_judgement(predicate_id: str, record: dict, current, video_id: str) -> PredicateJudgement:
     answer = record["answer"]
     status = {"installed": "pass", "not_installed": "fail"}.get(answer, "cannot")
