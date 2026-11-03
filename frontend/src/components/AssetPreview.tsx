@@ -1,8 +1,10 @@
-import { Download, ExternalLink, Search, X } from "lucide-react";
+import { Download, ExternalLink, Maximize2, Minimize2, Search, X } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 
-export type PreviewImage = { src: string; filename: string; confidence?: number | null };
+/** Where the object sits in its full frame, as fractions of the picture. */
+export type PreviewBox = { x: number; y: number; w: number; h: number };
+export type PreviewImage = { src: string; filename: string; confidence?: number | null; full?: { src: string; box: PreviewBox } };
 
 /** Largest box with the image's own aspect ratio that fits the expanded preview. */
 function fittedPreviewSize(naturalWidth: number, naturalHeight: number, viewportWidth: number, viewportHeight: number) {
@@ -26,14 +28,17 @@ export function AssetPreview({ images, startIndex = 0, onClose }: { images: Prev
   const [current, setCurrent] = useState(() => Math.min(Math.max(0, startIndex), Math.max(0, images.length - 1)));
   const [zoom, setZoom] = useState(1);
   const [box, setBox] = useState<{ width: number; height: number } | null>(null);
+  const [showFull, setShowFull] = useState(false);
   const natural = useRef({ width: 0, height: 0 });
   const onCloseRef = useRef(onClose);
   const closeRef = useRef<HTMLButtonElement>(null);
   onCloseRef.current = onClose;
   const image = images[current];
-  const fittedSrc = useRef(image?.src);
-  if (image?.src !== fittedSrc.current) {
-    fittedSrc.current = image?.src;
+  const full = showFull ? image?.full : undefined;
+  const src = full?.src ?? image?.src;
+  const fittedSrc = useRef(src);
+  if (src !== fittedSrc.current) {
+    fittedSrc.current = src;
     natural.current = { width: 0, height: 0 };
     setBox(null);
   }
@@ -100,7 +105,7 @@ export function AssetPreview({ images, startIndex = 0, onClose }: { images: Prev
 
   function download() {
     const link = document.createElement("a");
-    link.href = image.src;
+    link.href = src;
     link.download = image.filename;
     document.body.appendChild(link);
     link.click();
@@ -129,23 +134,42 @@ export function AssetPreview({ images, startIndex = 0, onClose }: { images: Prev
         </>
       )}
       <div className="asset-preview-actions">
+        {image.full && (
+          <button
+            type="button"
+            className="asset-preview-action has-label"
+            onClick={() => {
+              setZoom(1);
+              setShowFull((value) => !value);
+            }}
+          >
+            {full ? <Minimize2 size={18} strokeWidth={1.8} /> : <Maximize2 size={18} strokeWidth={1.8} />}
+            {full ? "Object only" : "Full image"}
+          </button>
+        )}
         <button type="button" className="asset-preview-action" title="Download" aria-label="Download" onClick={download}>
           <Download size={20} strokeWidth={1.8} />
         </button>
-        <button type="button" className="asset-preview-action" title="Open in new tab" aria-label="Open in new tab" onClick={() => window.open(image.src, "_blank", "noopener,noreferrer")}>
+        <button type="button" className="asset-preview-action" title="Open in new tab" aria-label="Open in new tab" onClick={() => window.open(src, "_blank", "noopener,noreferrer")}>
           <ExternalLink size={20} strokeWidth={1.8} />
         </button>
       </div>
       <div className="asset-preview-viewport">
-        <span className="shot-frame" style={{ transform: zoom === 1 ? undefined : `scale(${zoom})` }}>
+        <span className="shot-frame" style={{ transform: zoom === 1 ? undefined : `scale(${zoom})`, ...(box ? { width: box.width, maxWidth: "none" } : {}) }}>
           <img
-            src={image.src}
+            src={src}
             alt={image.filename}
             className="asset-preview-img"
-            style={box ? { width: box.width, height: box.height, maxWidth: "none", maxHeight: "none" } : undefined}
+            style={box ? { width: box.width, height: box.height, minWidth: 0, minHeight: 0, maxWidth: "none", maxHeight: "none" } : undefined}
             draggable={false}
             onLoad={onImageLoad}
           />
+          {full && box && (
+            <span
+              className="asset-preview-box"
+              style={{ left: `${full.box.x * 100}%`, top: `${full.box.y * 100}%`, width: `${full.box.w * 100}%`, height: `${full.box.h * 100}%` }}
+            />
+          )}
           {image.confidence != null && <span className="shot-score">{Math.round(image.confidence * 100)}%</span>}
         </span>
       </div>

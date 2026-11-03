@@ -5,7 +5,7 @@ import { AssetPreview } from "../components/AssetPreview";
 import { AnalysisStages } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
-import { api, clock, conditionText, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
+import { api, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
 type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] };
 type OtherStep = { step_id: string; number: number; name: string };
@@ -187,7 +187,7 @@ export function ProcedurePage() {
                 </span>
                 <input className="field" aria-label={`Label for ${role.label}`} value={labels[role.role_id] ?? role.label} onChange={(event) => setLabels((current) => ({ ...current, [role.role_id]: event.target.value }))} />
               </div>
-              {view && <ObjectTimeline view={view} label={role.label} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
+              {view && <ObjectTimeline view={view} label={role.label} videoId={template.source_video_id} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
               {role.original_label && <span className="edited">Human-corrected from “{role.original_label}”</span>}
             </div>
           );
@@ -233,10 +233,15 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
 }
 
 /** Where SAM found the object, moment by moment. A blank cell means it was not found, not that it was gone. */
-function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: string; onSeek: (time: number) => void }) {
+function ObjectTimeline({ view, label, videoId, onSeek }: { view: ObjectView; label: string; videoId: string; onSeek: (time: number) => void }) {
   const [preview, setPreview] = useState<number | null>(null);
   if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
-  const frames = view.cells.flatMap((cell) => (cell.url ? [{ time: cell.time, src: cell.url, filename: `${label} · ${clock(cell.time)}`, confidence: cell.confidence }] : []));
+  const frames = view.cells.flatMap((cell) => {
+    if (!cell.url) return [];
+    // The crop came from the sighting nearest this moment, so the full frame is taken at that sighting's own time.
+    const box = boxAt(view.track ?? [], cell.time);
+    return [{ time: cell.time, src: cell.url, filename: `${label} · ${clock(cell.time)}`, confidence: cell.confidence, full: box ? { src: frameUrl(videoId, box.time), box } : undefined }];
+  });
   return (
     <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
       {view.cells.map((cell) => {

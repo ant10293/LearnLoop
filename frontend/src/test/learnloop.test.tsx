@@ -427,6 +427,39 @@ describe("Procedure review", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("shows an object's full frame with only its own box", async () => {
+    const tracked = template("accepted");
+    tracked.document.roles = [{ ...roles[0], source_object_ids: ["o1"] as never[] }, { ...roles[1], source_object_ids: ["o2"] as never[] }];
+    const cells = [{ time: 2, url: "/f2" }];
+    mockApi((url) => {
+      if (url.endsWith("/procedures/p1")) return { body: { ...procedure(), template: tracked, templates: [tracked] } };
+      if (url.endsWith("/objects")) {
+        return { body: { objects: {
+          o1: { thumbnail_url: null, seen_cells: 1, cells, track: [{ time: 1.875, x: 0.1, y: 0.2, w: 0.3, h: 0.4 }] },
+          o2: { thumbnail_url: null, seen_cells: 1, cells: [{ time: 2, url: "/g2" }], track: [{ time: 2, x: 0.5, y: 0.5, w: 0.1, h: 0.1 }] },
+        } } };
+      }
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    fireEvent.click((await screen.findAllByRole("button", { name: "Expand frame at 0:02.0" }))[0]);
+    const dialog = screen.getByRole("dialog");
+    expect(dialog.querySelector(".asset-preview-box")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Full image" }));
+    const image = dialog.querySelector("img") as HTMLImageElement;
+    expect(image).toHaveAttribute("src", "/api/learnloop/videos/v1/frame?t=1.88");
+    Object.defineProperty(image, "naturalWidth", { value: 1920 });
+    Object.defineProperty(image, "naturalHeight", { value: 1080 });
+    fireEvent.load(image);
+    const boxes = dialog.querySelectorAll<HTMLElement>(".asset-preview-box");
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0].style.left).toBe("10%");
+    expect(boxes[0].style.height).toBe("40%");
+    fireEvent.click(screen.getByRole("button", { name: "Object only" }));
+    expect(dialog.querySelector("img")).toHaveAttribute("src", "/f2");
+    expect(dialog.querySelector(".asset-preview-box")).toBeNull();
+  });
+
   it("learns once when the analysis finished after leaving Teach", async () => {
     const calls = mockApi((url) => {
       if (url.endsWith("/procedures/p1")) return { body: untaught("completed") };
