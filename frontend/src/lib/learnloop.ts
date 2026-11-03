@@ -60,6 +60,8 @@ export interface VideoInfo {
   id: string;
   filename: string;
   duration_sec: number;
+  width?: number;
+  height?: number;
   playback_url: string;
   thumbnail_url: string;
   ingest_status: string;
@@ -86,6 +88,14 @@ export interface Condition {
   origin: "model" | "human";
 }
 
+export interface TemplateDependency {
+  step_id: string;
+  category: string;
+  constrains_order: boolean;
+  rationale: string;
+  origin: "model" | "human";
+}
+
 export interface TemplateStep {
   step_id: string;
   name: string;
@@ -95,6 +105,7 @@ export interface TemplateStep {
   expected_action: string;
   completion_text: string;
   completion_conditions: Condition[];
+  dependencies: TemplateDependency[];
   uncertainty: number;
   uncertainty_notes: string;
   demo_time_start: number | null;
@@ -261,7 +272,7 @@ export function learnedProcedures(templates: Template[]): Template[] {
 export interface TemplatePatch {
   name?: string;
   acceptance_status?: "accepted" | "draft";
-  steps?: (Partial<Omit<TemplateStep, "completion_conditions">> & { completion_conditions?: Partial<Condition>[] })[];
+  steps?: (Partial<Omit<TemplateStep, "completion_conditions" | "dependencies">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] })[];
   roles?: { role_id: string; label: string }[];
 }
 

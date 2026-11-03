@@ -5,7 +5,7 @@ import { RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { Bone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag, VerdictTag } from "../components/ui";
-import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type Procedure, type Recording, type Run, type StepResult, type Verification } from "../lib/learnloop";
+import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type Procedure, type Recording, type Run, type StepResult, type Verification, type VideoInfo } from "../lib/learnloop";
 
 const RESULT_PLACEHOLDERS = 3;
 
@@ -106,7 +106,7 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
   const step = report?.steps.find((item) => item.step_id === stepId) ?? report?.steps.find((item) => item.verdict === "FAIL") ?? report?.steps[0];
   useEffect(() => setTick((value) => value + 1), [step?.step_id]);
   if (query.error) return <ErrorNote message={(query.error as Error).message} />;
-  if (!query.data || !report || !step) return <ReportSkeleton />;
+  if (!query.data || !report || !step) return <ReportSkeleton video={recording.video} />;
   const verification = query.data;
   const demo = procedure.recordings.find((item) => item.video.id === report.demonstration_video_id);
   const evidenceTime = step.execution_time ?? step.evidence[0]?.timestamp ?? null;
@@ -134,7 +134,7 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
           </button>
         </li>
       ))}
-      detail={<StepDetail step={step} verification={verification} videoId={recording.video.id} duration={recording.video.duration_sec} onChange={() => client.invalidateQueries({ queryKey: ["verification", verificationId] })} onSeek={() => setTick((value) => value + 1)} />}
+      detail={<StepDetail step={step} verification={verification} video={recording.video} onChange={() => client.invalidateQueries({ queryKey: ["verification", verificationId] })} onSeek={() => setTick((value) => value + 1)} />}
       diagnostics={
         <dl>
           <dt>Model</dt><dd>{verification.config.provider_id} / {humanizeModel(verification.config.model_id)}, {verification.config.modality}</dd>
@@ -177,7 +177,7 @@ function ReportView({ overall = "", verdict, summary, basis, action, warnings, d
   );
 }
 
-function ReportSkeleton() {
+function ReportSkeleton({ video }: { video?: VideoInfo }) {
   return (
     <div aria-busy="true">
       <p className="sr-only">Loading the report</p>
@@ -203,7 +203,11 @@ function ReportSkeleton() {
             basis={<Bone width="50%" />}
             expected={<Bone width="70%" />}
             observed={<Bone width="60%" />}
-          />
+          >
+            <div className="frames">
+              <FrameFigure video={video} caption={<Bone width="80%" />} />
+            </div>
+          </StepDetailFrame>
         }
       />
     </div>
@@ -234,7 +238,28 @@ function StepDetailFrame({ label, title, verdict, basis, category, expected, obs
   );
 }
 
-function StepDetail({ step, verification, videoId, duration, onChange, onSeek }: { step: StepResult; verification: Verification; videoId: string; duration: number; onChange: () => Promise<void>; onSeek: () => void }) {
+/** A recorded frame's box, shaped like its video, so the panel keeps its height until the picture arrives. No `src` is the skeleton. */
+function FrameImage({ video, src, alt, onClick }: { video?: VideoInfo; src?: string; alt?: string; onClick?: () => void }) {
+  const [settled, setSettled] = useState(false);
+  const shape = video?.width && video.height ? { aspectRatio: `${video.width} / ${video.height}` } : undefined;
+  return (
+    <div className="frame-image" style={shape}>
+      {src && <img src={src} alt={alt} onClick={onClick} onLoad={() => setSettled(true)} onError={() => setSettled(true)} />}
+      {!settled && <Bone className="bone-fill" />}
+    </div>
+  );
+}
+
+function FrameFigure({ video, src, alt, caption, onClick }: { video?: VideoInfo; src?: string; alt?: string; caption: ReactNode; onClick?: () => void }) {
+  return (
+    <figure>
+      <FrameImage video={video} src={src} alt={alt} onClick={onClick} />
+      <figcaption className="small">{caption}</figcaption>
+    </figure>
+  );
+}
+
+function StepDetail({ step, verification, video, onChange, onSeek }: { step: StepResult; verification: Verification; video: VideoInfo; onChange: () => Promise<void>; onSeek: () => void }) {
   const moments = step.evidence.filter((item) => item.timestamp != null);
   const observations = verification.human_observations.filter((item) => item.step_id === step.step_id);
   return (
@@ -251,10 +276,14 @@ function StepDetail({ step, verification, videoId, duration, onChange, onSeek }:
       {moments.length > 0 && (
         <div className="frames">
           {moments.slice(0, 3).map((item, index) => (
-            <figure key={`${item.timestamp}-${index}`}>
-              <img src={frameUrl(videoId, item.timestamp as number)} alt={`Frame at ${clock(item.timestamp)}`} onClick={onSeek} />
-              <figcaption className="small"><span className="mono">{clock(item.timestamp)}</span> {item.provenance === "HUMAN_ANNOTATION" ? "Reviewer" : "Meta"}: {item.observation}</figcaption>
-            </figure>
+            <FrameFigure
+              key={`${item.timestamp}-${index}`}
+              video={video}
+              src={frameUrl(video.id, item.timestamp as number)}
+              alt={`Frame at ${clock(item.timestamp)}`}
+              onClick={onSeek}
+              caption={<><span className="mono">{clock(item.timestamp)}</span> {item.provenance === "HUMAN_ANNOTATION" ? "Reviewer" : "Meta"}: {item.observation}</>}
+            />
           ))}
         </div>
       )}
@@ -262,16 +291,16 @@ function StepDetail({ step, verification, videoId, duration, onChange, onSeek }:
       {observations.map((item) => (
         <p key={item.id} className="edited">{item.reviewer} recorded “{item.answer.replaceAll("_", " ")}” at {clock(item.timestamp)}{item.note ? `: ${item.note}` : ""}</p>
       ))}
-      {(step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed") && <Checkpoint step={step} verification={verification} videoId={videoId} duration={duration} onChange={onChange} />}
+      {(step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed") && <Checkpoint step={step} verification={verification} video={video} onChange={onChange} />}
     </StepDetailFrame>
   );
 }
 
-function Checkpoint({ step, verification, videoId, duration, onChange }: { step: StepResult; verification: Verification; videoId: string; duration: number; onChange: () => Promise<void> }) {
+function Checkpoint({ step, verification, video, onChange }: { step: StepResult; verification: Verification; video: VideoInfo; onChange: () => Promise<void> }) {
   const [reviewer, setReviewer] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
-  const timestamp = Math.max(duration - 0.2, 0);
+  const timestamp = Math.max(video.duration_sec - 0.2, 0);
 
   async function answer(value: Answer) {
     setError("");
@@ -286,7 +315,7 @@ function Checkpoint({ step, verification, videoId, duration, onChange }: { step:
   return (
     <div className="checkpoint">
       <h3>Review the final frame</h3>
-      <img src={frameUrl(videoId, timestamp)} alt={`Final frame at ${clock(timestamp)}`} />
+      <FrameImage video={video} src={frameUrl(video.id, timestamp)} alt={`Final frame at ${clock(timestamp)}`} />
       <p className="small">Expected: {step.expected}. Your answer is stored as a human observation at {clock(timestamp)}, and the verifier reads it as evidence.</p>
       <div className="row">
         <input className="field grow" aria-label="Reviewer name" placeholder="Your name" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />

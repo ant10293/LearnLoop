@@ -26,7 +26,7 @@ from app.verification.engine import verify_execution
 from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.learn import learn_template
 from app.verification.reinspect import apply_finding, plan_reinspections
-from app.verification.schema import CompletionPredicate, LearnedTemplate
+from app.verification.schema import CompletionPredicate, LearnedTemplate, TemplateDependency
 
 
 def create_template(
@@ -126,6 +126,11 @@ def revise_template(session: Session, template_id: str, patch: dict) -> dict:
         if step is None:
             continue
         _revise_step(step, change, roles, log)
+    order_changes = [change for change in patch.get("steps") or [] if change.get("order_after") is not None and change.get("step_id") in steps]
+    for change in order_changes:
+        _revise_order(steps[change["step_id"]], change["order_after"], steps, log)
+    if order_changes:
+        _reject_order_cycle(document.steps)
     for change in patch.get("roles") or []:
         role = roles.get(change.get("role_id") or "")
         if role is None:
@@ -220,6 +225,55 @@ def _revise_step(step, change: dict, roles: dict, log: list[dict]) -> None:
         step.completion_conditions = conditions
         if "completion_conditions" not in step.human_edited:
             step.human_edited.append("completion_conditions")
+
+
+def _revise_order(step, order_after: list[str], steps: dict, log: list[dict]) -> None:
+    """order_after is the whole set of steps this one must follow. Other steps may fall in any order."""
+    wanted = list(dict.fromkeys(order_after))
+    if step.step_id in wanted:
+        raise ValueError("A step cannot be required to come after itself.")
+    if any(step_id not in steps for step_id in wanted):
+        raise ValueError("A step order names a step that is not in this procedure.")
+    before = [dep.step_id for dep in step.dependencies if dep.constrains_order]
+    if set(before) == set(wanted):
+        return
+    known = {dep.step_id for dep in step.dependencies}
+    for dep in step.dependencies:
+        enforced = dep.step_id in wanted
+        if dep.constrains_order != enforced:
+            dep.constrains_order = enforced
+            dep.origin = "human"
+    step.dependencies.extend(
+        TemplateDependency(
+            step_id=step_id,
+            category="human_specified",
+            constrains_order=True,
+            evidence_class="HUMAN_SPECIFIED",
+            origin="human",
+        )
+        for step_id in wanted
+        if step_id not in known
+    )
+    log.append(_edit("order_after", step.step_id, before, wanted))
+    if "order_after" not in step.human_edited:
+        step.human_edited.append("order_after")
+
+
+def _reject_order_cycle(steps: list) -> None:
+    after = {step.step_id: [dep.step_id for dep in step.dependencies if dep.constrains_order] for step in steps}
+    settled: set[str] = set()
+
+    def visit(step_id: str, path: set[str]) -> None:
+        if step_id in path:
+            raise ValueError("These step orders form a loop, so no recording could satisfy them.")
+        if step_id in settled:
+            return
+        for prior in after.get(step_id, []):
+            visit(prior, path | {step_id})
+        settled.add(step_id)
+
+    for step_id in after:
+        visit(step_id, set())
 
 
 def review_state(document: dict) -> str:

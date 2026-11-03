@@ -34,7 +34,7 @@ _PRIORITY = {
 }
 _TIMING = (
     "Duration, pauses, camera angle, and absolute timestamps are not errors. "
-    "Order is checked only for dependencies categorized as necessary_physical."
+    "Order is checked only for necessary physical dependencies and orders set by a reviewer."
 )
 
 
@@ -332,7 +332,7 @@ def _observed(judgements: list[PredicateJudgement], verdict: str) -> str:
 
 def _explanation(step, judgements, order, verdict: str) -> str:
     if order == "violated":
-        return "A necessary prerequisite was completed after this step's supporting evidence."
+        return "A required prerequisite was completed after this step's supporting evidence."
     if not step.completion_conditions:
         return "No observable completion condition was learned, so the step cannot pass from an action label."
     notes = [item.note for item in judgements if item.note]

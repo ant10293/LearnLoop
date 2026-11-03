@@ -1,4 +1,4 @@
-import { boxAt, humanizeModel, learnedProcedures } from "../lib/learnloop";
+import { boxAt, humanizeModel, learnedProcedures, type TemplateDependency } from "../lib/learnloop";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -46,7 +46,7 @@ const roles = [
 ];
 const templateStep = {
   step_id: "s1", name: "Place green cube", required: true, requirement_status: "required", object_roles: ["role:green", "role:base"],
-  expected_action: "Place it", completion_text: "On the base", uncertainty: 0.2, uncertainty_notes: "", demo_time_start: 4, demo_time_end: 5, removed: false, human_edited: [],
+  expected_action: "Place it", completion_text: "On the base", uncertainty: 0.2, uncertainty_notes: "", demo_time_start: 4, demo_time_end: 5, removed: false, human_edited: [], dependencies: [] as TemplateDependency[],
   completion_conditions: [{ id: "rel:0", type: "physical_relationship", subject_role: "role:green", target_role: "role:base", relation: "attached", state_label: "", evidence_requirement: "required", source_evidence_class: "DIRECTLY_OBSERVED", origin: "model" }],
 };
 const template = (state: string, step = templateStep) => ({
@@ -183,6 +183,7 @@ describe("Loading skeletons", () => {
     expect(screen.getByText("Expected")).toBeTruthy();
     expect(await screen.findByText("Missing component")).toBeTruthy();
     expect(screen.queryByText("Loading the report")).toBeNull();
+    container.querySelectorAll(".frame-image img").forEach((frame) => fireEvent.load(frame));
     expect(container.querySelector(".bone")).toBeNull();
   });
 });
@@ -374,6 +375,33 @@ describe("Procedure review", () => {
     show("/procedures/p1/procedure");
     expect(await screen.findByText(/No checkable condition/)).toBeTruthy();
   });
+
+  it("saves which steps a step must follow", async () => {
+    const second = { ...templateStep, step_id: "s2", name: "Lock cube" };
+    const draft = { ...template("ai_draft"), document: { ...template("ai_draft").document, steps: [templateStep, second] } };
+    const sent: unknown[] = [];
+    mockApi((url, init) => {
+      if (url.endsWith("/procedures/p1")) return { body: procedure({ template: draft, templates: [draft] }) };
+      if (init?.method === "PATCH") {
+        sent.push(JSON.parse(String(init.body)));
+        return { body: draft };
+      }
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    expect((await screen.findAllByText("Any order")).length).toBe(2);
+    expect(screen.queryByRole("checkbox", { name: "Step 1: Place green cube" })).toBeNull();
+    const row = screen.getAllByRole("button", { name: /Step order/ })[1];
+    expect(row.getAttribute("aria-expanded")).toBe("false");
+    fireEvent.click(row);
+    expect(row.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(/must happen before this step \(Step 2\)/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Step 1: Place green cube" }));
+    expect(screen.getByText("After step 1")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Save edits" }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toMatchObject({ steps: [{ step_id: "s2", order_after: ["s1"] }] });
+  });
 });
 
 describe("Verify", () => {
@@ -393,6 +421,17 @@ describe("Verify", () => {
     expect(screen.getByAltText("Frame at 0:09.5")).toHaveAttribute("src", "/api/learnloop/videos/v2/frame?t=9.50");
     expect(screen.getByText(/Cached Meta response\./)).toBeTruthy();
     expect(screen.getByRole("link", { name: "Export report" })).toHaveAttribute("href", "/api/verifications/c1/export");
+  });
+
+  it("holds a frame's place until its picture loads", async () => {
+    mockApi(handler());
+    const { container } = show("/procedures/p1/verify");
+    expect(container.querySelector(".detail .frame-image .bone-fill")).toBeInTheDocument();
+    expect(container.querySelector(".detail figcaption .bone")).toBeInTheDocument();
+    const frame = await screen.findByAltText("Frame at 0:09.5");
+    expect(frame.parentElement?.querySelector(".bone-fill")).toBeInTheDocument();
+    fireEvent.load(frame);
+    expect(frame.parentElement?.querySelector(".bone-fill")).toBeNull();
   });
 
   it("deselects an attempt when its selected tab is clicked again", async () => {

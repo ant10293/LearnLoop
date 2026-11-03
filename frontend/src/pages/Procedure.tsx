@@ -4,9 +4,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { AnalysisStages } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
-import { api, clock, conditionText, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
+import { api, clock, conditionText, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
-type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[] };
+type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] };
+type OtherStep = { step_id: string; number: number; name: string };
 
 const ROLE_PLACEHOLDERS = 2;
 const STEP_PLACEHOLDERS = 3;
@@ -184,7 +185,7 @@ export function ProcedurePage() {
           );
         })}
         steps={template.document.steps.map((step, index) => (
-          <StepCard key={step.step_id} index={index} step={step} edit={steps[step.step_id] ?? {}} roles={roles} template={template} onChange={(edit) => change(step.step_id, edit)} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />
+          <StepCard key={step.step_id} index={index} step={step} edit={steps[step.step_id] ?? {}} roles={roles} template={template} others={template.document.steps.flatMap((other, position) => (other.step_id === step.step_id || (steps[other.step_id]?.removed ?? other.removed) ? [] : [{ step_id: other.step_id, number: position + 1, name: steps[other.step_id]?.name ?? other.name }]))} onChange={(edit) => change(step.step_id, edit)} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />
         ))}
       />
       <ErrorNote message={removeError} />
@@ -210,12 +211,12 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
       <div className="split procedure">
         <div className="sticky">
           {film}
-          {history}
           <section className="panel">
             <h2>Objects</h2>
             <p className="muted small">Correct a label if the model named an object wrongly.</p>
             {objects}
           </section>
+          {history}
         </div>
         <ol className="steps">{steps}</ol>
       </div>
@@ -362,7 +363,7 @@ function StepFrame({ index, removed, title, time, footer, children }: { index: n
   );
 }
 
-function StepFields({ objects, action, completion, checks, conditionEdit, uncertainty, edited }: { objects: ReactNode; action: ReactNode; completion: ReactNode; checks: ReactNode; conditionEdit: ReactNode; uncertainty: ReactNode; edited?: ReactNode }) {
+function StepFields({ objects, action, completion, checks, conditionEdit, order, uncertainty, edited }: { objects: ReactNode; action: ReactNode; completion: ReactNode; checks: ReactNode; conditionEdit: ReactNode; order?: ReactNode; uncertainty: ReactNode; edited?: ReactNode }) {
   return (
     <>
       <p className="small"><span className="muted">Objects</span> {objects}</p>
@@ -377,13 +378,56 @@ function StepFields({ objects, action, completion, checks, conditionEdit, uncert
         {checks}
         <div className="row condition-edit">{conditionEdit}</div>
       </div>
+      {order}
       <p className="muted small">{uncertainty}</p>
       {edited}
     </>
   );
 }
 
-function StepCard({ index, step, edit, roles, onChange, onSeek }: { index: number; step: TemplateStep; edit: StepEdit; roles: Role[]; template: Template; onChange: (edit: StepEdit) => void; onSeek: (time: number) => void }) {
+function orderSummary(numbers: number[]) {
+  if (numbers.length === 0) return "Any order";
+  if (numbers.length === 1) return `After step ${numbers[0]}`;
+  return `After steps ${numbers.slice(0, -1).join(", ")} and ${numbers[numbers.length - 1]}`;
+}
+
+function StepOrder({ number, others, selected, dependencies, onChange }: { number: number; others: OtherStep[]; selected: string[]; dependencies: TemplateDependency[]; onChange: (order_after: string[]) => void }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <div className="stack small">
+      <button type="button" className="order-row" aria-expanded={editing} onClick={() => setEditing(!editing)}>
+        <span>Step order</span>
+        <span className="order-value muted">{orderSummary(others.filter((other) => selected.includes(other.step_id)).map((other) => other.number))}</span>
+        <svg className="order-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+      </button>
+      {editing && (
+        <fieldset className="order-edit">
+          <legend className="muted">Select the steps that must happen before this step (Step {number}). The rest can come in any order.</legend>
+          <div className="order-cards">
+            {others.map((other) => {
+              const checked = selected.includes(other.step_id);
+              const dep = dependencies.find((item) => item.step_id === other.step_id);
+              return (
+                <label key={other.step_id} className={`order-card ${checked ? "selected" : ""}`}>
+                  <input type="checkbox" aria-label={`Step ${other.number}: ${other.name}`} checked={checked} onChange={(event) => onChange(event.target.checked ? [...selected, other.step_id] : selected.filter((item) => item !== other.step_id))} />
+                  <span className="order-number mono">{other.number}</span>
+                  <span>
+                    {other.name}
+                    {dep?.origin === "model" && dep.category === "necessary_physical" && <span className="origin order-origin" title={dep.rationale}>Meta: physically necessary</span>}
+                  </span>
+                  {checked && <span className="order-tick" aria-hidden="true">✓</span>}
+                </label>
+              );
+            })}
+          </div>
+        </fieldset>
+      )}
+    </div>
+  );
+}
+
+function StepCard({ index, step, edit, roles, others, onChange, onSeek }: { index: number; step: TemplateStep; edit: StepEdit; roles: Role[]; template: Template; others: OtherStep[]; onChange: (edit: StepEdit) => void; onSeek: (time: number) => void }) {
+  const orderAfter = edit.order_after ?? step.dependencies.filter((dep) => dep.constrains_order).map((dep) => dep.step_id);
   const status = edit.requirement_status ?? step.requirement_status;
   const removed = edit.removed ?? step.removed;
   const conditions = (edit.completion_conditions ?? step.completion_conditions) as Partial<Condition>[];
@@ -402,7 +446,7 @@ function StepCard({ index, step, edit, roles, onChange, onSeek }: { index: numbe
           {!removed && (
             <label className="check"><input type="checkbox" checked={status === "required"} onChange={(event) => onChange({ requirement_status: event.target.checked ? "required" : "optional" })} /> Required</label>
           )}
-          <button className="btn small" onClick={() => onChange({ removed: !removed })}>{removed ? "Restore step" : "Remove step"}</button>
+          <button className={removed ? "btn small" : "btn small danger"} onClick={() => onChange({ removed: !removed })}>{removed ? "Restore step" : "Remove step"}</button>
         </>
       }
     >
@@ -435,6 +479,7 @@ function StepCard({ index, step, edit, roles, onChange, onSeek }: { index: numbe
               </select>
             </>
           }
+          order={others.length > 0 && <StepOrder number={index + 1} others={others} selected={orderAfter} dependencies={step.dependencies} onChange={(order_after) => onChange({ order_after })} />}
           uncertainty={<>Model uncertainty {Math.round(step.uncertainty * 100)}%{step.uncertainty_notes ? `. ${step.uncertainty_notes}` : ""}</>}
           edited={step.human_edited.length > 0 && <p className="edited">Human-edited: {step.human_edited.map((item) => item.replaceAll("_", " ")).join(", ")}</p>}
         />

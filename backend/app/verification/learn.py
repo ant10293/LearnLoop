@@ -28,7 +28,7 @@ from app.verification.schema import (
 _NOTES = [
     "A single demonstration does not prove that every observed action is required.",
     "Observed temporal order is stored and does not constrain a later execution.",
-    "Only dependencies categorized as necessary_physical constrain order.",
+    "Only dependencies categorized as necessary_physical constrain order, until a reviewer changes them.",
     "Passing a step requires an observable completion condition, not an action label alone.",
     "Appearance embeddings are not copied into the template, and role matching does not use them.",
 ]

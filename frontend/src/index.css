@@ -120,6 +120,8 @@ a.card:hover { border-color: var(--ink); }
 .film figcaption { display: flex; justify-content: space-between; margin-bottom: 0.3rem; font-size: 0.9rem; }
 .film-empty { aspect-ratio: 16 / 9; background: #e7e6df; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: var(--muted); margin-bottom: 0.7rem; }
 .films { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 1rem; }
+/* Side by side, players share one box whatever their recordings' shapes, and the skeleton draws that same box. */
+.films .film video, .films .film-empty { height: 52vh; aspect-ratio: auto; margin-bottom: 0; }
 .guide { padding-left: 1.1rem; margin: 0.4rem 0; font-size: 0.92rem; list-style: disc; }
 .analysis { margin-top: 1rem; }
 .stages { list-style: none; padding: 0; margin: 0.7rem 0; display: grid; gap: 0.25rem; font-size: 0.88rem; }
@@ -148,8 +150,24 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .condition { background: var(--bg); padding: 0.35rem 0.55rem; border-radius: 6px; display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin: 0.15rem 0; }
 .origin { color: var(--muted); font-size: 0.75rem; }
 .condition-edit .field { flex: 1 1 8rem; font-size: 0.82rem; }
+.order-row { display: flex; align-items: center; gap: 0.5rem; width: 100%; min-height: 2.5rem; padding: 0.4rem 0.55rem; background: none; border: 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); text-align: left; cursor: pointer; }
+.order-row:hover { background: var(--panel-2); }
+.order-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.order-value { margin-left: auto; text-align: right; }
+.order-chevron { flex: none; color: var(--muted); transition: transform 0.15s ease; }
+.order-row[aria-expanded="true"] .order-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) { .order-chevron { transition: none; } }
 .order-edit { border: 0; padding: 0; margin: 0; }
-.order-edit legend { padding: 0; }
+.order-edit legend { padding: 0; margin-bottom: 0.35rem; }
+.order-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: 0.4rem; }
+.order-card { position: relative; display: flex; align-items: flex-start; gap: 0.45rem; padding: 0.45rem 1.5rem 0.45rem 0.55rem; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; overflow-wrap: anywhere; }
+.order-card:hover { border-color: var(--ink); }
+.order-card.selected { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.order-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+.order-card input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.order-number { color: var(--muted); }
+.order-origin { display: block; margin-top: 0.15rem; }
+.order-tick { position: absolute; top: 0.4rem; right: 0.5rem; color: var(--accent); font-weight: 600; }
 .object { display: block; margin-top: 0.4rem; }
 .object .field { width: 100%; }
 .object-head { display: flex; align-items: center; gap: 0.5rem; }
@@ -178,10 +196,12 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .category { font-weight: 600; color: var(--fail); font-size: 0.92rem; }
 .frames { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 0.6rem; margin: 0.6rem 0; }
 .frames figure { margin: 0; }
-.frames img, .checkpoint img { width: 100%; border-radius: 6px; display: block; background: #111; }
+.frame-image { position: relative; width: 100%; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 6px; background: #111; }
+.frame-image img { display: block; width: 100%; height: 100%; object-fit: contain; }
+.frame-image > .bone-fill { position: absolute; inset: 0; }
 .frames img { cursor: pointer; }
 .checkpoint { border-top: 1px solid var(--line); margin-top: 0.8rem; padding-top: 0.8rem; display: grid; gap: 0.5rem; }
-.checkpoint img { max-width: 340px; }
+.checkpoint .frame-image { max-width: 340px; }
 .diagnostics { margin-top: 1rem; font-size: 0.88rem; }
 .diagnostics summary { cursor: pointer; font-weight: 500; }
 

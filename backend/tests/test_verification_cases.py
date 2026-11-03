@@ -17,6 +17,7 @@ from tests.verification_fixtures import (
     action,
     assembly_demo,
     assembly_execution,
+    dep,
     document,
     obj,
     obs,
@@ -466,6 +467,125 @@ def test_l_past_verification_keeps_the_template_revision_it_used(client):
     evidence = client.get(f"/api/verifications/{body['id']}/evidence")
     assert evidence.status_code == 200
     assert evidence.json()
+
+
+def _pin_and_cap_demo(category: str) -> AnalysisDocument:
+    return document(
+        objects=[
+            obj("D_pin", "pin", "short shaft", "metal pin"),
+            obj("D_block", "block", "base block", "square block"),
+            obj("D_cap", "cap", "cover", "round cap"),
+        ],
+        observations=[obs("D_pin", 12), obs("D_block", 12), obs("D_cap", 12)],
+        relationships=[rel("D_pin", "D_block", "inside", 4, 30), rel("D_cap", "D_pin", "attached", 8, 30)],
+        actions=[
+            action("A_ready", "insert", 0, 5, ["D_pin", "D_block"]),
+            action("A_lock", "attach", 5, 10, ["D_cap", "D_pin"]),
+        ],
+        steps=[
+            step("step_ready", "Seat pin", ["D_pin", "D_block"], ["A_ready"], 0, 5, "pin inside block"),
+            step("step_lock", "Lock cap", ["D_cap", "D_pin"], ["A_lock"], 5, 10, "cap attached to pin"),
+        ],
+        dependencies=[dep("step_ready", "step_lock", category)],
+    )
+
+
+def _cap_first_execution() -> AnalysisDocument:
+    return document(
+        objects=[
+            obj("E_pin", "pin", "short shaft", "metal pin"),
+            obj("E_block", "block", "base block", "square block"),
+            obj("E_cap", "cap", "cover", "round cap"),
+        ],
+        observations=[obs("E_pin", 20), obs("E_block", 20), obs("E_cap", 20)],
+        relationships=[rel("E_cap", "E_pin", "attached", 2, 30), rel("E_pin", "E_block", "inside", 12, 30)],
+        actions=[
+            action("X_lock", "attach", 2, 6, ["E_cap", "E_pin"]),
+            action("X_ready", "insert", 12, 18, ["E_pin", "E_block"]),
+        ],
+    )
+
+
+def _order_template(client, category: str) -> tuple[str, str]:
+    project_id = client.post("/api/tasks", json={"name": "Order", "description": ""}).json()["project"]["id"]
+    demo_run = _install(project_id, "demo.mp4", _pin_and_cap_demo(category))
+    execution_run = _install(project_id, "execution.mp4", _cap_first_execution())
+    created = client.post(
+        f"/api/tasks/{project_id}/workflow-templates",
+        json={"run_id": demo_run, "promote_supported": True, "accept": True},
+    )
+    assert created.status_code == 200, created.text
+    return created.json()["id"], execution_run
+
+
+def _lock_result(client, template_id: str, execution_run: str) -> dict:
+    started = client.post(
+        f"/api/workflow-templates/{template_id}/verifications",
+        json={"execution_run_id": execution_run, "strategy": "hybrid"},
+    )
+    assert started.status_code == 200, started.text
+    return _steps(started.json()["report"])["step_lock"]
+
+
+def test_reviewer_can_require_an_order_the_model_did_not(client):
+    template_id, execution_run = _order_template(client, "observed_temporal")
+    assert _lock_result(client, template_id, execution_run)["error_category"] != "INCORRECT_ORDER"
+    revised = client.patch(
+        f"/api/workflow-templates/{template_id}",
+        json={"steps": [{"step_id": "step_lock", "order_after": ["step_ready"]}]},
+    )
+    assert revised.status_code == 200, revised.text
+    body = revised.json()
+    assert body["acceptance_status"] == "draft"
+    lock = next(item for item in body["document"]["steps"] if item["step_id"] == "step_lock")
+    assert lock["human_edited"] == ["order_after"]
+    assert lock["dependencies"][0]["origin"] == "human"
+    assert _lock_result(client, body["id"], execution_run)["error_category"] == "INCORRECT_ORDER"
+    original = client.get(f"/api/workflow-templates/{template_id}").json()
+    kept = next(item for item in original["document"]["steps"] if item["step_id"] == "step_lock")
+    assert kept["dependencies"][0]["constrains_order"] is False
+
+
+def test_reviewer_can_lift_an_order_the_model_required(client):
+    template_id, execution_run = _order_template(client, "necessary_physical")
+    assert _lock_result(client, template_id, execution_run)["error_category"] == "INCORRECT_ORDER"
+    revised = client.patch(
+        f"/api/workflow-templates/{template_id}",
+        json={"steps": [{"step_id": "step_lock", "order_after": []}]},
+    )
+    assert revised.status_code == 200, revised.text
+    lock = _lock_result(client, revised.json()["id"], execution_run)
+    assert lock["verdict"] == "PASS", lock
+
+
+def test_reviewer_can_add_an_order_between_unlinked_steps(client):
+    template_id, _execution_run = _order_template(client, "observed_temporal")
+    revised = client.patch(
+        f"/api/workflow-templates/{template_id}",
+        json={"steps": [{"step_id": "step_ready", "order_after": ["step_lock"]}]},
+    )
+    assert revised.status_code == 200, revised.text
+    ready = next(item for item in revised.json()["document"]["steps"] if item["step_id"] == "step_ready")
+    assert ready["dependencies"][0]["category"] == "human_specified"
+    assert ready["dependencies"][0]["constrains_order"] is True
+
+
+@pytest.mark.parametrize(
+    "steps",
+    [
+        [{"step_id": "step_lock", "order_after": ["step_lock"]}],
+        [{"step_id": "step_lock", "order_after": ["step_missing"]}],
+        [
+            {"step_id": "step_lock", "order_after": ["step_ready"]},
+            {"step_id": "step_ready", "order_after": ["step_lock"]},
+        ],
+    ],
+)
+def test_impossible_step_orders_are_refused(client, steps):
+    template_id, _execution_run = _order_template(client, "observed_temporal")
+    revised = client.patch(f"/api/workflow-templates/{template_id}", json={"steps": steps})
+    assert 400 <= revised.status_code < 500, revised.text
+    assert client.get(f"/api/workflow-templates/{template_id}").json()["version"] == 1
 
 
 def _hidden_insertion_answer(pin_relation: str = "attached") -> AnalysisDocument:

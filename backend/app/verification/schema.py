@@ -46,13 +46,14 @@ class CompletionPredicate(BaseModel):
 
 
 class TemplateDependency(BaseModel):
-    """Predecessor of a step. Only necessary_physical edges constrain order."""
+    """Predecessor of a step. Learned from necessary_physical edges, or set by a reviewer."""
 
     step_id: str
     category: str
     constrains_order: bool = False
     rationale: str = ""
     evidence_class: str = "UNKNOWN"
+    origin: Literal["model", "human"] = "model"
 
 
 class TemplateStep(BaseModel):

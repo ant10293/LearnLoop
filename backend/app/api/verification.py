@@ -35,6 +35,7 @@ class StepEdit(BaseModel):
     completion_text: str | None = None
     removed: bool | None = None
     completion_conditions: list[dict] | None = None
+    order_after: list[str] | None = None
 
 
 class RoleEdit(BaseModel):
