@@ -11,6 +11,7 @@ from app.verification import learn_template, verify_execution
 from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.reinspect import apply_finding, plan_reinspections
 from app.verification.roles import map_roles
+from app.verification.schema import LearnedTemplate, ObjectRole
 from fastapi.testclient import TestClient
 
 from tests.verification_fixtures import (
@@ -654,3 +655,40 @@ def test_a_seated_part_reported_as_attached_is_not_a_wrong_placement():
     report = verify_execution(template, attempt)
     pin = next(item for item in report["steps"] if item["step_id"] == "step_pin")
     assert pin["verdict"] == "PASS"
+
+
+def _cylinder_role(reference_area=None):
+    return LearnedTemplate(
+        roles=[
+            ObjectRole(
+                role_id="role:cylinder",
+                label="white short cylinder",
+                description="short white part with a rounded end",
+                visual_characteristics="small white cylinder",
+                relation_signature=["inside|white body"],
+                state_labels=["inserted"],
+                reference_area=reference_area,
+            )
+        ]
+    )
+
+
+def _loose_cylinder(observations=None):
+    return document(
+        objects=[obj("obj_5", "white short cylinder", "short white part on the table", "small white cylinder")],
+        observations=observations or [],
+    )
+
+
+def test_a_missing_size_measurement_does_not_lower_a_role_score():
+    mapped = map_roles(_cylinder_role(), _loose_cylinder())[0]
+    assert mapped.status == "assigned"
+    assert "size" not in mapped.hypotheses[0].features
+    assert mapped.score == pytest.approx(0.4526, abs=0.03)
+
+
+def test_a_measured_size_mismatch_still_lowers_a_role_score():
+    unmeasured = map_roles(_cylinder_role(), _loose_cylinder())[0].hypotheses[0].score
+    measured = map_roles(_cylinder_role(0.5), _loose_cylinder([obs("obj_5", 1.0, area=0.04)]))[0].hypotheses[0]
+    assert 0 < measured.features["size"] < 0.2
+    assert measured.score < unmeasured

@@ -39,8 +39,7 @@ def map_roles(
         options = []
         for item in execution.objects:
             features = _features(role, item, execution, areas.get(item.local_id))
-            score = round(sum(_WEIGHTS[name] * features[name] for name in _WEIGHTS), 4)
-            options.append((score, features, item.local_id))
+            options.append((_score(features), features, item.local_id))
         options.sort(key=lambda option: option[0], reverse=True)
         ranked[role.role_id] = options
 
@@ -154,18 +153,23 @@ def _features(role: ObjectRole, item, execution: AnalysisDocument, area: float |
     visual = jaccard(tokens(role.visual_characteristics), tokens(item.visual_characteristics))
     relation = jaccard(set(role.relation_signature), signature(execution, item.local_id))
     state = jaccard(set(role.state_labels), state_labels(execution, item.local_id))
-    role_area = role.reference_area
-    size = 0.0
-    if area is not None and role_area is not None and area > 0 and role_area > 0:
-        size = min(area, role_area) / max(area, role_area)
-    return {
+    features = {
         "label": label,
         "description": description,
         "visual": visual,
         "relation": relation,
         "state": state,
-        "size": size,
     }
+    role_area = role.reference_area
+    if area is not None and role_area is not None and area > 0 and role_area > 0:
+        features["size"] = min(area, role_area) / max(area, role_area)
+    return features
+
+
+def _score(features: dict) -> float:
+    """A feature with no measurement is left out. It is not evidence against the match."""
+    available = sum(_WEIGHTS[name] for name in features)
+    return round(sum(_WEIGHTS[name] * value for name, value in features.items()) / available, 4)
 
 
 def _text_support(features: dict) -> bool:
