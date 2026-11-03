@@ -417,6 +417,7 @@ describe("Procedure review", () => {
     });
     show("/procedures/p1/procedure");
     fireEvent.click(await screen.findByRole("button", { name: "Expand frame at 0:02.0" }));
+    expect(screen.getByTitle("Seen in 2 timeline frames")).toHaveTextContent("2");
     expect(screen.getByRole("dialog", { name: "green cube · 0:02.0" }).querySelector("img")).toHaveAttribute("src", "/f2");
     expect(screen.getByRole("dialog").querySelector(".shot-score")).toHaveTextContent("87%");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));

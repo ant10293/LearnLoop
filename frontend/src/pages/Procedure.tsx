@@ -177,7 +177,14 @@ export function ProcedurePage() {
           return (
             <div key={role.role_id} className="object">
               <div className="object-head">
-                {view?.thumbnail_url ? <img className="object-thumb" src={view.thumbnail_url} alt={role.label} /> : <span className="object-thumb empty" aria-hidden="true" />}
+                <span className="object-thumb-wrap">
+                  {view?.thumbnail_url ? <img className="object-thumb" src={view.thumbnail_url} alt={role.label} /> : <span className="object-thumb empty" aria-hidden="true" />}
+                  {view && view.seen_cells > 0 && (
+                    <span className="object-count" title={`Seen in ${view.seen_cells} timeline ${view.seen_cells === 1 ? "frame" : "frames"}`}>
+                      {view.seen_cells}
+                    </span>
+                  )}
+                </span>
                 <input className="field" aria-label={`Label for ${role.label}`} value={labels[role.role_id] ?? role.label} onChange={(event) => setLabels((current) => ({ ...current, [role.role_id]: event.target.value }))} />
               </div>
               {view && <ObjectTimeline view={view} label={role.label} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
