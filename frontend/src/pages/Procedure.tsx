@@ -6,7 +6,7 @@ import { AssetPreview } from "../components/AssetPreview";
 import { AnalysisStages, ObjectViewsNotice } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
-import { api, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
+import { api, appearanceLine, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
 type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] };
 type OtherStep = { step_id: string; number: number; name: string };
@@ -23,7 +23,9 @@ export function ProcedurePage() {
     queryFn: () => api.procedure(id),
     refetchInterval: (query) => {
       const latest = latestDemonstration(query.state.data);
-      return latest && (preparing(latest) || analyzing(latest)) ? 1000 : false;
+      if (latest && (preparing(latest) || analyzing(latest))) return 1000;
+      // Object references are built in the background after learning.
+      return query.state.data?.templates.some((item) => item.appearance?.status === "building") ? 2000 : false;
     },
   });
   // The newest procedure unless the person picked an earlier one. Saving an edit adds a version to the same one.
@@ -170,6 +172,7 @@ export function ProcedurePage() {
             {template.source_run_id && (
               <ObjectViewsNotice runId={template.source_run_id} views={views.data} onStarted={() => void client.invalidateQueries({ queryKey: ["object-views", template.source_run_id] })} />
             )}
+            {appearanceLine(template.appearance) && <p className="muted small">{appearanceLine(template.appearance)}</p>}
             {required.length === 0 && <p className="warning">Mark at least one step as required before accepting.</p>}
           </>
         }

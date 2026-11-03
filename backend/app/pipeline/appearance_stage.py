@@ -308,3 +308,128 @@ def _rejected_intervals(items: list, statuses: list[tuple[str, str]]) -> list[di
         else:
             current = None
     return out
+
+
+# ---------------------------------------------------------------- recovery
+
+# Offsets of the search window, in widths and heights of the object's last trusted box.
+_OFFSETS = (-1.5, -0.75, 0.0, 0.75, 1.5)
+_SCALES = (0.75, 1.33)
+# Two candidates this far apart that score within margin of each other are two places the object could be.
+_DISTINCT_IOU = 0.3
+
+
+def propose_recovery(media: Path, tracked: dict, result: AppearanceResult, encoder=None) -> list[dict]:
+    """For each rejected stretch, look near the object's last trusted box, and at other tracks' boxes, for a crop
+    that matches its references clearly better than every rival and than its surroundings.
+
+    DINOv2 does not find boxes; it ranks these. A stretch is attempted at most once, the search is bounded,
+    and an attempt that finds two equally good places, or none, stays unresolved.
+    """
+    from app.config import settings
+
+    options = app_.Settings.from_config()
+    encoder = encoder or shared_encoder(DINOV2_ID)
+    intervals = []
+    for local_id, items in result.diagnostics.get("rejected_intervals", {}).items():
+        if local_id not in result.galleries:
+            continue
+        for interval in items:
+            intervals.append((interval["end"] - interval["start"], local_id, interval))
+    intervals.sort(key=lambda item: (-item[0], item[1], item[2]["start"]))
+    attempts = []
+    for _length, local_id, interval in intervals[: max(settings.recovery_max_intervals, 0)]:
+        sightings = sorted(tracked[local_id], key=lambda item: item.timestamp)
+        before = [item for item in sightings if item.timestamp < interval["start"] and item.status in {"validated", "recovered"}]
+        attempt = {"local_id": local_id, "start": interval["start"], "end": interval["end"], "trigger": interval["reason"]}
+        if not before:
+            attempts.append({**attempt, "decision": "unresolved", "reason": "no_trusted_box_before"})
+            continue
+        anchor = before[-1]
+        frame_index = next(item.record.frame_index for item in sightings if item.timestamp >= interval["start"])
+        attempt["frame_index"] = frame_index
+        frame = _read_frame(media, frame_index)
+        if frame is None:
+            attempts.append({**attempt, "decision": "unresolved", "reason": "frame_unreadable"})
+            continue
+        candidates = _candidate_boxes(anchor.box, tracked, local_id, frame_index)[: settings.recovery_max_candidates]
+        crops, kept = [], []
+        for source, box in candidates:
+            crop, _mask = app_.crop_with_mask(frame, box, None, 0, 0)
+            if crop is not None and min(crop.shape[:2]) >= options.min_crop_px // 2:
+                crops.append(crop)
+                kept.append((source, box))
+        if not crops:
+            attempts.append({**attempt, "decision": "unresolved", "reason": "no_candidate"})
+            continue
+        vectors = cached_encode(encoder, crops, [None] * len(crops), data_path("inference_cache", "dinov2"))
+        scored = []
+        for (source, box), vector in zip(kept, vectors, strict=True):
+            own = app_.top_mean(result.galleries[local_id], vector)
+            rival_id, rival = None, -1.0
+            for other, refs in result.galleries.items():
+                if other != local_id and len(refs):
+                    score = app_.top_mean(refs, vector)
+                    if score > rival:
+                        rival_id, rival = other, score
+            scored.append({"source": source, "box": box, "own": round(own, 4), "rival": rival_id, "rival_score": round(rival, 4)})
+        attempt["candidates"] = len(scored)
+        attempts.append({**attempt, **_decide(scored, local_id, result.labels, options)})
+    return attempts
+
+
+def _decide(scored: list[dict], local_id: str, labels: dict, options: app_.Settings) -> dict:
+    ranked = sorted(scored, key=lambda item: -item["own"])
+    best = ranked[0]
+    surroundings = float(np.median([item["own"] for item in scored]))
+    out = {"best": best, "surroundings": round(surroundings, 4)}
+    same_kind = best["rival"] and app_._same_kind(labels.get(local_id, ""), labels.get(best["rival"], ""))
+    if best["own"] < options.accept:
+        return {**out, "decision": "unresolved", "reason": "no_candidate_matches"}
+    if best["rival"] and best["rival_score"] > best["own"] - options.margin and not same_kind:
+        return {**out, "decision": "unresolved", "reason": f"best_candidate_also_looks_like:{best['rival']}"}
+    if best["own"] < surroundings + options.margin and len(scored) > 2:
+        # It scores well only because the whole area does: the background, or the colour, not the object.
+        return {**out, "decision": "unresolved", "reason": "does_not_stand_out"}
+    if str(best["source"]).startswith("track:"):
+        return {**out, "decision": "unresolved", "reason": f"best_candidate_is_tracked_as:{best['source'][6:]}"}
+    rivals = [item for item in ranked[1:] if app_.iou(item["box"], best["box"]) < _DISTINCT_IOU and item["own"] >= best["own"] - options.margin]
+    if rivals:
+        return {**out, "decision": "unresolved", "reason": "two_places_match_equally"}
+    return {**out, "decision": "reseed", "reason": "clear_match"}
+
+
+def _candidate_boxes(anchor: dict, tracked: dict, local_id: str, frame_index: int) -> list[tuple[str, dict]]:
+    """Windows the size of the last trusted box around where it was, then other tracks' boxes on that frame."""
+    boxes = []
+    cx, cy = app_.center(anchor)
+    for dy in _OFFSETS:
+        for dx in _OFFSETS:
+            boxes.append(("window", _clamped(cx + dx * anchor["w"], cy + dy * anchor["h"], anchor["w"], anchor["h"])))
+    for scale in _SCALES:
+        boxes.append(("window", _clamped(cx, cy, anchor["w"] * scale, anchor["h"] * scale)))
+    for other, sightings in tracked.items():
+        if other == local_id:
+            continue
+        for item in sightings:
+            if item.record.frame_index == frame_index:
+                boxes.append((f"track:{other}", item.box))
+    return [(source, box) for source, box in boxes if box is not None]
+
+
+def _clamped(cx: float, cy: float, w: float, h: float) -> dict | None:
+    w, h = min(w, 1.0), min(h, 1.0)
+    x, y = min(max(cx - w / 2, 0.0), 1.0 - w), min(max(cy - h / 2, 0.0), 1.0 - h)
+    if w <= 0 or h <= 0:
+        return None
+    return {"x": round(x, 4), "y": round(y, 4), "w": round(w, 4), "h": round(h, 4)}
+
+
+def _read_frame(media: Path, index: int):
+    capture = cv2.VideoCapture(str(media))
+    try:
+        capture.set(cv2.CAP_PROP_POS_FRAMES, index)
+        ok, frame = capture.read()
+        return frame if ok else None
+    finally:
+        capture.release()

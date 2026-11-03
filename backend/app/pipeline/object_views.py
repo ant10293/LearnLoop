@@ -105,6 +105,9 @@ class Sighting:
     status: str = "provisional"
     # sam for a box from the first requests, recovery for one SAM followed from a box appearance search found.
     provenance: str = "sam"
+    reason: str = "unchecked"
+    # True when a recovered box for the same frame is drawn instead.
+    superseded: bool = False
 
 
 def estimated_frames(duration_sec: float) -> int:
@@ -188,6 +191,10 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     if keep_on_empty and not any(tracked.values()) and read_manifest(run.id):
         return {"error": error or "SAM followed nothing.", "kept_existing": True, "requests": requests, "replayed_requests": replayed}
     checked = _check_appearance(session, run, video, document, media, tracked, seeds)
+    _apply_statuses(tracked, checked)
+    recovery = await _recover(session, run, video, media, tracked, checked, len(seeds), model_id, allow_live, secret, fresh=fresh)
+    requests += recovery.get("requests", 0)
+    replayed += recovery.get("replayed_requests", 0)
     _write_raw(run.id, tracked, checked)
     manifest = _render(run.id, document, media, tracked, _last_frame_time(video), checked)
     manifest.update(
@@ -204,6 +211,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
             "relocated": relocated,
             "error": error,
             "appearance": checked.diagnostics if checked else {"used": False, "error": "Appearance checks are off."},
+            "recovery": recovery,
             "gallery": app_.gallery_summary(checked.gallery) if checked and checked.mode == "demonstration" and checked.gallery else (checked.gallery if checked else None),
         }
     )
@@ -568,12 +576,79 @@ def execution_reference(session, template_id: str, document: AnalysisDocument):
     return manifest, galleries, labels
 
 
+def _apply_statuses(tracked: dict[str, list[Sighting]], checked) -> None:
+    for local_id, sightings in tracked.items():
+        ordered = sorted(sightings, key=lambda item: item.timestamp)
+        statuses = (checked.statuses.get(local_id) if checked and checked.used else None) or [("provisional", "unchecked")] * len(ordered)
+        for item, (status, reason) in zip(ordered, statuses, strict=True):
+            item.status, item.reason = status, reason
+
+
+async def _recover(session, run, video, media: Path, tracked, checked, next_id: int, model_id, allow_live, secret, *, fresh=False) -> dict:
+    """Look for an object where its track was rejected, and follow a clear match with one more SAM request.
+    The new boxes are checked against the references again, and replace only boxes that were not validated."""
+    from app.pipeline.appearance_stage import check_tracks, propose_recovery
+
+    if not (checked and checked.used and settings.appearance_recovery and checked.diagnostics.get("rejected_intervals")):
+        return {"attempted": False}
+    try:
+        attempts = propose_recovery(media, tracked, checked)
+    except Exception as exc:
+        log.exception("Recovery search failed for run %s", run.id)
+        return {"attempted": True, "error": str(exc)[:400], "attempts": []}
+    chosen = [item for item in attempts if item.get("decision") == "reseed"]
+    out = {"attempted": True, "attempts": attempts, "requests": 0, "replayed_requests": 0, "recovered_sightings": 0, "sam_budget": settings.recovery_max_sam_requests}
+    if not chosen or settings.recovery_max_sam_requests <= 0:
+        out["unresolved"] = len(attempts)
+        return out
+    seeds = [Seed(item["local_id"], next_id + index, item["frame_index"] / SAM_FPS, item["best"]["box"]) for index, item in enumerate(chosen)]
+    start = _first_frame(seeds)
+    text, sent, reused, failure = await _follow(session, run, video, media, seeds, start, "forward", model_id, allow_live, secret, fresh=fresh)
+    out.update(requests=sent, replayed_requests=reused, error=failure)
+    if not text:
+        for item in chosen:
+            item["decision"], item["reason"] = "unresolved", f"sam_not_run: {failure or 'no answer'}"
+        out["unresolved"] = len(attempts)
+        return out
+    followed = _assign(parse_sam_output(text), seeds, start)
+    # A recovery is accepted only if the boxes SAM followed from the new seed look like the object.
+    again = check_tracks(
+        run_id=run.id, media=media, tracked=followed, seeds=seeds, labels=checked.labels, fps=SAM_FPS, mode="execution",
+        reference=(None, checked.galleries, {}),
+    )
+    for item in chosen:
+        local_id = item["local_id"]
+        new = sorted(followed.get(local_id, []), key=lambda sighting: sighting.timestamp)
+        statuses = again.statuses.get(local_id) or []
+        kept = 0
+        existing = {sighting.record.frame_index: sighting for sighting in tracked.get(local_id, [])}
+        for sighting, (status, reason) in zip(new, statuses, strict=True):
+            if status == "rejected":
+                # The new seed drifted too. Nothing after this is trusted.
+                break
+            if status != "validated":
+                continue
+            current = existing.get(sighting.record.frame_index)
+            if current is not None and current.status == "validated":
+                continue
+            if current is not None:
+                current.superseded = True
+            sighting.status, sighting.reason, sighting.provenance = "recovered", "reseeded_and_validated", "recovery"
+            tracked.setdefault(local_id, []).append(sighting)
+            kept += 1
+        item["decision"] = "recovered" if kept else "unresolved"
+        item["reason"] = "reseeded_and_validated" if kept else "followed_boxes_did_not_validate"
+        item["recovered_sightings"] = kept
+        out["recovered_sightings"] += kept
+    out["unresolved"] = sum(item.get("decision") != "recovered" for item in attempts)
+    return out
+
+
 def _write_raw(run_id: str, tracked: dict[str, list[Sighting]], checked) -> None:
     """Every SAM box as it came back, with the status the appearance check gave it. Nothing here is drawn."""
     out = {}
     for local_id, sightings in tracked.items():
         ordered = sorted(sightings, key=lambda item: item.timestamp)
-        statuses = (checked.statuses.get(local_id) if checked and checked.used else None) or [("provisional", "unchecked")] * len(ordered)
         out[local_id] = [
             {
                 "time": round(item.timestamp, 3),
@@ -581,11 +656,12 @@ def _write_raw(run_id: str, tracked: dict[str, list[Sighting]], checked) -> None
                 "sam_track_id": item.record.track_id,
                 "confidence": item.record.confidence,
                 "box": {key: round(value, 4) for key, value in item.box.items()},
-                "status": status,
-                "reason": reason,
-                "provenance": getattr(item, "provenance", "sam"),
+                "status": item.status,
+                "reason": item.reason,
+                "provenance": item.provenance,
+                "superseded": item.superseded,
             }
-            for item, (status, reason) in zip(ordered, statuses, strict=True)
+            for item in ordered
         ]
     samples = {}
     if checked and checked.used:
@@ -597,18 +673,8 @@ _STATUS_RANK = {"validated": 3, "recovered": 3, "ambiguous": 2, "provisional": 1
 
 
 def _shown(sightings: list[Sighting], checked, local_id: str) -> list[Sighting]:
-    """Boxes drawn as the object. A rejected or ambiguous box is kept in raw_tracks.json, not here."""
-    ordered = sorted(sightings, key=lambda item: item.timestamp)
-    if not checked or not checked.used or local_id not in checked.statuses:
-        for item in ordered:
-            item.status = "provisional"
-        return ordered
-    kept = []
-    for item, (status, _reason) in zip(ordered, checked.statuses[local_id], strict=True):
-        item.status = status
-        if status in app_.SHOWN:
-            kept.append(item)
-    return kept
+    """Boxes drawn as the object. A rejected box, or one a recovered box replaced, is kept in raw_tracks.json, not here."""
+    return [item for item in sorted(sightings, key=lambda item: item.timestamp) if item.status in app_.SHOWN and not item.superseded]
 
 
 def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float, checked=None) -> dict:

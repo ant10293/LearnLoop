@@ -147,6 +147,7 @@ a.card:hover { border-color: var(--ink); }
 .film-seek:hover::-moz-range-thumb, .film-seek:focus-visible::-moz-range-thumb { opacity: 1; }
 .film-boxes { position: absolute; overflow: hidden; pointer-events: none; }
 .film-box { position: absolute; border: 2px solid; border-radius: 2px; }
+.film-box.unconfirmed { border-style: dashed; opacity: 0.75; }
 .film-box span { position: absolute; left: -2px; bottom: 100%; max-width: 14rem; padding: 0 0.25rem; overflow: hidden; color: #111; font-size: 0.68rem; line-height: 1.25rem; white-space: nowrap; text-overflow: ellipsis; border-radius: 2px 2px 0 0; }
 .learned-list { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.5rem; }
 .learned-item { display: flex; align-items: center; gap: 0.6rem; width: 100%; padding: 0.4rem; color: inherit; font: inherit; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }

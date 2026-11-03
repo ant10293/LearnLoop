@@ -136,6 +136,38 @@ export interface Template {
   source_video_id: string;
   source_filename: string;
   document: { summary: string; roles: Role[]; steps: TemplateStep[]; review_log: unknown[] };
+  /** Appearance references learned automatically from the demonstration. Never vectors. */
+  appearance?: AppearanceStatus;
+}
+
+export interface AppearanceStatus {
+  status: "ready" | "partial" | "unavailable" | "building" | "failed" | "disabled" | "missing";
+  objects?: number;
+  objects_learned?: number;
+  references?: number;
+  unavailable?: string[];
+  reason?: string;
+}
+
+/** One line for a learned procedure's appearance references. */
+export function appearanceLine(item?: AppearanceStatus): string {
+  if (!item) return "";
+  switch (item.status) {
+    case "building":
+      return "Building object references from the demonstration…";
+    case "ready":
+    case "partial": {
+      const missing = (item.objects ?? 0) - (item.objects_learned ?? 0);
+      const learned = `Object references ready: ${item.objects_learned} of ${item.objects} objects learned`;
+      return missing > 0 ? `${learned}. References unavailable for ${missing} object${missing === 1 ? "" : "s"}.` : `${learned}.`;
+    }
+    case "disabled":
+      return "";
+    case "missing":
+      return "No object references yet.";
+    default:
+      return `Object references unavailable${item.reason ? `: ${item.reason}` : "."}`;
+  }
 }
 
 export interface Evidence {
@@ -151,7 +183,7 @@ export interface StepResult {
   required: boolean;
   verdict: Verdict;
   machine_verdict: string;
-  basis: "model_evidence" | "human_confirmed" | "human_override" | "none";
+  basis: "model_evidence" | "model_reinspection" | "human_confirmed" | "human_override" | "none";
   error_category: string;
   expected: string;
   observed: string;
@@ -197,6 +229,19 @@ export interface Verification extends VerificationBrief {
     demonstration_video_id: string;
     score: { verified: number; failed: number; unresolved: number };
     roles: { role_id: string; label: string; status: string; note: string }[];
+    appearance?: {
+      used: boolean;
+      error: string;
+      gallery: { status?: string; objects_learned?: number; objects?: number };
+      recovery: { attempted?: boolean; recovered_sightings?: number; unresolved?: number };
+      objects: Record<string, { validated_share: number; rejected_share: number; ambiguous_share: number }>;
+    };
+    reinspection?: {
+      status: "pending" | "completed" | "failed" | "unavailable" | "not_needed" | "off";
+      reason?: string;
+      steps?: string[];
+      changed?: { step_id: string; before: string; after: string }[];
+    };
   };
 }
 
@@ -269,6 +314,8 @@ export interface ObjectView {
 
 export interface TrackBox {
   time: number;
+  /** validated or recovered: appearance agrees. provisional or ambiguous: drawn as unconfirmed. */
+  status?: string;
   x: number;
   y: number;
   w: number;
@@ -416,6 +463,7 @@ export const verdictLabels: Record<string, string> = {
 
 export const basisLabels: Record<StepResult["basis"], string> = {
   model_evidence: "Evidence-backed from Meta analysis",
+  model_reinspection: "Decided by a second Meta look at a few frames",
   human_confirmed: "Human-confirmed",
   human_override: "Human override",
   none: "No deciding evidence",

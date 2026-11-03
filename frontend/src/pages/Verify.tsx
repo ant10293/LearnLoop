@@ -99,7 +99,11 @@ function AttemptTab({ recording, procedure, active, onClick }: { recording: Reco
 
 function Report({ verificationId, procedure, recording }: { verificationId: string; procedure: Procedure; recording: Recording }) {
   const client = useQueryClient();
-  const query = useQuery({ queryKey: ["verification", verificationId], queryFn: () => api.verification(verificationId) });
+  const query = useQuery({
+    queryKey: ["verification", verificationId],
+    queryFn: () => api.verification(verificationId),
+    refetchInterval: (state) => (state.state.data?.report.reinspection?.status === "pending" ? 1500 : false),
+  });
   const [stepId, setStepId] = useState("");
   const [tick, setTick] = useState(0);
   const report = query.data?.report;
@@ -127,7 +131,12 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
         </>
       }
       action={<a className="btn" href={`/api/verifications/${verification.id}/export`} download={`learnloop-report-${verification.id}.json`}>Export report</a>}
-      warnings={report.warnings.map((warning) => <p key={warning} className="warning">{warning}</p>)}
+      warnings={
+        <>
+          {report.warnings.map((warning) => <p key={warning} className="warning">{warning}</p>)}
+          <EvidenceChecks report={report} />
+        </>
+      }
       demonstration={<Film src={demo?.video.playback_url ?? ""} time={step.demo_time_start} seek={tick} label="Demonstration" caption={`How “${step.name}” was shown`} tracks={roleTracks(demoViews.data, template?.document.roles ?? [])} />}
       attempt={<Film src={recording.video.playback_url} time={evidenceTime} seek={tick} label="This attempt" caption={evidenceTime == null ? "No timestamp was tied to this step." : "Evidence moment for this step"} tracks={objectTracks(attemptViews.data)} />}
       results={report.steps.map((item) => (
@@ -347,4 +356,25 @@ function Checkpoint({ step, verification, video, onChange }: { step: StepResult;
       <ErrorNote message={error} />
     </div>
   );
+}
+
+
+/** What the automatic checks added: appearance matching, tracking recovery, and a second look at unclear steps. */
+function EvidenceChecks({ report }: { report: Verification["report"] }) {
+  const lines: string[] = [];
+  const reinspection = report.reinspection;
+  if (reinspection?.status === "pending") lines.push(`Reinspecting ${reinspection.steps?.length ?? 0} unclear step${reinspection.steps?.length === 1 ? "" : "s"} with a few frames…`);
+  else if (reinspection?.status === "completed") {
+    const changed = reinspection.changed ?? [];
+    lines.push(changed.length ? `Reinspection resolved ${changed.length} step${changed.length === 1 ? "" : "s"}: ${changed.map((item) => `${item.step_id} ${item.before} → ${item.after}`).join(", ")}.` : "Reinspection ran. The unclear steps are still unclear, so their verdicts stand.");
+  } else if (reinspection?.status === "unavailable" || reinspection?.status === "failed") lines.push(`Reinspection unavailable. ${reinspection.reason ?? ""}`.trim());
+  const appearance = report.appearance;
+  if (appearance?.used) {
+    const recovered = appearance.recovery?.recovered_sightings ?? 0;
+    lines.push(`Appearance matching used the procedure's references (${appearance.gallery.objects_learned ?? 0} of ${appearance.gallery.objects ?? 0} objects).${recovered ? ` Tracking recovery restored ${recovered} boxes.` : ""} Dashed boxes are not confirmed by appearance. Appearance never passes or fails a step.`);
+  } else if (appearance && (appearance.gallery.status === "building" || appearance.error)) {
+    lines.push(appearance.gallery.status === "building" ? "Object references were still being built, so appearance matching was not used." : "Appearance matching was not used for this recording.");
+  }
+  if (!lines.length) return null;
+  return <div className="muted small">{lines.map((line) => <p key={line}>{line}</p>)}</div>;
 }

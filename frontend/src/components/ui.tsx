@@ -75,7 +75,7 @@ function FilmBoxes({ video, tracks }: { video: RefObject<HTMLVideoElement | null
         if (!box) return null;
         const color = BOX_COLORS[index % BOX_COLORS.length];
         return (
-          <div key={item.label + index} className="film-box" style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%`, borderColor: color }}>
+          <div key={item.label + index} className={`film-box${box.status === "provisional" || box.status === "ambiguous" ? " unconfirmed" : ""}`} title={box.status === "ambiguous" ? "Appearance matches a similar part as well" : box.status === "provisional" ? "Not confirmed by appearance" : undefined} style={{ left: `${box.x * 100}%`, top: `${box.y * 100}%`, width: `${box.w * 100}%`, height: `${box.h * 100}%`, borderColor: color }}>
             <span style={{ background: color }}>{item.label}</span>
           </div>
         );

@@ -357,3 +357,140 @@ def test_a_missing_gallery_is_rebuilt_once_from_stored_answers_and_the_procedure
     assert len(sam_calls) == sent
     page = client.get(f"/api/learnloop/procedures/{procedure}").json()
     assert page["template"]["appearance"]["status"] in {"ready", "partial"}
+
+
+def _scored(own, rival=0.1, source="window", x=0.4, rival_id="b"):
+    return {"source": source, "box": {"x": x, "y": 0.4, "w": 0.1, "h": 0.1}, "own": own, "rival": rival_id, "rival_score": rival}
+
+
+def test_recovery_reseeds_only_one_clear_candidate():
+    from app.pipeline.appearance_stage import _decide
+
+    labels = {"a": "red block", "b": "blue block"}
+    background = [_scored(0.2, x=0.1 + 0.02 * index) for index in range(6)]
+    assert _decide([_scored(0.8), *background], "a", labels, OPTIONS)["decision"] == "reseed"
+    # Two separate places match as well as each other: which one is the object is not known.
+    two = _decide([_scored(0.8), _scored(0.79, x=0.8), *background], "a", labels, OPTIONS)
+    assert two["decision"] == "unresolved" and two["reason"] == "two_places_match_equally"
+    assert _decide([_scored(0.5), *background], "a", labels, OPTIONS)["reason"] == "no_candidate_matches"
+    # Everything nearby scores high: the match is the background or the colour.
+    flat = [_scored(0.8 - 0.001 * index, x=0.4 + 0.001 * index) for index in range(7)]
+    assert _decide(flat, "a", labels, OPTIONS)["reason"] == "does_not_stand_out"
+    assert _decide([_scored(0.8, rival=0.78), *background], "a", labels, OPTIONS)["reason"].startswith("best_candidate_also_looks_like")
+    assert _decide([_scored(0.8, source="track:b"), *background], "a", labels, OPTIONS)["reason"] == "best_candidate_is_tracked_as:b"
+
+
+def _drift_flow(lab, monkeypatch, answer_for_recovery, budget=1):  # noqa: F811
+    from app.config import settings
+    from app.pipeline import appearance_stage, object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    monkeypatch.setattr(settings, "recovery_max_sam_requests", budget)
+    monkeypatch.setattr(appearance_stage, "shared_encoder", lambda *args: ColorEncoder())
+    monkeypatch.setattr(object_views, "_low_rate_copy", lambda source, dest: source)
+    calls = []
+
+    class FakeSam:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            calls.append((prompt, kwargs))
+            text = answer_for_recovery(prompt) if kwargs.get("propagation_direction") == "forward" else _sam_answer(24, drift_from=14)
+            return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    ids = [item["local_id"] for item in json.loads(stub.text)["objects"]]
+    stub.locate_text = json.dumps(
+        {"objects": [{"local_id": ids[0], "bbox": {"x": 0.06, "y": 0.08, "w": 0.31, "h": 0.42}}, {"local_id": ids[1], "bbox": {"x": 0.62, "y": 0.08, "w": 0.31, "h": 0.42}}]}
+    )
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Recovery"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _two_colour_video(tmp / "demo.mp4"), "demonstration"))
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    return views, ids, calls
+
+
+def _follow_red(prompt):
+    """The forward request from the recovery seed: SAM follows the red square under the new id."""
+    track = prompt.split("<|box;")[0].rsplit(">", 1)[-1] if "<|box;" in prompt else "2"
+    import re
+
+    found = re.search(r"(\d+)<\|box", prompt)
+    track = found.group(1) if found else track
+    return "\n".join(f"<{frame}f>{track}<|box;x1=10;y1=10;x2=60;y2=60;w=160;h=120;c=0.9|><|mask;data=|>" for frame in range(10))
+
+
+def test_a_drifted_track_is_recovered_with_one_more_sam_request(lab, monkeypatch):  # noqa: F811
+    views, ids, calls = _drift_flow(lab, monkeypatch, _follow_red)
+    recovery = views["recovery"]
+    assert recovery["attempted"] and recovery["requests"] == 1 and recovery["recovered_sightings"] > 0
+    assert [call[1].get("propagation_direction") for call in calls].count("forward") == 1
+    track = views["objects"][ids[0]]["track"]
+    assert any(row["status"] == "recovered" for row in track)
+    # Every drawn box is on the red square; the drifted ones stay out.
+    assert all(row["x"] < 0.5 for row in track)
+
+
+def test_recovery_that_drifts_again_is_not_accepted(lab, monkeypatch):  # noqa: F811
+    def follow_blue(prompt):
+        import re
+
+        track = re.search(r"(\d+)<\|box", prompt).group(1)
+        return "\n".join(f"<{frame}f>{track}<|box;x1=100;y1=10;x2=150;y2=60;w=160;h=120;c=0.9|><|mask;data=|>" for frame in range(10))
+
+    views, ids, calls = _drift_flow(lab, monkeypatch, follow_blue)
+    assert views["recovery"]["recovered_sightings"] == 0
+    assert not any(row["status"] == "recovered" for row in views["objects"][ids[0]]["track"])
+
+
+def test_no_recovery_request_is_sent_when_the_budget_is_spent(lab, monkeypatch):  # noqa: F811
+    views, ids, calls = _drift_flow(lab, monkeypatch, _follow_red, budget=0)
+    assert [call[1].get("propagation_direction") for call in calls].count("forward") == 0
+    assert views["recovery"]["recovered_sightings"] == 0 and views["recovery"]["unresolved"] >= 1
+
+
+def test_an_attempt_is_checked_against_the_procedures_references_which_it_never_changes(lab, monkeypatch):  # noqa: F811
+    from app.config import settings
+    from app.pipeline import appearance_stage, object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    monkeypatch.setattr(appearance_stage, "shared_encoder", lambda *args: ColorEncoder())
+    monkeypatch.setattr(object_views, "_low_rate_copy", lambda source, dest: source)
+    answers = iter([_sam_answer(24), _sam_answer(24, drift_from=12)])
+
+    class FakeSam:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            return SimpleNamespace(text=next(answers), file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    ids = [item["local_id"] for item in json.loads(stub.text)["objects"]]
+    stub.locate_text = json.dumps(
+        {"objects": [{"local_id": ids[0], "bbox": {"x": 0.06, "y": 0.08, "w": 0.31, "h": 0.42}}, {"local_id": ids[1], "bbox": {"x": 0.62, "y": 0.08, "w": 0.31, "h": 0.42}}]}
+    )
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Attempt"}).json()["id"]
+    demo = _analyze(client, _upload(client, procedure, _two_colour_video(tmp / "demo.mp4"), "demonstration"))
+    template = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": demo["id"]}).json()
+    template = client.patch(f"/api/workflow-templates/{template['id']}", json={"acceptance_status": "accepted"}).json()
+    before = json.loads((A.gallery_dir(demo["id"]) / "manifest.json").read_text())
+
+    attempt = _analyze(client, _upload(client, procedure, _two_colour_video(tmp / "attempt.mp4", frames=24), "execution"))
+    assert attempt["status"] == "completed", attempt["error"]
+    views = client.get(f"/api/learnloop/runs/{attempt['id']}/objects").json()
+    assert views["appearance"]["mode"] == "execution" and views["appearance"]["used"]
+    assert views["gallery"]["gallery_id"] == before["gallery_id"]
+    # The attempt's drifted boxes are caught by the demonstration's references.
+    assert all(row["x"] < 0.5 for row in views["objects"][ids[0]]["track"])
+    assert not A.gallery_dir(attempt["id"]).exists()
+    assert json.loads((A.gallery_dir(demo["id"]) / "manifest.json").read_text()) == before
+    response = client.post(f"/api/learnloop/templates/{template['id']}/verify", json={"run_id": attempt["id"]})
+    assert response.status_code == 200, response.text
+    report = response.json()
+    appearance = report["report"]["appearance"]
+    assert appearance["used"] and appearance["gallery"]["gallery_id"] == before["gallery_id"]
+    # Appearance is identity evidence only: no step's basis or evidence comes from it.
+    assert all(item["provenance"] != "APPEARANCE" for step in report["report"]["steps"] for item in step["evidence"])

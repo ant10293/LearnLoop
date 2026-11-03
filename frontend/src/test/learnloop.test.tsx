@@ -1,4 +1,4 @@
-import { boxAt, boxBetween, humanizeModel, smoothTrack, learnedProcedures, type Condition, type TemplateDependency } from "../lib/learnloop";
+import { appearanceLine, boxAt, boxBetween, humanizeModel, smoothTrack, learnedProcedures, type Condition, type TemplateDependency } from "../lib/learnloop";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -765,3 +765,13 @@ describe("object tracks and earlier procedures", () => {
   });
 });
 
+
+describe("appearance status", () => {
+  it("says how many objects were learned and which were not, and says nothing when the feature is off", () => {
+    expect(appearanceLine({ status: "partial", objects: 6, objects_learned: 5 })).toBe("Object references ready: 5 of 6 objects learned. References unavailable for 1 object.");
+    expect(appearanceLine({ status: "ready", objects: 3, objects_learned: 3 })).toBe("Object references ready: 3 of 3 objects learned.");
+    expect(appearanceLine({ status: "building" })).toContain("Building object references");
+    expect(appearanceLine({ status: "unavailable", reason: "No crop passed." })).toBe("Object references unavailable: No crop passed.");
+    expect(appearanceLine({ status: "disabled" })).toBe("");
+  });
+});
