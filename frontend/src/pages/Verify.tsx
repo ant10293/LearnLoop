@@ -289,7 +289,7 @@ function StepDetail({ step, verification, video, onChange, onSeek }: { step: Ste
       )}
       {moments.length === 0 && <p className="muted small">No frame supports this step, so no frame is shown.</p>}
       {observations.map((item) => (
-        <p key={item.id} className="edited">{item.reviewer} recorded “{item.answer.replaceAll("_", " ")}” at {clock(item.timestamp)}{item.note ? `: ${item.note}` : ""}</p>
+        <p key={item.id} className="edited">{item.reviewer || "Reviewer"} recorded “{item.answer.replaceAll("_", " ")}” at {clock(item.timestamp)}{item.note ? `: ${item.note}` : ""}</p>
       ))}
       {(step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed") && <Checkpoint step={step} verification={verification} video={video} onChange={onChange} />}
     </StepDetailFrame>
@@ -297,7 +297,6 @@ function StepDetail({ step, verification, video, onChange, onSeek }: { step: Ste
 }
 
 function Checkpoint({ step, verification, video, onChange }: { step: StepResult; verification: Verification; video: VideoInfo; onChange: () => Promise<void> }) {
-  const [reviewer, setReviewer] = useState("");
   const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const timestamp = Math.max(video.duration_sec - 0.2, 0);
@@ -305,7 +304,7 @@ function Checkpoint({ step, verification, video, onChange }: { step: StepResult;
   async function answer(value: Answer) {
     setError("");
     try {
-      await api.observe(verification.id, step.step_id, { answer: value, timestamp, reviewer, note });
+      await api.observe(verification.id, step.step_id, { answer: value, timestamp, note });
       await onChange();
     } catch (exc) {
       setError((exc as Error).message);
@@ -318,13 +317,12 @@ function Checkpoint({ step, verification, video, onChange }: { step: StepResult;
       <FrameImage video={video} src={frameUrl(video.id, timestamp)} alt={`Final frame at ${clock(timestamp)}`} />
       <p className="small">Expected: {step.expected}. Your answer is stored as a human observation at {clock(timestamp)}, and the verifier reads it as evidence.</p>
       <div className="row">
-        <input className="field grow" aria-label="Reviewer name" placeholder="Your name" value={reviewer} onChange={(event) => setReviewer(event.target.value)} />
         <input className="field grow" aria-label="Note" placeholder="Note (optional)" value={note} onChange={(event) => setNote(event.target.value)} />
       </div>
       <div className="row">
-        <button className="btn" disabled={!reviewer.trim()} onClick={() => void answer("installed")}>Installed</button>
-        <button className="btn" disabled={!reviewer.trim()} onClick={() => void answer("not_installed")}>Not installed</button>
-        <button className="btn" disabled={!reviewer.trim()} onClick={() => void answer("cannot_determine")}>Cannot determine</button>
+        <button className="btn" onClick={() => void answer("installed")}>Installed</button>
+        <button className="btn" onClick={() => void answer("not_installed")}>Not installed</button>
+        <button className="btn" onClick={() => void answer("cannot_determine")}>Cannot determine</button>
       </div>
       <ErrorNote message={error} />
     </div>

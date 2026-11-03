@@ -82,7 +82,7 @@ class StepCorrection(BaseModel):
 class HumanObservationBody(BaseModel):
     answer: Literal["installed", "not_installed", "cannot_determine"]
     timestamp: float
-    reviewer: str
+    reviewer: str = ""
     predicate_id: str = ""
     note: str = ""
 

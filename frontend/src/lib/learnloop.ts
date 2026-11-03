@@ -318,7 +318,7 @@ export const api = {
   removeTemplate: (templateId: string) => request<{ deleted: string }>(`/api/learnloop/templates/${templateId}`, { method: "DELETE" }),
   verify: (templateId: string, runId: string) => post<Verification>(`/api/learnloop/templates/${templateId}/verify`, { run_id: runId }),
   verification: (id: string) => request<Verification>(`/api/verifications/${id}`),
-  observe: (id: string, stepId: string, body: { answer: Answer; timestamp: number; reviewer: string; note: string }) =>
+  observe: (id: string, stepId: string, body: { answer: Answer; timestamp: number; reviewer?: string; note: string }) =>
     post<Verification>(`/api/verifications/${id}/steps/${stepId}/observations`, body),
 };
 

@@ -537,8 +537,6 @@ def record_observation(session: Session, verification_id: str, step_id: str, pay
     """Store what a reviewer saw and let the verifier read it. The button does not set a verdict."""
     if payload.get("answer") not in ANSWERS:
         raise ValueError("unsupported answer")
-    if not (payload.get("reviewer") or "").strip():
-        raise ValueError("Name the reviewer so the record can be audited.")
     row = _verification(session, verification_id)
     if not any(step.get("step_id") == step_id for step in (row.report_json or {}).get("steps") or []):
         raise LookupError("step not found")
@@ -556,7 +554,7 @@ def record_observation(session: Session, verification_id: str, step_id: str, pay
             timestamp=float(payload["timestamp"]),
             video_id=row.execution_video_id,
             revision_id=row.execution_revision_id,
-            reviewer=payload["reviewer"].strip(),
+            reviewer=(payload.get("reviewer") or "").strip(),
             note=payload.get("note") or "",
         )
     )

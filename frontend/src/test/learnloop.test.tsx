@@ -461,7 +461,7 @@ describe("Verify", () => {
     expect(execution.currentTime).toBe(9.5);
   });
 
-  it("asks for a named review on CANNOT VERIFY and sends an observation, not a verdict", async () => {
+  it("asks for a review on CANNOT VERIFY and sends an observation, not a verdict", async () => {
     const unknown = { ...stepResult, verdict: "CANNOT_VERIFY", machine_verdict: "CANNOT_VERIFY", basis: "none", error_category: "UNVERIFIABLE_OPERATION", evidence: [] };
     const calls = mockApi((url, init) => {
       if (url.endsWith("/observations") && init?.method === "POST") return { body: report({ ...stepResult, verdict: "PASS", basis: "human_confirmed", machine_verdict: "CANNOT_VERIFY", error_category: "" }, "PASS", true) };
@@ -469,13 +469,12 @@ describe("Verify", () => {
     });
     show("/procedures/p1/verify");
     const installed = await screen.findByRole("button", { name: "Installed" });
-    expect(installed).toBeDisabled();
     expect(screen.getByText(/No frame supports this step/)).toBeTruthy();
-    fireEvent.change(screen.getByLabelText("Reviewer name"), { target: { value: "A. Reviewer" } });
+    expect(screen.queryByLabelText("Reviewer name")).toBeNull();
     fireEvent.click(installed);
     await waitFor(() => expect(calls.some((call) => call.url.endsWith("/observations"))).toBe(true));
     const body = JSON.parse(String(calls.find((call) => call.url.endsWith("/observations"))?.init?.body));
-    expect(body).toMatchObject({ answer: "installed", reviewer: "A. Reviewer", timestamp: 9.8 });
+    expect(body).toMatchObject({ answer: "installed", timestamp: 9.8 });
     expect(body.verdict).toBeUndefined();
   });
 

@@ -319,11 +319,12 @@ def test_human_observation_is_evidence_with_provenance_and_keeps_the_machine_rea
     exported = client.get(f"/api/verifications/{report['id']}/export").json()
     machine = {item["step_id"]: item for item in exported["machine_report"]["steps"]}["s3"]
     assert machine["verdict"] == "CANNOT_VERIFY"
-    answer_needs_reviewer = client.post(
+    unnamed = client.post(
         f"/api/verifications/{report['id']}/steps/s3/observations",
-        json={"answer": "installed", "timestamp": 9.5, "reviewer": " "},
+        json={"answer": "installed", "timestamp": 9.5},
     )
-    assert answer_needs_reviewer.status_code == 400
+    assert unnamed.status_code == 200
+    assert unnamed.json()["human_observations"][-1]["reviewer"] == ""
 
 
 def test_deleting_a_learned_procedure_removes_its_versions_reports_and_demonstration(lab):
