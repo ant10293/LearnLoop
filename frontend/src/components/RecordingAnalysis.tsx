@@ -106,7 +106,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
               </label>
             )}
           </div>
-          <label className="row small">
+          <label className="check fresh-check">
             <input type="checkbox" checked={fresh} onChange={(event) => setFresh(event.target.checked)} />
             <span>Analyze from scratch. Stored answers for this video are not replayed, so new Meta requests are sent.</span>
           </label>

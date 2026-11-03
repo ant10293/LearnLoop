@@ -49,6 +49,8 @@ class AnalyzeBody(BaseModel):
     model_id: str = ""
     # None uses the default segmentation model. Empty means no segmentation.
     segmentation_model_id: str | None = None
+    # True skips stored answers for this video, so every request is sent again. It still needs allow_live.
+    fresh: bool = False
 
 
 class ObjectViewsBody(BaseModel):
@@ -255,7 +257,7 @@ def analyze(video_id: str, payload: AnalyzeBody, session: Session = Depends(db))
         model_id, segmentation_model_id = guided.choose_models(session, payload.model_id, payload.segmentation_model_id)
     except UnsupportedMode as exc:
         raise HTTPException(400, str(exc)) from exc
-    plan = guided.plan(video, template=document, model_id=model_id, segmentation_model_id=segmentation_model_id)
+    plan = guided.plan(video, template=document, model_id=model_id, segmentation_model_id=segmentation_model_id, fresh=payload.fresh)
     if not plan["cached"] and not (payload.allow_live and settings.live_inference):
         raise HTTPException(409, {"code": "live_call_required", "plan": plan})
     try:
@@ -267,6 +269,7 @@ def analyze(video_id: str, payload: AnalyzeBody, session: Session = Depends(db))
             allow_live=payload.allow_live,
             model_id=model_id,
             segmentation_model_id=segmentation_model_id,
+            fresh=payload.fresh,
         )
     except (ValueError, UnsupportedMode) as exc:
         raise HTTPException(400, str(exc)) from exc

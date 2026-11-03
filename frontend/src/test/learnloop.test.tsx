@@ -395,6 +395,25 @@ describe("Teach", () => {
     expect(body).toMatchObject({ model_id: "muse-spark-1.3", segmentation_model_id: "" });
   });
 
+  it("analyzes from scratch only after the person approves new requests", async () => {
+    const calls = mockApi((url, init) => {
+      if (url.endsWith("/analyze")) {
+        const body = JSON.parse(String(init?.body));
+        if (!body.allow_live) return { status: 409, body: { detail: { code: "live_call_required", plan: { model_id: "muse-wonder-1.0", modality: "native_video", video_seconds: 10, max_requests: 1, automatic_retries: 0, max_output_tokens: 24000, estimated_input_tokens: 1, estimated_cost_usd: null, live_enabled: true, fresh: body.fresh } } } };
+        return { status: 500, body: { detail: "stop here" } };
+      }
+      return base(url);
+    });
+    show("/procedures/p1/teach");
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Analyze from scratch/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Learn the procedure" }));
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Stored responses for this video are skipped.");
+    fireEvent.click(screen.getByRole("button", { name: "Send one request" }));
+    await screen.findByRole("alert");
+    const bodies = calls.filter((call) => call.url.endsWith("/analyze")).map((call) => JSON.parse(String(call.init?.body)));
+    expect(bodies.map((body) => [body.allow_live, body.fresh])).toEqual([[false, true], [true, true]]);
+  });
+
   it("shows a failed analysis and the provider's reason", async () => {
     mockApi((url) => {
       if (url.endsWith("/analyze")) return { body: { ...run, id: "rf", status: "pending" } };

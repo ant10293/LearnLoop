@@ -220,6 +220,7 @@ export interface CallPlan {
   object_view_requests: number;
   object_view_locate_requests: number;
   object_view_frames: number;
+  fresh?: boolean;
 }
 
 export interface ModelOption {
@@ -361,7 +362,7 @@ export const api = {
   removeProcedure: (id: string) => request<{ deleted: string }>(`/api/learnloop/procedures/${id}`, { method: "DELETE" }),
   reference: (id: string, role: Recording["role"], path: string) => post<Recording>(`/api/learnloop/procedures/${id}/recordings/reference`, { path, role }),
   removeRecording: (videoId: string) => request<{ deleted: string }>(`/api/learnloop/recordings/${videoId}`, { method: "DELETE" }),
-  analyze: (videoId: string, allowLive: boolean, models?: { model_id: string; segmentation_model_id: string | null }) =>
+  analyze: (videoId: string, allowLive: boolean, models?: { model_id: string; segmentation_model_id: string | null; fresh?: boolean }) =>
     post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive, ...models }),
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),

@@ -119,8 +119,10 @@ def choose_models(session: Session, model_id: str, segmentation_model_id: str | 
     return model, segmentation
 
 
-def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEFAULT_MODEL, segmentation_model_id: str = "") -> dict:
-    """What a call would send, whether a stored answer exists, and what it could cost."""
+def plan(
+    video: VideoAsset, *, template: dict | None = None, model_id: str = DEFAULT_MODEL, segmentation_model_id: str = "", fresh: bool = False
+) -> dict:
+    """What a call would send, whether a stored answer will be replayed, and what it could cost. Fresh replays none."""
     from app.pipeline import object_views
 
     system, user = _prompts(video, template)
@@ -140,7 +142,8 @@ def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEF
         # Meta lists no rate in this repository, so no figure is invented here.
         "estimated_cost_usd": None,
         "cache_key": key,
-        "cached": find_cached(key) is not None,
+        "cached": not fresh and find_cached(key) is not None,
+        "fresh": fresh,
         "live_enabled": settings.live_inference,
         "segmentation_model_id": segmentation_model_id if not template else "",
         # A second follows, forward only, only when some object is boxed after the first frame.
@@ -160,6 +163,7 @@ def create_guided_run(
     allow_live: bool = False,
     model_id: str = DEFAULT_MODEL,
     segmentation_model_id: str = "",
+    fresh: bool = False,
 ) -> AnalysisRun:
     from app.services.experiments import create_run
 
@@ -198,6 +202,8 @@ def create_guided_run(
         "guided_user": user,
         "cache_key": cache_key(video.checksum_sha256, model_id, system, user),
         "allow_live": bool(allow_live),
+        # Stored answers are skipped and the new ones replace them.
+        "fresh": bool(fresh),
         "reference_template_id": template_id,
         "max_output_tokens": settings.guided_max_output_tokens,
         "max_retries": 0,
@@ -219,7 +225,7 @@ async def run_guided_call(session: Session, run: AnalysisRun, video: VideoAsset)
     """The one semantic call, or its stored answer. Validation is the same for both."""
     config = dict(run.config_json or {})
     key = config["cache_key"]
-    stored = find_cached(key)
+    stored = None if config.get("fresh") else find_cached(key)
     if stored is not None:
         document = _check(stored["text"], "", "cached", config)
         run.config_json = {

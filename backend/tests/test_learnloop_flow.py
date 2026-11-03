@@ -408,6 +408,43 @@ def test_cached_replay_makes_no_provider_call_and_is_labeled(lab):
     assert len(stub.calls) == 1
 
 
+def test_fresh_analysis_skips_stored_answers_after_approval(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    calls = []
+
+    class CountingSam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            calls.append(kwargs["propagation_direction"])
+            text = "\n".join(_sam_line(frame, [(0, 10)]) for frame in range(4))
+            return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", CountingSam)
+    first = json.loads(stub.text)["objects"][0]["local_id"]
+    stub.locate_text = json.dumps({"objects": [{"local_id": first, "bbox": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}]})
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    video = _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration")
+    assert _analyze(client, video)["source"] == "live"
+    sent, sam = len(stub.calls), len(calls)
+    assert sam == 1
+
+    # Fresh never replays, so it asks first even though an answer is stored.
+    refused = client.post(f"/api/learnloop/recordings/{video}/analyze", json={"allow_live": False, "fresh": True})
+    assert refused.status_code == 409 and refused.json()["detail"]["plan"]["fresh"] is True
+    assert len(stub.calls) == sent
+    again = client.post(f"/api/learnloop/recordings/{video}/analyze", json={"allow_live": True, "fresh": True}).json()
+    _run_job(again["id"])
+    again = client.get(f"/api/learnloop/runs/{again['id']}").json()
+    assert again["status"] == "completed" and again["source"] == "live" and again["provider_requests"] >= 1
+    assert len(stub.calls) == 2 * sent and len(calls) == 2 * sam
+
+
 def test_same_filename_different_bytes_does_not_replay(lab):
     client, stub, tmp = lab
     procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]

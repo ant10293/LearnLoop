@@ -122,8 +122,11 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     from app.services.credentials import load_secret
 
     document = load_working(run.id)
+    # A fresh analysis sends its own requests. Views made again for it later replay what it stored.
+    fresh = allow_live is None and bool((run.config_json or {}).get("fresh"))
     approved = (run.config_json or {}).get("allow_live") if allow_live is None else allow_live
     allow_live = bool(approved) and settings.live_inference
+    fresh = fresh and allow_live
     model_id = (run.config_json or {}).get("segmentation_model_id") or _DEFAULT_SAM
     secret, _source = load_secret(session, "meta")
     directory = views_dir(run.id)
@@ -134,11 +137,11 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     stage.progress_current = 0
     session.commit()
     tracked: dict[str, list[Sighting]] = {}
-    seeds, locate_requests, locate_replayed, error = await _locate(session, run, video, document, allow_live, secret)
+    seeds, locate_requests, locate_replayed, error = await _locate(session, run, video, document, allow_live, secret, fresh=fresh)
     located = not error
     stage.progress_current = 1
     session.commit()
-    text, requests, replayed, failure = await _follow(session, run, video, media, seeds, 0, "both", model_id, allow_live, secret)
+    text, requests, replayed, failure = await _follow(session, run, video, media, seeds, 0, "both", model_id, allow_live, secret, fresh=fresh)
     error = error or failure
     if text:
         tracked.update(_assign(parse_sam_output(text), seeds))
@@ -150,7 +153,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
         # Without an answer, an empty track says nothing about whether SAM lost its object.
         lost = _lost(document, tracked, seeds, _last_frame_time(video)) if text else {}
         found, later_requests, later_replayed, later_error = await _locate_later(
-            session, run, video, document, media, seeds, lost, allow_live, secret
+            session, run, video, document, media, seeds, lost, allow_live, secret, fresh=fresh
         )
         seeds += found
         later = [seed.local_id for seed in found if seed.local_id not in lost]
@@ -163,7 +166,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
         # A part boxed later is followed forward only, from a copy that starts on its frame. Followed backward,
         # SAM would carry it onto a similar part before it ever came into view, and take that part's pixels.
         start = _first_frame(found)
-        text, sent, reused, failure = await _follow(session, run, video, media, found, start, "forward", model_id, allow_live, secret)
+        text, sent, reused, failure = await _follow(session, run, video, media, found, start, "forward", model_id, allow_live, secret, fresh=fresh)
         requests += sent
         replayed += reused
         error = error or failure
@@ -194,13 +197,15 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     return {key: value for key, value in manifest.items() if key != "objects"}
 
 
-async def _locate(session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, allow_live: bool, secret: str) -> tuple[list[Seed], int, int, str]:
+async def _locate(
+    session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, allow_live: bool, secret: str, *, fresh: bool = False
+) -> tuple[list[Seed], int, int, str]:
     """Boxes for each object on the first frame. A still gives the model sharper pixels than the whole video did."""
     user = _locate_prompt(document)
     key = hashlib.sha256(
         json.dumps({"video": video.checksum_sha256, "model": run.model_id, "system": LOCATE_SYSTEM, "user": user, "schema": GUIDED_LOCATE.hash}, sort_keys=True).encode()
     ).hexdigest()
-    text = _cached(key)
+    text = None if fresh else _cached(key)
     requests, replayed = 0, 0
     if text is not None:
         replayed = 1
@@ -232,6 +237,8 @@ async def _locate_later(
     lost: dict[str, float],
     allow_live: bool,
     secret: str,
+    *,
+    fresh: bool = False,
 ) -> tuple[list[Seed], int, int, str]:
     """Boxes for objects the first frame did not show, and for objects SAM lost, looked for from the time in lost.
     Sent only when one of those exists, and an object stays blank rather than guessed."""
@@ -248,7 +255,7 @@ async def _locate_later(
             sort_keys=True,
         ).encode()
     ).hexdigest()
-    text = _cached(key)
+    text = None if fresh else _cached(key)
     requests, replayed = 0, 0
     if text is not None:
         replayed = 1
@@ -434,7 +441,7 @@ def _prompt(seeds: list[Seed], media: Path, start: int = 0) -> str:
 
 
 async def _follow(
-    session, run, video: VideoAsset, media: Path, seeds: list[Seed], start: int, direction: str, model_id: str, allow_live: bool, secret: str
+    session, run, video: VideoAsset, media: Path, seeds: list[Seed], start: int, direction: str, model_id: str, allow_live: bool, secret: str, *, fresh: bool = False
 ) -> tuple[str | None, int, int, str]:
     """One SAM request over the copy from frame start on, as (answer, requests sent, requests replayed, error)."""
     if not seeds:
@@ -442,7 +449,7 @@ async def _follow(
     clip = _clip_from(media, start)
     prompt = _prompt(seeds, clip, start)
     key = _cache_key(video.checksum_sha256, prompt, model_id, start, direction)
-    text = _cached(key)
+    text = None if fresh else _cached(key)
     if text is not None:
         return text, 0, 1, ""
     if not (allow_live and secret):

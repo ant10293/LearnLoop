@@ -126,6 +126,25 @@ a.card:hover { border-color: var(--ink); }
 .preview, .film video { width: 100%; max-height: 52vh; background: #111; border-radius: 8px; display: block; }
 .film { margin: 0; }
 .film-stage { position: relative; }
+.film-stage.boxed { overflow: hidden; background: #111; border-radius: 8px; }
+.film-stage.boxed video { border-radius: 0; cursor: pointer; }
+.film-stage:fullscreen { display: flex; align-items: center; background: #000; border-radius: 0; }
+.film-stage:fullscreen video, .films .film-stage:fullscreen video { width: 100%; height: 100%; max-height: none; }
+.film-controls { position: absolute; left: 0; right: 0; bottom: 0; padding: 1.6rem 0.9rem 1rem; color: #fff; background: linear-gradient(transparent, rgb(0 0 0 / 0.6)); opacity: 0; transition: opacity 0.2s; }
+.film-stage:hover .film-controls, .film-controls.paused, .film-controls:focus-within { opacity: 1; }
+.film-controls-row { display: flex; align-items: center; gap: 0.35rem; margin-bottom: 0.35rem; }
+.film-controls button { display: grid; place-items: center; flex: none; width: 2rem; height: 2rem; padding: 0; border: 0; border-radius: 50%; color: inherit; background: transparent; cursor: pointer; }
+/* Pull the outer buttons out by their padding so the icons line up with the ends of the seek bar. */
+.film-controls-row > button:first-child { margin-left: calc((18px - 2rem) / 2); }
+.film-controls-row > button:last-child { margin-right: calc((18px - 2rem) / 2); }
+.film-controls button:hover, .film-controls button:focus-visible { background: rgb(255 255 255 / 0.18); }
+.film-time { font-size: 0.8rem; font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
+.film-mute { margin-left: auto; }
+.film-seek { display: block; width: 100%; height: 4px; margin: 0; border-radius: 2px; appearance: none; -webkit-appearance: none; background: linear-gradient(to right, #fff var(--fill), rgb(255 255 255 / 0.35) var(--fill)); cursor: pointer; }
+.film-seek::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; border-radius: 50%; background: #fff; opacity: 0; transition: opacity 0.15s; }
+.film-seek::-moz-range-thumb { width: 12px; height: 12px; border: 0; border-radius: 50%; background: #fff; opacity: 0; }
+.film-seek:hover::-webkit-slider-thumb, .film-seek:focus-visible::-webkit-slider-thumb { opacity: 1; }
+.film-seek:hover::-moz-range-thumb, .film-seek:focus-visible::-moz-range-thumb { opacity: 1; }
 .film-boxes { position: absolute; overflow: hidden; pointer-events: none; }
 .film-box { position: absolute; border: 2px solid; border-radius: 2px; }
 .film-box span { position: absolute; left: -2px; bottom: 100%; max-width: 14rem; padding: 0 0.25rem; overflow: hidden; color: #111; font-size: 0.68rem; line-height: 1.25rem; white-space: nowrap; text-overflow: ellipsis; border-radius: 2px 2px 0 0; }
@@ -165,6 +184,8 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .field.title { font-weight: 600; font-size: 1rem; }
 .step footer { justify-content: space-between; margin-top: 0.5rem; }
 .check { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; }
+.fresh-check { display: flex; align-items: flex-start; margin-bottom: 0.75rem; }
+.fresh-check input { margin: 0.2em 0 0; flex: none; }
 .condition { background: var(--bg); padding: 0.35rem 0.55rem; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin: 0.15rem 0; }
 .origin { color: var(--muted); font-size: 0.75rem; }
 .check-row .condition-edit { flex: none; }
