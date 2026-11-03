@@ -218,6 +218,7 @@ export interface CallPlan {
   live_enabled: boolean;
   segmentation_model_id: string;
   object_view_requests: number;
+  object_view_locate_requests: number;
   object_view_frames: number;
 }
 

@@ -143,6 +143,8 @@ def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEF
         "live_enabled": settings.live_inference,
         "segmentation_model_id": segmentation_model_id if not template else "",
         "object_view_requests": 1 if segmentation_model_id and not template else 0,
+        # One still on the first frame, and a second only when some object is not on it.
+        "object_view_locate_requests": 2 if segmentation_model_id and not template else 0,
         "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)),
     }
 

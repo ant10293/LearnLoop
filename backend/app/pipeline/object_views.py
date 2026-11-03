@@ -1,7 +1,9 @@
 """Object thumbnails and per-object timelines for a demonstration.
 
-One Meta call finds each object on the first frame. SAM then follows those boxes
-through a low frame rate copy of the recording, in one request. This is for looking at, not for judging:
+One Meta call finds each object on the first frame. When some object is not
+there, a second call looks at a few later stills chosen from the analysis. SAM
+then follows every box, whatever frame it is on, through a low frame rate copy
+of the recording, in one request. This is for looking at, not for judging:
 nothing here enters the analysis or a verdict. A failure leaves the analysis in place.
 """
 
@@ -21,7 +23,7 @@ from app.config import settings
 from app.models.media import VideoAsset
 from app.models.runs import AnalysisRun
 from app.perception.sam_masks import cutout_from_mask
-from app.pipeline.contracts import GUIDED_LOCATE
+from app.pipeline.contracts import GUIDED_LOCATE, GUIDED_LOCATE_LATER
 from app.providers.sam import (
     MAX_PROMPTED_OBJECTS,
     SamAdapter,
@@ -34,9 +36,10 @@ from app.providers.sam import (
 )
 from app.providers.types import FrameInput, GenerationRequest
 from app.schemas.analysis import AnalysisDocument
-from app.schemas.generation import GuidedLocateOutput
+from app.schemas.generation import GuidedLaterLocateOutput, GuidedLocateOutput
 from app.services.storage import data_path, resolve_stored
-from app.video.frames import extract_frame
+from app.verification.read import enum_value
+from app.video.frames import extract_frame, sharpness_score
 from app.video.probe import probe
 
 log = logging.getLogger("learnloop.object_views")
@@ -61,6 +64,21 @@ Small parts count. Look closely before deciding a part is not there. A mark on t
 If an object is not visible in this image, set bbox to null. Do not guess a location.
 Return JSON only.
 """.strip()
+LATER_SYSTEM = """
+You are locating known objects on still images from later in a recording. Each image follows a line giving its timestamp. Return one entry per listed object, using its local_id.
+For each object, choose the one image where it is most clearly visible and box it there. timestamp is that image's timestamp, copied exactly.
+bbox is a tight box around that one object alone, out to its outermost visible pixels, with x, y, w, and h as fractions of the image from 0 to 1 and the origin at the top left.
+A listed object may look like a part that is not listed. Box only a part that fits the listed description, and box a part that is in a hand when it is clearly visible.
+If an object is not clearly visible in any image, set timestamp and bbox to null. Do not guess a location.
+Return JSON only.
+""".strip()
+# Later stills sent in one request, and per missing object.
+_LATER_FRAMES = 6
+_LATER_PER_OBJECT = 2
+# Candidate moments closer than this are one moment.
+_LATER_MERGE = 0.5
+# The sharpest frame this close to a candidate moment is sent instead of it.
+_SHARPEST_WITHIN = 0.25
 
 
 @dataclass
@@ -105,7 +123,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
     directory = views_dir(run.id)
     directory.mkdir(parents=True, exist_ok=True)
     media = _low_rate_copy(resolve_stored(video.stored_path), directory / "tracked.mp4")
-    stage.progress_total = 2
+    stage.progress_total = 3
     stage.progress_current = 0
     session.commit()
     tracked: dict[str, list[Sighting]] = {}
@@ -113,6 +131,18 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
     replayed = 0
     seeds, locate_requests, locate_replayed, error = await _locate(session, run, video, document, allow_live, secret)
     stage.progress_current = 1
+    session.commit()
+    later: list[str] = []
+    if not error:
+        found, later_requests, later_replayed, later_error = await _locate_later(
+            session, run, video, document, media, seeds, allow_live, secret
+        )
+        seeds += found
+        later = [seed.local_id for seed in found]
+        locate_requests += later_requests
+        locate_replayed += later_replayed
+        error = later_error
+    stage.progress_current = 2
     session.commit()
     if seeds:
         prompt = _prompt(seeds, media)
@@ -130,7 +160,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
             error = "No stored SAM answer matches, and a live call was not approved."
         if text:
             tracked = _assign(parse_sam_output(text), seeds)
-    stage.progress_current = 2
+    stage.progress_current = 3
     session.commit()
     manifest = _render(run.id, document, media, tracked, _last_frame_time(video))
     manifest.update(
@@ -143,6 +173,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
             "locate_replayed": locate_replayed,
             "frames_per_request": estimated_frames(float(video.duration_sec or 0)),
             "seeded_objects": [seed.local_id for seed in seeds],
+            "located_later": later,
             "error": error,
         }
     )
@@ -162,7 +193,9 @@ async def _locate(session, run: AnalysisRun, video: VideoAsset, document: Analys
         replayed = 1
     elif allow_live and secret:
         requests = 1
-        text, error = await _locate_call(session, run, video, user, secret)
+        still = views_dir(run.id) / "first_frame.jpg"
+        extract_frame(resolve_stored(video.stored_path), 0.0, still, accurate=True)
+        text, error = await _locate_call(session, run, secret, LOCATE_SYSTEM, user, [FrameInput(0.0, still)], GUIDED_LOCATE, "Starting boxes")
         if text is None:
             return [], requests, replayed, error
     else:
@@ -176,25 +209,135 @@ async def _locate(session, run: AnalysisRun, video: VideoAsset, document: Analys
     return _seeds(document, answer), requests, replayed, ""
 
 
+async def _locate_later(
+    session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, media: Path, seeds: list[Seed], allow_live: bool, secret: str
+) -> tuple[list[Seed], int, int, str]:
+    """Boxes for objects the first frame did not show. Sent only when one is missing, and an object stays blank rather than guessed."""
+    seeded = {seed.local_id for seed in seeds}
+    missing = [item for item in document.objects[:MAX_PROMPTED_OBJECTS] if item.local_id not in seeded]
+    times = _later_times(document, [item.local_id for item in missing], _last_frame_time(video), media)
+    if not missing or not times:
+        return [], 0, 0, ""
+    user = _locate_prompt(document.model_copy(update={"objects": missing}))
+    key = hashlib.sha256(
+        json.dumps(
+            {"video": video.checksum_sha256, "model": run.model_id, "system": LATER_SYSTEM, "user": user, "times": times, "schema": GUIDED_LOCATE_LATER.hash},
+            sort_keys=True,
+        ).encode()
+    ).hexdigest()
+    text = _cached(key)
+    requests, replayed = 0, 0
+    if text is not None:
+        replayed = 1
+    elif allow_live and secret:
+        requests = 1
+        stills = []
+        for index, moment in enumerate(times):
+            still = views_dir(run.id) / f"later_{index}.jpg"
+            extract_frame(resolve_stored(video.stored_path), moment, still, accurate=True)
+            stills.append(FrameInput(moment, still))
+        text, error = await _locate_call(session, run, secret, LATER_SYSTEM, user, stills, GUIDED_LOCATE_LATER, "Boxes for later objects")
+        if text is None:
+            return [], requests, replayed, error
+    else:
+        return [], 0, 0, "No stored boxes for the objects missing from the first frame match, and a live call was not approved."
+    try:
+        answer = GuidedLaterLocateOutput.model_validate_json(text)
+    except ValueError as exc:
+        return [], requests, replayed, f"The boxes for later objects were not valid: {str(exc)[:300]}"
+    if requests:
+        _store(key, text)
+    return _later_seeds(answer, {item.local_id for item in missing}, times, len(seeds)), requests, replayed, ""
+
+
+def _later_times(document: AnalysisDocument, local_ids: list[str], last_frame: float, media: Path) -> list[float]:
+    """Moments the analysis ties to each missing object, a few per object, each moved to the sharpest nearby frame."""
+    per_object = [_object_moments(document, local_id, last_frame) for local_id in local_ids]
+    chosen: list[float] = []
+    # Round robin, so one object with many moments does not crowd out the others.
+    for rank in range(_LATER_PER_OBJECT):
+        for moments in per_object:
+            if rank < len(moments) and len(chosen) < _LATER_FRAMES and all(abs(moments[rank] - item) >= _LATER_MERGE for item in chosen):
+                chosen.append(moments[rank])
+    return sorted(_sharpest_nearby(chosen, media))
+
+
+def _object_moments(document: AnalysisDocument, local_id: str, last_frame: float) -> list[float]:
+    moments = [row.timestamp for row in document.observations if row.object_local_id == local_id and enum_value(row.visibility) in {"visible", "partial"}]
+    for action in document.actions:
+        if local_id in action.object_local_ids:
+            moments += [action.start, action.end]
+    for step in document.workflow_steps:
+        if local_id in step.required_objects:
+            moments += [value for value in (step.time_start, step.time_end) if value is not None]
+    moments += [row.timestamp for row in document.transitions if row.object_local_id == local_id]
+    # The first frame was already searched.
+    kept: list[float] = []
+    for moment in sorted(min(max(float(value), 0.0), last_frame) for value in moments):
+        if moment >= _LATER_MERGE and all(abs(moment - item) >= _LATER_MERGE for item in kept):
+            kept.append(moment)
+    return kept
+
+
+def _sharpest_nearby(moments: list[float], media: Path) -> list[float]:
+    """A hand in motion blurs a frame. The sharpest frame a moment ago or later shows the same scene."""
+    reach = round(_SHARPEST_WITHIN * SAM_FPS)
+    windows = {moment: range(max(round(moment * SAM_FPS) - reach, 0), round(moment * SAM_FPS) + reach + 1) for moment in moments}
+    frames = _read_frames(media, {index for window in windows.values() for index in window})
+    picked = []
+    for moment, window in windows.items():
+        options = [index for index in window if index in frames]
+        if not options:
+            continue
+        # Ties go to the frame nearest the moment.
+        best = max(options, key=lambda index: (sharpness_score(frames[index]), -abs(index - moment * SAM_FPS)))
+        picked.append(round(best / SAM_FPS, 3))
+    return list(dict.fromkeys(picked))
+
+
+def _later_seeds(answer: GuidedLaterLocateOutput, missing: set[str], times: list[float], first_id: int) -> list[Seed]:
+    """Only a box on a still that was sent counts, so SAM gets the frame the box was drawn on."""
+    seeds: list[Seed] = []
+    for item in answer.objects:
+        if item.local_id not in missing or item.timestamp is None or any(seed.local_id == item.local_id for seed in seeds):
+            continue
+        moment = min(times, key=lambda value: abs(value - item.timestamp))
+        box = _usable_box(item.bbox)
+        if box is None or abs(moment - item.timestamp) > 0.5 / SAM_FPS:
+            continue
+        seeds.append(Seed(item.local_id, first_id + len(seeds), moment, box))
+    return seeds
+
+
+def _usable_box(box) -> dict | None:
+    if box is None:
+        return None
+    x, y = max(box.x, 0.0), max(box.y, 0.0)
+    w, h = min(box.w, 1 - x), min(box.h, 1 - y)
+    if w <= 0 or h <= 0 or w * h > _MAX_SEED_AREA:
+        return None
+    return {"x": x, "y": y, "w": w, "h": h}
+
+
 def _locate_prompt(document: AnalysisDocument) -> str:
     entries = [f"- {item.local_id}: {item.label}. {item.visual_characteristics or item.description or ''}".strip() for item in document.objects]
     return "Objects to find:\n" + "\n".join(entries)
 
 
-async def _locate_call(session, run: AnalysisRun, video: VideoAsset, user: str, secret: str) -> tuple[str | None, str]:
+async def _locate_call(
+    session, run: AnalysisRun, secret: str, system: str, user: str, stills: list[FrameInput], contract, what: str
+) -> tuple[str | None, str]:
     from app.providers.registry import get_provider
     from app.services.costs import fail_provider_call, finish_provider_call, open_provider_call
 
-    still = views_dir(run.id) / "first_frame.jpg"
-    extract_frame(resolve_stored(video.stored_path), 0.0, still, accurate=True)
     request = GenerationRequest(
         model_id=run.model_id,
-        system_prompt=LOCATE_SYSTEM,
+        system_prompt=system,
         user_prompt=user,
-        frames=[FrameInput(0.0, still)],
+        frames=stills,
         modality="sampled_frames",
-        json_schema=GUIDED_LOCATE.schema,
-        schema_name=GUIDED_LOCATE.name,
+        json_schema=contract.schema,
+        schema_name=contract.name,
         max_output_tokens=_LOCATE_OUTPUT_TOKENS,
     )
     call = open_provider_call(
@@ -204,8 +347,8 @@ async def _locate_call(session, run: AnalysisRun, video: VideoAsset, user: str, 
         provider_id="meta",
         model_id=run.model_id,
         modality="sampled_frames",
-        parameters={"schema_name": GUIDED_LOCATE.name, "strict_output": True, "output_token_limit": _LOCATE_OUTPUT_TOKENS},
-        frame_timestamps=[0.0],
+        parameters={"schema_name": contract.name, "strict_output": True, "output_token_limit": _LOCATE_OUTPUT_TOKENS},
+        frame_timestamps=[still.timestamp for still in stills],
     )
     session.commit()
     try:
@@ -218,7 +361,7 @@ async def _locate_call(session, run: AnalysisRun, video: VideoAsset, user: str, 
     finish_provider_call(session, run, call, response)
     session.commit()
     if response.incomplete_reason:
-        return None, f"The starting boxes stopped early ({response.incomplete_reason})."
+        return None, f"{what} stopped early ({response.incomplete_reason})."
     return response.text, ""
 
 
@@ -228,15 +371,11 @@ def _seeds(document: AnalysisDocument, answer: GuidedLocateOutput) -> list[Seed]
     seeds: list[Seed] = []
     taken: set[str] = set()
     for item in answer.objects[:MAX_PROMPTED_OBJECTS]:
-        box = item.bbox
+        box = _usable_box(item.bbox)
         if item.local_id not in known or item.local_id in taken or box is None:
             continue
-        x, y = max(box.x, 0.0), max(box.y, 0.0)
-        w, h = min(box.w, 1 - x), min(box.h, 1 - y)
-        if w <= 0 or h <= 0 or w * h > _MAX_SEED_AREA:
-            continue
         taken.add(item.local_id)
-        seeds.append(Seed(item.local_id, len(seeds), 0.0, {"x": x, "y": y, "w": w, "h": h}))
+        seeds.append(Seed(item.local_id, len(seeds), 0.0, box))
     return seeds
 
 

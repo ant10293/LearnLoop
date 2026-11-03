@@ -249,6 +249,18 @@ class GuidedLocateOutput(_Closed):
     objects: list[GuidedLocatedObject]
 
 
+class GuidedLaterObject(_Closed):
+    local_id: str
+    timestamp: float | None
+    bbox: GeneratedBox | None
+
+
+class GuidedLaterLocateOutput(_Closed):
+    """Boxes for objects the first frame did not show, each on the later still that shows it best."""
+
+    objects: list[GuidedLaterObject]
+
+
 class GuidedTaskOutput(_Closed):
     """The short task analysis for fixed-camera procedures. Field names match AnalysisDocument."""
 

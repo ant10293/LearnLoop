@@ -147,13 +147,21 @@ class StubMeta:
     def __init__(self, text=DEMONSTRATION, incomplete=""):
         self.text, self.incomplete, self.calls = text, incomplete, []
         self.locate_text = '{"objects": []}'
+        self.later = lambda request: '{"objects": []}'
+
+    def _reply(self, request):
+        if request.schema_name == "learnloop_guided_locate":
+            return self.locate_text
+        if request.schema_name == "learnloop_guided_locate_later":
+            return self.later(request)
+        return self.text
 
     async def generate(self, secret, request):
         from app.providers.types import ProviderResponse, Usage
 
         self.calls.append(request)
         return ProviderResponse(
-            text=self.locate_text if request.schema_name == "learnloop_guided_locate" else self.text,
+            text=self._reply(request),
             raw={"status": "incomplete" if self.incomplete else "completed"},
             usage=Usage(1000, 500, 0.0, False),
             request_id=f"req_{len(self.calls)}",
@@ -624,7 +632,79 @@ def test_a_demonstration_follows_every_box_in_one_sam_request_and_replays_it(lab
     assert len(calls) == 1
     replayed = client.get(f"/api/learnloop/runs/{again['id']}/objects").json()
     assert [request.schema_name for request in stub.calls].count("learnloop_guided_locate") == 1
-    assert replayed["replayed_requests"] == 1 and replayed["locate_replayed"] == 1 and replayed["objects"][ids[0]]["seen_cells"]
+    assert replayed["replayed_requests"] == 1 and replayed["locate_replayed"] == 2 and replayed["objects"][ids[0]]["seen_cells"]
+
+
+def test_an_object_missing_from_the_first_frame_is_found_on_a_later_still(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    prompts = []
+
+    class FakeSam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            prompts.append(prompt)
+            text = "\n".join(_sam_line(frame, [(0, 10), (1, 60)]) for frame in range(56, 60))
+            return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    ids = [item["local_id"] for item in json.loads(stub.text)["objects"]]
+    box = {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    stub.locate_text = json.dumps({"objects": [{"local_id": ids[0], "bbox": box}]})
+    sent = []
+
+    def later(request):
+        sent.append([frame.timestamp for frame in request.frames])
+        listed = [line.split(":")[0].strip("- ") for line in request.user_prompt.splitlines()[1:]]
+        picked = request.frames[0].timestamp
+        # One object on a sent still, and one on a moment that was never sent.
+        return json.dumps({"objects": [
+            {"local_id": listed[-1], "timestamp": picked, "bbox": box},
+            {"local_id": listed[0], "timestamp": picked + 0.37, "bbox": box},
+        ]})
+
+    stub.later = later
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Later"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    assert len(sent) == 1 and 1 <= len(sent[0]) <= 6 and all(moment >= 0.5 for moment in sent[0])
+    assert views["located_later"] == [ids[3]]
+    frame = round(sent[0][0] * 8)
+    assert prompts[0].startswith("<0f>0<|box;") and f"<{frame}f>1<|box;" in prompts[0]
+    assert views["objects"][ids[3]]["seen_cells"] and not views["objects"][ids[1]]["seen_cells"]
+
+    again = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert len(sent) == 1
+    assert client.get(f"/api/learnloop/runs/{again['id']}/objects").json()["located_later"] == [ids[3]]
+
+
+def test_no_later_request_when_the_first_frame_shows_everything(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+
+    class FakeSam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            return SimpleNamespace(text="", file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    box = {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    stub.locate_text = json.dumps({"objects": [{"local_id": item["local_id"], "bbox": box} for item in json.loads(stub.text)["objects"]]})
+    procedure = client.post("/api/learnloop/procedures", json={"name": "All"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    assert "learnloop_guided_locate_later" not in [request.schema_name for request in stub.calls]
 
 
 def test_the_thumbnail_is_the_first_view_not_the_largest():
