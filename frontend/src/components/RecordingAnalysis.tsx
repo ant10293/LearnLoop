@@ -185,7 +185,7 @@ export function ObjectViewsNotice({ runId, views, onStarted }: { runId: string; 
           <dl>
             <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
             <dt>Requests</dt><dd>{`At most ${plan.object_view_locate_requests + plan.object_view_requests}: up to ${plan.object_view_locate_requests} ${humanizeModel(plan.model_id)} requests to find the objects, and up to ${plan.object_view_requests} ${humanizeModel(plan.segmentation_model_id)} requests to follow them. No automatic retry.`}</dd>
-            <dt>Billed frames</dt><dd>About {plan.object_view_frames.toLocaleString()} for the first {humanizeModel(plan.segmentation_model_id)} request, and fewer for a second, which covers only the rest of the recording after an object first found later.</dd>
+            <dt>Billed frames</dt><dd>About {plan.object_view_frames.toLocaleString()} for the first {humanizeModel(plan.segmentation_model_id)} request, and fewer for a second, which covers only the rest of the recording after an object found later or found again.</dd>
           </dl>
           {plan.live_enabled ? (
             <div className="row">
@@ -215,7 +215,7 @@ function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: b
         <dt>Model</dt><dd>{humanizeModel(plan.model_id)}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
         <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
         <dt>Requests</dt><dd>{views > 0 ? `At most ${plan.max_requests + locate + views}: ${plan.max_requests} to analyze the video, up to ${locate} to find the objects, and up to ${views} to follow them. No automatic retry.` : `At most ${plan.max_requests}, with no automatic retry`}</dd>
-        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>One more Meta request to find the objects on the first frame, and a second on a few later stills only if some object is not there. Then one {humanizeModel(plan.segmentation_model_id)} request, about {plan.object_view_frames.toLocaleString()} billed frames, and a second over the rest of the recording only for an object first found later.</dd></>}
+        {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>One more Meta request to find the objects on the first frame, and a second on a few later stills only if some object is not there or is lost from view. Then one {humanizeModel(plan.segmentation_model_id)} request, about {plan.object_view_frames.toLocaleString()} billed frames, and a second over the rest of the recording only for an object found later or found again.</dd></>}
         <dt>Output limit</dt><dd>{plan.max_output_tokens.toLocaleString()} tokens{views > 0 ? " for the analysis" : ""}</dd>
         <dt>Estimated cost</dt><dd>{plan.estimated_cost_usd == null ? "Unknown. No rate is recorded for this model." : `$${plan.estimated_cost_usd}`}</dd>
       </dl>

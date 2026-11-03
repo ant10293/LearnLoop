@@ -692,6 +692,59 @@ def test_an_object_missing_from_the_first_frame_is_found_on_a_later_still(lab, m
     assert replayed["located_later"] == [ids[3]] and replayed["replayed_requests"] == 2
 
 
+def test_an_object_sam_loses_is_boxed_again_after_it_was_lost(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    prompts = []
+
+    class FakeSam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            prompts.append((prompt, kwargs["propagation_direction"]))
+            if kwargs["propagation_direction"] == "both":
+                # Every object to the end, but red only for the first half second.
+                text = "\n".join(_sam_line(frame, [(0, 10), *([(1, 40)] if frame < 4 else []), (2, 70), (3, 100)]) for frame in range(80))
+            else:
+                text = "\n".join(_sam_line(frame, [(4, 40)]) for frame in range(4))
+            return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    ids = [item["local_id"] for item in json.loads(stub.text)["objects"]]
+    box = {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    stub.locate_text = json.dumps({"objects": [{"local_id": local_id, "bbox": box} for local_id in ids]})
+    sent = []
+
+    def later(request):
+        sent.append(([frame.timestamp for frame in request.frames], request.user_prompt))
+        return json.dumps({"objects": [{"local_id": ids[1], "timestamp": request.frames[0].timestamp, "bbox": box}]})
+
+    stub.later = later
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Lost"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    # Only the lost object is asked about, and only on stills from after its track ended.
+    assert len(sent) == 1 and f"- {ids[1]}:" in sent[0][1] and f"- {ids[0]}:" not in sent[0][1]
+    assert all(moment >= 0.375 + 1.0 for moment in sent[0][0])
+    assert views["relocated"] == [ids[1]] and views["located_later"] == []
+    frame = round(sent[0][0][0] * 8)
+    assert len(prompts) == 2 and prompts[1][1] == "forward" and prompts[1][0].startswith("<0f>4<|box;")
+    # The first request's sightings stay, and the new box carries the track on from its frame.
+    times = [row["time"] for row in views["objects"][ids[1]]["track"]]
+    assert times == [0, 0.125, 0.25, 0.375] + [(frame + index) / 8 for index in range(4)]
+    assert views["objects"][ids[1]]["first_seen"] == 0
+
+    again = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert len(sent) == 1 and len(prompts) == 2
+    replayed = client.get(f"/api/learnloop/runs/{again['id']}/objects").json()
+    assert replayed["relocated"] == [ids[1]] and replayed["replayed_requests"] == 2
+
+
 def test_no_later_request_when_the_first_frame_shows_everything(lab, monkeypatch):
     from app.config import settings
     from app.pipeline import object_views

@@ -1,9 +1,10 @@
 """Object thumbnails and per-object timelines for a demonstration.
 
-One Meta call finds each object on the first frame. When some object is not
-there, a second call looks at a few later stills chosen from the analysis. SAM
-then follows every box, whatever frame it is on, through a low frame rate copy
-of the recording, in one request. This is for looking at, not for judging:
+One Meta call finds each object on the first frame, and SAM follows those boxes
+through a low frame rate copy of the recording. When some object is not on the
+first frame, or SAM stopped following one the analysis still uses later, a
+second call looks at a few later stills chosen from the analysis, and a second
+SAM request follows those boxes forward. This is for looking at, not for judging:
 nothing here enters the analysis or a verdict. A failure leaves the analysis in place.
 """
 
@@ -79,6 +80,8 @@ _LATER_PER_OBJECT = 2
 _LATER_MERGE = 0.5
 # The sharpest frame this close to a candidate moment is sent instead of it.
 _SHARPEST_WITHIN = 0.25
+# A track that ends this long before a moment the analysis ties to its object was lost, not finished.
+_LOST_AFTER = 1.0
 
 
 @dataclass
@@ -125,57 +128,49 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     directory = views_dir(run.id)
     directory.mkdir(parents=True, exist_ok=True)
     media = _low_rate_copy(resolve_stored(video.stored_path), directory / "tracked.mp4")
-    stage.progress_total = 3
+    stage.progress_total = 4
     stage.progress_current = 0
     session.commit()
     tracked: dict[str, list[Sighting]] = {}
-    requests = 0
-    replayed = 0
     seeds, locate_requests, locate_replayed, error = await _locate(session, run, video, document, allow_live, secret)
+    located = not error
     stage.progress_current = 1
     session.commit()
-    later: list[str] = []
-    if not error:
-        found, later_requests, later_replayed, later_error = await _locate_later(
-            session, run, video, document, media, seeds, allow_live, secret
-        )
-        seeds += found
-        later = [seed.local_id for seed in found]
-        locate_requests += later_requests
-        locate_replayed += later_replayed
-        error = later_error
+    text, requests, replayed, failure = await _follow(session, run, video, media, seeds, 0, "both", model_id, allow_live, secret)
+    error = error or failure
+    if text:
+        tracked.update(_assign(parse_sam_output(text), seeds))
     stage.progress_current = 2
     session.commit()
-    # A part boxed later is followed forward only, from a copy that starts on its frame. Followed backward,
-    # SAM would carry it onto a similar part before it ever came into view, and take that part's pixels.
-    later_seeds = [seed for seed in seeds if seed.timestamp > 0]
-    groups = [
-        (group, start, direction)
-        for group, start, direction in (
-            ([seed for seed in seeds if seed.timestamp == 0], 0, "both"),
-            (later_seeds, _first_frame(later_seeds), "forward"),
+    later: list[str] = []
+    relocated: list[str] = []
+    if located:
+        # Without an answer, an empty track says nothing about whether SAM lost its object.
+        lost = _lost(document, tracked, seeds, _last_frame_time(video)) if text else {}
+        found, later_requests, later_replayed, later_error = await _locate_later(
+            session, run, video, document, media, seeds, lost, allow_live, secret
         )
-        if group
-    ]
-    for group, start, direction in groups:
-        clip = _clip_from(media, start)
-        prompt = _prompt(group, clip, start)
-        key = _cache_key(video.checksum_sha256, prompt, model_id, start, direction)
-        text = _cached(key)
-        if text is not None:
-            replayed += 1
-        elif allow_live and secret:
-            requests += 1
-            text, failure = await _call(session, run, clip, prompt, secret, model_id, direction)
-            error = error or failure
-            # An empty answer may be the prompt or the footage, so a later run may try again.
-            if text:
-                _store(key, text)
-        else:
-            error = error or "No stored SAM answer matches, and a live call was not approved."
+        seeds += found
+        later = [seed.local_id for seed in found if seed.local_id not in lost]
+        relocated = [seed.local_id for seed in found if seed.local_id in lost]
+        locate_requests += later_requests
+        locate_replayed += later_replayed
+        error = error or later_error
+        stage.progress_current = 3
+        session.commit()
+        # A part boxed later is followed forward only, from a copy that starts on its frame. Followed backward,
+        # SAM would carry it onto a similar part before it ever came into view, and take that part's pixels.
+        start = _first_frame(found)
+        text, sent, reused, failure = await _follow(session, run, video, media, found, start, "forward", model_id, allow_live, secret)
+        requests += sent
+        replayed += reused
+        error = error or failure
         if text:
-            tracked.update(_assign(parse_sam_output(text), group, start))
-    stage.progress_current = 3
+            for local_id, sightings in _assign(parse_sam_output(text), found, start).items():
+                # A part SAM lost keeps what the first request saw of it, up to where the new box takes over.
+                taken = _first(sightings).timestamp
+                tracked[local_id] = [item for item in tracked.get(local_id, []) if item.timestamp < taken] + sightings
+    stage.progress_current = 4
     session.commit()
     manifest = _render(run.id, document, media, tracked, _last_frame_time(video))
     manifest.update(
@@ -189,6 +184,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
             "frames_per_request": estimated_frames(float(video.duration_sec or 0)),
             "seeded_objects": [seed.local_id for seed in seeds],
             "located_later": later,
+            "relocated": relocated,
             "error": error,
         }
     )
@@ -225,12 +221,22 @@ async def _locate(session, run: AnalysisRun, video: VideoAsset, document: Analys
 
 
 async def _locate_later(
-    session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, media: Path, seeds: list[Seed], allow_live: bool, secret: str
+    session,
+    run: AnalysisRun,
+    video: VideoAsset,
+    document: AnalysisDocument,
+    media: Path,
+    seeds: list[Seed],
+    lost: dict[str, float],
+    allow_live: bool,
+    secret: str,
 ) -> tuple[list[Seed], int, int, str]:
-    """Boxes for objects the first frame did not show. Sent only when one is missing, and an object stays blank rather than guessed."""
+    """Boxes for objects the first frame did not show, and for objects SAM lost, looked for from the time in lost.
+    Sent only when one of those exists, and an object stays blank rather than guessed."""
     seeded = {seed.local_id for seed in seeds}
-    missing = [item for item in document.objects[:MAX_PROMPTED_OBJECTS] if item.local_id not in seeded]
-    times = _later_times(document, [item.local_id for item in missing], _last_frame_time(video), media)
+    after = {item.local_id: _LATER_MERGE for item in document.objects[:MAX_PROMPTED_OBJECTS] if item.local_id not in seeded} | lost
+    missing = [item for item in document.objects if item.local_id in after]
+    times = _later_times(document, after, _last_frame_time(video), media)
     if not missing or not times:
         return [], 0, 0, ""
     user = _locate_prompt(document.model_copy(update={"objects": missing}))
@@ -265,9 +271,9 @@ async def _locate_later(
     return _later_seeds(answer, {item.local_id for item in missing}, times, len(seeds)), requests, replayed, ""
 
 
-def _later_times(document: AnalysisDocument, local_ids: list[str], last_frame: float, media: Path) -> list[float]:
-    """Moments the analysis ties to each missing object, a few per object, each moved to the sharpest nearby frame."""
-    per_object = [_object_moments(document, local_id, last_frame) for local_id in local_ids]
+def _later_times(document: AnalysisDocument, after: dict[str, float], last_frame: float, media: Path) -> list[float]:
+    """Moments the analysis ties to each object from its time in after on, a few per object, each moved to the sharpest nearby frame."""
+    per_object = [_object_moments(document, local_id, last_frame, start) for local_id, start in after.items()]
     chosen: list[float] = []
     # Round robin, so one object with many moments does not crowd out the others.
     for rank in range(_LATER_PER_OBJECT):
@@ -277,7 +283,7 @@ def _later_times(document: AnalysisDocument, local_ids: list[str], last_frame: f
     return sorted(_sharpest_nearby(chosen, media))
 
 
-def _object_moments(document: AnalysisDocument, local_id: str, last_frame: float) -> list[float]:
+def _object_moments(document: AnalysisDocument, local_id: str, last_frame: float, after: float = _LATER_MERGE) -> list[float]:
     moments = [row.timestamp for row in document.observations if row.object_local_id == local_id and enum_value(row.visibility) in {"visible", "partial"}]
     for action in document.actions:
         if local_id in action.object_local_ids:
@@ -286,10 +292,10 @@ def _object_moments(document: AnalysisDocument, local_id: str, last_frame: float
         if local_id in step.required_objects:
             moments += [value for value in (step.time_start, step.time_end) if value is not None]
     moments += [row.timestamp for row in document.transitions if row.object_local_id == local_id]
-    # The first frame was already searched.
+    # The first frame, or the stretch SAM followed, was already searched.
     kept: list[float] = []
     for moment in sorted(min(max(float(value), 0.0), last_frame) for value in moments):
-        if moment >= _LATER_MERGE and all(abs(moment - item) >= _LATER_MERGE for item in kept):
+        if moment >= after and all(abs(moment - item) >= _LATER_MERGE for item in kept):
             kept.append(moment)
     return kept
 
@@ -394,6 +400,17 @@ def _seeds(document: AnalysisDocument, answer: GuidedLocateOutput) -> list[Seed]
     return seeds
 
 
+def _lost(document: AnalysisDocument, tracked: dict[str, list[Sighting]], seeds: list[Seed], last_frame: float) -> dict[str, float]:
+    """Boxed objects whose track ends well before a moment the analysis ties them to, each with the time to look again from.
+    SAM rarely finds a part again once its memory of it is gone, so another box is the way back."""
+    lost = {}
+    for seed in seeds:
+        after = max((item.timestamp for item in tracked.get(seed.local_id, [])), default=seed.timestamp) + _LOST_AFTER
+        if _object_moments(document, seed.local_id, last_frame, after):
+            lost[seed.local_id] = after
+    return lost
+
+
 def _first_frame(seeds: list[Seed]) -> int:
     return min((int(round(seed.timestamp * SAM_FPS)) for seed in seeds), default=0)
 
@@ -412,6 +429,27 @@ def _prompt(seeds: list[Seed], media: Path, start: int = 0) -> str:
         frame = min(max(int(round(seed.timestamp * SAM_FPS)) - start, 0), last)
         marks.append(SpatialMark(frame, seed.object_id, "box", width, height, x1, y1, max(x2, x1), max(y2, y1)))
     return render_spatial_prompt(marks)
+
+
+async def _follow(
+    session, run, video: VideoAsset, media: Path, seeds: list[Seed], start: int, direction: str, model_id: str, allow_live: bool, secret: str
+) -> tuple[str | None, int, int, str]:
+    """One SAM request over the copy from frame start on, as (answer, requests sent, requests replayed, error)."""
+    if not seeds:
+        return None, 0, 0, ""
+    clip = _clip_from(media, start)
+    prompt = _prompt(seeds, clip, start)
+    key = _cache_key(video.checksum_sha256, prompt, model_id, start, direction)
+    text = _cached(key)
+    if text is not None:
+        return text, 0, 1, ""
+    if not (allow_live and secret):
+        return None, 0, 0, "No stored SAM answer matches, and a live call was not approved."
+    text, failure = await _call(session, run, clip, prompt, secret, model_id, direction)
+    # An empty answer may be the prompt or the footage, so a later run may try again.
+    if text:
+        _store(key, text)
+    return text, 1, 0, failure
 
 
 async def _call(session, run, media: Path, prompt: str, secret: str, model_id: str, direction: str) -> tuple[str | None, str]:

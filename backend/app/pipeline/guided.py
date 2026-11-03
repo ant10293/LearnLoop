@@ -143,9 +143,9 @@ def plan(video: VideoAsset, *, template: dict | None = None, model_id: str = DEF
         "cached": find_cached(key) is not None,
         "live_enabled": settings.live_inference,
         "segmentation_model_id": segmentation_model_id if not template else "",
-        # A second follows, forward only, only when some object is first boxed after the first frame.
+        # A second follows, forward only, only when some object is boxed after the first frame.
         "object_view_requests": 2 if segmentation_model_id and not template else 0,
-        # One still on the first frame, and a second only when some object is not on it.
+        # One still on the first frame, and a second only when some object is not on it or SAM loses one.
         "object_view_locate_requests": 2 if segmentation_model_id and not template else 0,
         "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)),
     }
