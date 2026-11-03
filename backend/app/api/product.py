@@ -261,7 +261,8 @@ def run_objects(run_id: str) -> dict:
     for item in manifest["objects"].values():
         item["thumbnail_url"] = f"{base}/{item['thumbnail']}" if item.get("thumbnail") else None
         item["cells"] = [
-            {"time": cell["time"], "url": f"{base}/{cell['image']}" if cell["image"] else None} for cell in item["cells"]
+            {"time": cell["time"], "url": f"{base}/{cell['image']}" if cell["image"] else None, "confidence": cell.get("confidence")}
+            for cell in item["cells"]
         ]
     return manifest
 

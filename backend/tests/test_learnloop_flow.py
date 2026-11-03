@@ -577,7 +577,7 @@ def test_analyzing_a_recording_again_learns_again_and_the_newest_acceptance_wins
 
 def _sam_line(frame: int, boxes: list[tuple[int, int]]) -> str:
     body = "".join(
-        f"{track}<|box;x1={left};y1=10;x2={left + 50};y2=60;w=160;h=120;score=0.9|><|mask;data=|>" for track, left in boxes
+        f"{track}<|box;x1={left};y1=10;x2={left + 50};y2=60;w=160;h=120;c=0.9|><|mask;data=|>" for track, left in boxes
     )
     return f"<{frame}f>{body}"
 
@@ -616,6 +616,7 @@ def test_a_demonstration_follows_every_box_in_one_sam_request_and_replays_it(lab
     assert not views["objects"][ids[1]]["seen_cells"] and not views["objects"][ids[3]]["seen_cells"]
     assert client.get(views["objects"][ids[0]]["thumbnail_url"]).status_code == 200
     assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [0, 0.125, 0.25, 0.375]
+    assert {cell["confidence"] for cell in views["objects"][ids[0]]["cells"] if cell["url"]} == {0.9}
     assert views["objects"][ids[1]]["track"] == []
     assert client.get(f"/api/learnloop/runs/{run['id']}/objects/manifest.json").status_code == 404
 

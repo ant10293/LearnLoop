@@ -305,12 +305,14 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
         for index, moment in enumerate(times):
             sighting = _nearest(sightings, moment)
             image = None
+            confidence = None
             if sighting is not None:
                 name = f"o{position}_c{index}.jpg"
                 frame = frames.get(sighting.record.frame_index)
                 if frame is not None and cv2.imwrite(str(directory / name), _crop(frame, sighting.box)):
                     image = name
-            cells.append({"time": round(moment, 3), "image": image})
+                    confidence = sighting.record.confidence
+            cells.append({"time": round(moment, 3), "image": image, "confidence": confidence})
         objects[item.local_id] = {
             "thumbnail": _thumbnail(directory, position, sightings, frames),
             "cells": cells,

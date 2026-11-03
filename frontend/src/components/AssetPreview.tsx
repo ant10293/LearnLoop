@@ -2,7 +2,7 @@ import { Download, ExternalLink, Search, X } from "lucide-react";
 import { useEffect, useRef, useState, type MouseEvent, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 
-export type PreviewImage = { src: string; filename: string };
+export type PreviewImage = { src: string; filename: string; confidence?: number | null };
 
 /** Largest box with the image's own aspect ratio that fits the expanded preview. */
 function fittedPreviewSize(naturalWidth: number, naturalHeight: number, viewportWidth: number, viewportHeight: number) {
@@ -137,14 +137,17 @@ export function AssetPreview({ images, startIndex = 0, onClose }: { images: Prev
         </button>
       </div>
       <div className="asset-preview-viewport">
-        <img
-          src={image.src}
-          alt={image.filename}
-          className="asset-preview-img"
-          style={{ ...(box ? { width: box.width, height: box.height, maxWidth: "none", maxHeight: "none" } : {}), transform: zoom === 1 ? undefined : `scale(${zoom})` }}
-          draggable={false}
-          onLoad={onImageLoad}
-        />
+        <span className="shot-frame" style={{ transform: zoom === 1 ? undefined : `scale(${zoom})` }}>
+          <img
+            src={image.src}
+            alt={image.filename}
+            className="asset-preview-img"
+            style={box ? { width: box.width, height: box.height, maxWidth: "none", maxHeight: "none" } : undefined}
+            draggable={false}
+            onLoad={onImageLoad}
+          />
+          {image.confidence != null && <span className="shot-score">{Math.round(image.confidence * 100)}%</span>}
+        </span>
       </div>
       <div className="asset-preview-controls">
         <button type="button" className="asset-preview-zoom" title="Zoom out" aria-label="Zoom out" onClick={() => setZoomAction("out")}>

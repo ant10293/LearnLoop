@@ -411,15 +411,17 @@ describe("Procedure review", () => {
     mockApi((url) => {
       if (url.endsWith("/procedures/p1")) return { body: { ...procedure(), template: tracked, templates: [tracked] } };
       if (url.endsWith("/objects")) {
-        return { body: { objects: { o1: { thumbnail_url: null, seen_cells: 2, cells: [{ time: 0, url: "/f0" }, { time: 1, url: null }, { time: 2, url: "/f2" }] } } } };
+        return { body: { objects: { o1: { thumbnail_url: null, seen_cells: 2, cells: [{ time: 0, url: "/f0" }, { time: 1, url: null }, { time: 2, url: "/f2", confidence: 0.874 }] } } } };
       }
       return undefined;
     });
     show("/procedures/p1/procedure");
     fireEvent.click(await screen.findByRole("button", { name: "Expand frame at 0:02.0" }));
     expect(screen.getByRole("dialog", { name: "green cube · 0:02.0" }).querySelector("img")).toHaveAttribute("src", "/f2");
+    expect(screen.getByRole("dialog").querySelector(".shot-score")).toHaveTextContent("87%");
     fireEvent.click(screen.getByRole("button", { name: "Next" }));
     expect(screen.getByRole("dialog", { name: "green cube · 0:00.0" }).querySelector("img")).toHaveAttribute("src", "/f0");
+    expect(screen.getByRole("dialog").querySelector(".shot-score")).toBeNull();
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("dialog")).toBeNull();
   });

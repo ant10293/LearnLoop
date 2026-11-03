@@ -229,7 +229,7 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
 function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: string; onSeek: (time: number) => void }) {
   const [preview, setPreview] = useState<number | null>(null);
   if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
-  const frames = view.cells.flatMap((cell) => (cell.url ? [{ time: cell.time, src: cell.url, filename: `${label} · ${clock(cell.time)}` }] : []));
+  const frames = view.cells.flatMap((cell) => (cell.url ? [{ time: cell.time, src: cell.url, filename: `${label} · ${clock(cell.time)}`, confidence: cell.confidence }] : []));
   return (
     <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
       {view.cells.map((cell) => {
