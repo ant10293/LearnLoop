@@ -1,0 +1,1416 @@
+{
+ "template": {
+  "schema_version": "1.0.0",
+  "name": "A person slides a silver flat washer, then a dark small washer, onto a gray bolt and threads a silver hexagonal nut against them, ending holding the assembled bolt",
+  "summary": "A person slides a silver flat washer, then a dark small washer, onto a gray bolt and threads a silver hexagonal nut against them, ending holding the assembled bolt.",
+  "source_run_id": "d33bcb1b-4142-47fc-9deb-5c85d5a08a5c",
+  "source_revision_id": "ae0b7867-b8cb-4ea4-affb-ce58404b2200",
+  "source_video_id": "f771a01b-5a99-4257-ae07-33cf1f40a93e",
+  "acceptance_status": "accepted",
+  "roles": [
+   {
+    "role_id": "role:obj_bolt",
+    "label": "gray threaded bolt",
+    "description": "Threaded metal bolt with hexagonal head held and assembled by hand.",
+    "visual_characteristics": "gray metal, hexagonal head, long threaded shaft",
+    "source_object_ids": [
+     "obj_bolt"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "attached"
+    ],
+    "relation_signature": [
+     "around|dark small round washer",
+     "around|silver flat round washer",
+     "attached|silver hexagonal nut"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:obj_dark_washer",
+    "label": "dark small round washer",
+    "description": "Small dark ring placed second on the bolt shaft.",
+    "visual_characteristics": "dark gray, small circular ring, smaller than flat washer",
+    "source_object_ids": [
+     "obj_dark_washer"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "attached"
+    ],
+    "relation_signature": [
+     "around|gray threaded bolt",
+     "touching|silver flat round washer",
+     "touching|silver hexagonal nut"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:obj_flat_washer",
+    "label": "silver flat round washer",
+    "description": "Larger light metal flat ring placed first on the bolt shaft.",
+    "visual_characteristics": "silver, flat circular ring",
+    "source_object_ids": [
+     "obj_flat_washer"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "attached"
+    ],
+    "relation_signature": [
+     "around|gray threaded bolt",
+     "touching|dark small round washer"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:obj_nut",
+    "label": "silver hexagonal nut",
+    "description": "Hexagonal metal nut threaded last onto the bolt.",
+    "visual_characteristics": "silver-gray, hexagonal outer shape with central hole",
+    "source_object_ids": [
+     "obj_nut"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "attached"
+    ],
+    "relation_signature": [
+     "attached|gray threaded bolt",
+     "touching|dark small round washer"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   }
+  ],
+  "steps": [
+   {
+    "step_id": "step_1",
+    "name": "Place flat washer on bolt",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:obj_flat_washer",
+     "role:obj_bolt"
+    ],
+    "preconditions": [
+     "Bolt is held with its tip accessible."
+    ],
+    "expected_action": "slide_on",
+    "expected_action_type": "slide_on",
+    "completion_conditions": [
+     {
+      "id": "rel:0:around",
+      "type": "physical_relationship",
+      "subject_role": "role:obj_flat_washer",
+      "target_role": "role:obj_bolt",
+      "relation": "around",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:0",
+      "type": "state_transition",
+      "subject_role": "role:obj_flat_washer",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "attached",
+      "state_label": "attached",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:3",
+      "type": "state_transition",
+      "subject_role": "role:obj_bolt",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "attached",
+      "state_label": "attached",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.4,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 1.9,
+    "demo_time_end": 4.2,
+    "parallel_group": "",
+    "completion_text": "Silver flat washer is visible on the bolt shaft against the bolt head.",
+    "observed_text": "Flat washer is seated on the bolt next to its head.",
+    "removed": false,
+    "human_edited": []
+   },
+   {
+    "step_id": "step_2",
+    "name": "Place dark washer on bolt",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:obj_dark_washer",
+     "role:obj_bolt",
+     "role:obj_flat_washer"
+    ],
+    "preconditions": [
+     "Flat washer is already on the bolt shaft."
+    ],
+    "expected_action": "slide_on",
+    "expected_action_type": "slide_on",
+    "completion_conditions": [
+     {
+      "id": "rel:0:around",
+      "type": "physical_relationship",
+      "subject_role": "role:obj_dark_washer",
+      "target_role": "role:obj_bolt",
+      "relation": "around",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:obj_flat_washer",
+        "target_role": "role:obj_bolt",
+        "relation": "around"
+       },
+       {
+        "subject_role": "role:obj_dark_washer",
+        "target_role": "role:obj_flat_washer",
+        "relation": "touching"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "rel:1:touching",
+      "type": "physical_relationship",
+      "subject_role": "role:obj_dark_washer",
+      "target_role": "role:obj_flat_washer",
+      "relation": "touching",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:obj_flat_washer",
+        "target_role": "role:obj_bolt",
+        "relation": "around"
+       },
+       {
+        "subject_role": "role:obj_dark_washer",
+        "target_role": "role:obj_bolt",
+        "relation": "around"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "transition:1",
+      "type": "state_transition",
+      "subject_role": "role:obj_dark_washer",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "attached",
+      "state_label": "attached",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [
+     {
+      "step_id": "step_1",
+      "category": "necessary_physical",
+      "constrains_order": true,
+      "rationale": "The dark washer must follow the flat washer on the shaft to obtain the observed stack order without removal.",
+      "evidence_class": "INFERRED"
+     }
+    ],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.4,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 4.2,
+    "demo_time_end": 6.4,
+    "parallel_group": "",
+    "completion_text": "Dark small washer is visible on the bolt shaft against the flat washer.",
+    "observed_text": "Dark washer is seated on the bolt against the flat washer.",
+    "removed": false,
+    "human_edited": []
+   },
+   {
+    "step_id": "step_3",
+    "name": "Thread and tighten nut on bolt",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:obj_nut",
+     "role:obj_bolt",
+     "role:obj_dark_washer"
+    ],
+    "preconditions": [
+     "Both washers are already on the bolt shaft."
+    ],
+    "expected_action": "thread_on",
+    "expected_action_type": "thread_on",
+    "completion_conditions": [
+     {
+      "id": "rel:0:attached",
+      "type": "physical_relationship",
+      "subject_role": "role:obj_nut",
+      "target_role": "role:obj_bolt",
+      "relation": "attached",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:obj_flat_washer",
+        "target_role": "role:obj_bolt",
+        "relation": "around"
+       },
+       {
+        "subject_role": "role:obj_dark_washer",
+        "target_role": "role:obj_bolt",
+        "relation": "around"
+       },
+       {
+        "subject_role": "role:obj_nut",
+        "target_role": "role:obj_dark_washer",
+        "relation": "touching"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "rel:1:touching",
+      "type": "physical_relationship",
+      "subject_role": "role:obj_nut",
+      "target_role": "role:obj_dark_washer",
+      "relation": "touching",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:obj_dark_washer",
+        "target_role": "role:obj_bolt",
+        "relation": "around"
+       },
+       {
+        "subject_role": "role:obj_dark_washer",
+        "target_role": "role:obj_flat_washer",
+        "relation": "touching"
+       },
+       {
+        "subject_role": "role:obj_nut",
+        "target_role": "role:obj_bolt",
+        "relation": "attached"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "transition:2",
+      "type": "state_transition",
+      "subject_role": "role:obj_nut",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "attached",
+      "state_label": "attached",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "INFERRED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [
+     {
+      "step_id": "step_2",
+      "category": "necessary_physical",
+      "constrains_order": true,
+      "rationale": "The nut must be threaded after both washers are on the shaft to trap them in the observed order.",
+      "evidence_class": "INFERRED"
+     }
+    ],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.5,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 6.8,
+    "demo_time_end": 17.8,
+    "parallel_group": "",
+    "completion_text": "Hexagonal nut is visible threaded on the bolt against the dark washer with bolt tip protruding.",
+    "observed_text": "Nut is threaded on and tightened against the dark washer, completing the held assembly.",
+    "removed": false,
+    "human_edited": []
+   }
+  ],
+  "notes": [
+   "A single demonstration does not prove that every observed action is required.",
+   "Observed temporal order is stored and does not constrain a later execution.",
+   "Only dependencies categorized as necessary_physical constrain order.",
+   "Passing a step requires an observable completion condition, not an action label alone.",
+   "Appearance embeddings are not copied into the template. Role matching reads them only when a later analysis stored a cosine."
+  ],
+  "review_log": [
+   {
+    "field": "acceptance_status",
+    "target": "",
+    "before": "draft",
+    "after": "accepted",
+    "provenance": "HUMAN_CORRECTION",
+    "from_version": 1
+   }
+  ]
+ },
+ "execution": {
+  "schema_version": "1.0.0",
+  "summary": "The hands pick up the gray threaded bolt, slide the small dark lock washer onto it against the head, thread the silver hexagonal nut down against that washer, then slide the silver flat round washer over the shaft tip and spin it down against the nut, ending with the stack head, lock washer, nut, flat washer held in the hands. The dark small round washer and silver flat round washer end up separated by the nut on the same shaft, not touching each other.",
+  "fixture": false,
+  "fixture_label": "",
+  "camera": null,
+  "coverage": {
+   "modality": "native_video",
+   "sampling_preset": "sparse",
+   "nominal_fps": 0.5,
+   "frames_extracted": 17,
+   "frames_submitted": 0,
+   "frame_timestamps": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.0,
+    10.0,
+    11.001667,
+    12.001667,
+    13.001667,
+    14.001667,
+    15.001667,
+    15.435
+   ],
+   "selection_reasons": {
+    "uniform": 17
+   },
+   "duration_sec": 15.45,
+   "native_video_submitted": true,
+   "temporal_coverage_note": "The model receives the requested interval as a video file. Preview frames were extracted so the inspector can show evidence.",
+   "time_start": 0.0,
+   "time_end": 15.45,
+   "time_basis": "presentation",
+   "max_gap_sec": null,
+   "uncovered_gaps": [],
+   "motion_frames": 62,
+   "candidate_peaks": [],
+   "selected_peaks": [],
+   "budget_exclusions": 0,
+   "scene_boundaries": [],
+   "semantic_selection": "provisional",
+   "selection_swaps": [],
+   "semantic_mode": "combined",
+   "semantic_calls": 1,
+   "tracking": {},
+   "segmentation": {},
+   "media_transforms": []
+  },
+  "objects": [
+   {
+    "local_id": "o1",
+    "label": "gray threaded bolt",
+    "description": "Gray metal bolt with hexagonal head and long threaded shaft, first seen lying on the black lid at lower left.",
+    "visual_characteristics": "hexagonal head at lower left, threaded shaft pointing right when held",
+    "initial_state": "lying on the black Sterilite lid, separate from the washers and nut",
+    "final_state": "held in the left hand with dark lock washer, nut and flat washer stacked on the shaft",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "o2",
+    "label": "dark small round washer",
+    "description": "Small split lock washer, dark gray in the reference description, appearing silver in the video and smaller than the flat washer.",
+    "visual_characteristics": "small circular split ring, smaller diameter than the flat washer",
+    "initial_state": "lying on the black Sterilite lid at upper right of centre, separate",
+    "final_state": "on the bolt shaft between the bolt head and the hex nut",
+    "uncertain_identity": true,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "o3",
+    "label": "silver flat round washer",
+    "description": "Silver flat circular washer, larger and flat compared with the small washer.",
+    "visual_characteristics": "flat silver ring with central hole, larger than the small washer",
+    "initial_state": "lying flat on the black Sterilite lid at centre, separate",
+    "final_state": "on the bolt shaft outside the hex nut, held against the nut",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "o4",
+    "label": "silver hexagonal nut",
+    "description": "Silver-gray hexagonal nut with a central threaded hole.",
+    "visual_characteristics": "six-sided metal nut, seen at lower centre-right at start",
+    "initial_state": "lying on the black Sterilite lid at lower right of centre, separate",
+    "final_state": "threaded on the bolt against the dark lock washer, inside the flat washer",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   }
+  ],
+  "observations": [
+   {
+    "object_local_id": "o1",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Bolt lying on the black lid at lower left with its hex head visible.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Bolt is on the black Sterilite lid lower left at 0.0s.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o1",
+    "timestamp": 15.45,
+    "bbox": null,
+    "visibility": "partial",
+    "description": "Bolt held in the left hand with washers and nut stacked on the shaft near the head.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Final frame shows the bolt assembly held between the hands.",
+     "frame_timestamps": [
+      14.83
+     ],
+     "time_start": 14.83,
+     "time_end": 15.45
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o2",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Small washer lying on the black lid at upper right of centre.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Small split washer is visible at upper centre-right on the lid at 0.0s.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o2",
+    "timestamp": 15.45,
+    "bbox": null,
+    "visibility": "partial",
+    "description": "Small washer seated on the bolt against the bolt head under the nut.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lock washer is visible on the shaft beside the head and under the nut at 11.7s.",
+     "frame_timestamps": [
+      11.7
+     ],
+     "time_start": 11.7,
+     "time_end": 15.45
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o3",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Flat silver washer lying on the black lid at centre.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Flat washer is at centre of the lid at 0.0s.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o3",
+    "timestamp": 15.45,
+    "bbox": null,
+    "visibility": "partial",
+    "description": "Flat washer on the bolt shaft held against the outside of the nut.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Final frame shows the flat washer face on the shaft next to the nut at 14.83s.",
+     "frame_timestamps": [
+      14.83
+     ],
+     "time_start": 14.83,
+     "time_end": 15.45
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o4",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Hex nut lying on the black lid at lower right of centre.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Hex nut is visible lower centre-right on the lid at 0.0s.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "o4",
+    "timestamp": 15.45,
+    "bbox": null,
+    "visibility": "partial",
+    "description": "Nut threaded on the bolt between the lock washer and the flat washer.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Nut is seated on the shaft against the lock washer at 11.7s and remains there in the final frame.",
+     "frame_timestamps": [
+      11.7,
+      14.83
+     ],
+     "time_start": 11.7,
+     "time_end": 15.45
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   }
+  ],
+  "raw_observations": [],
+  "box_decisions": [],
+  "states": [],
+  "transitions": [
+   {
+    "object_local_id": "o2",
+    "timestamp": 3.2,
+    "from_state": "separate",
+    "to_state": "placed",
+    "description": "Dark small round washer goes from lying separate on the lid to being around the bolt shaft.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Washer is separate at 0.0s and seated on the shaft at 3.18s.",
+     "frame_timestamps": [
+      0.0,
+      3.18
+     ],
+     "time_start": 1.5,
+     "time_end": 3.2
+    },
+    "certainty": 0.2,
+    "accepted": true
+   },
+   {
+    "object_local_id": "o4",
+    "timestamp": 8.5,
+    "from_state": "separate",
+    "to_state": "attached",
+    "description": "Silver hexagonal nut goes from lying separate on the lid to threaded onto the bolt.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Nut is separate at 0.0s and run down against the lock washer at 8.5s.",
+     "frame_timestamps": [
+      0.0,
+      8.5
+     ],
+     "time_start": 3.5,
+     "time_end": 8.5
+    },
+    "certainty": 0.25,
+    "accepted": true
+   },
+   {
+    "object_local_id": "o3",
+    "timestamp": 11.7,
+    "from_state": "separate",
+    "to_state": "placed",
+    "description": "Silver flat round washer goes from lying separate on the lid to around the bolt shaft.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Flat washer is separate at 0.0s and over the shaft tip at 11.7s.",
+     "frame_timestamps": [
+      0.0,
+      11.7
+     ],
+     "time_start": 11.0,
+     "time_end": 11.7
+    },
+    "certainty": 0.3,
+    "accepted": true
+   },
+   {
+    "object_local_id": "o3",
+    "timestamp": 14.83,
+    "from_state": "placed",
+    "to_state": "placed",
+    "description": "Silver flat round washer moves from near the shaft tip to against the nut.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Washer near the tip at 12.77s and against the nut in the final frame.",
+     "frame_timestamps": [
+      12.77,
+      14.83
+     ],
+     "time_start": 12.8,
+     "time_end": 14.83
+    },
+    "certainty": 0.5,
+    "accepted": true
+   }
+  ],
+  "relationships": [
+   {
+    "subject_local_id": "o2",
+    "other_local_id": "o1",
+    "kind": "around",
+    "time_start": 3.18,
+    "time_end": 15.45,
+    "description": "Dark small round washer surrounds the bolt shaft against the head.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lock washer sits on the shaft beside the head at 3.18s and under the nut at 11.7s.",
+     "frame_timestamps": [
+      3.18,
+      11.7
+     ],
+     "time_start": 3.18,
+     "time_end": 15.45
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "o4",
+    "other_local_id": "o1",
+    "kind": "attached",
+    "time_start": 4.25,
+    "time_end": 15.45,
+    "description": "Silver hexagonal nut is threaded onto and attached to the bolt shaft.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Nut rides the thread mid-shaft at 5.32s and is seated near the head at 8.5s.",
+     "frame_timestamps": [
+      5.32,
+      8.5
+     ],
+     "time_start": 4.25,
+     "time_end": 15.45
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "o4",
+    "other_local_id": "o2",
+    "kind": "touching",
+    "time_start": 8.5,
+    "time_end": 15.45,
+    "description": "Silver hexagonal nut presses directly against the dark small round washer.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Nut face meets the lock washer at 8.5s and stays against it at 11.7s.",
+     "frame_timestamps": [
+      8.5,
+      11.7
+     ],
+     "time_start": 8.5,
+     "time_end": 15.45
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "o3",
+    "other_local_id": "o1",
+    "kind": "around",
+    "time_start": 11.7,
+    "time_end": 15.45,
+    "description": "Silver flat round washer surrounds the bolt shaft outside the nut.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Flat washer is over the shaft tip at 11.7s and still on the shaft at 12.77s.",
+     "frame_timestamps": [
+      11.7,
+      12.77
+     ],
+     "time_start": 11.7,
+     "time_end": 15.45
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "o3",
+    "other_local_id": "o4",
+    "kind": "touching",
+    "time_start": 13.83,
+    "time_end": 15.45,
+    "description": "Silver flat round washer rests against the outer face of the silver hexagonal nut.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Final frame shows the flat washer flush with the nut stack, but the contact edge is under the thumb.",
+     "frame_timestamps": [
+      14.83
+     ],
+     "time_start": 13.83,
+     "time_end": 15.45
+    },
+    "accepted": true
+   }
+  ],
+  "actions": [
+   {
+    "local_id": "a1",
+    "action_type": "slide",
+    "description": "Slide the dark small round washer onto the gray threaded bolt shaft toward the bolt head.",
+    "start": 1.5,
+    "end": 3.2,
+    "actor": "person",
+    "object_local_ids": [
+     "o1",
+     "o2"
+    ],
+    "initial_state": "washer resting separate on the lid at 0.0s",
+    "final_state": "dark washer seated against the head, threaded onto the hex bolt",
+    "outcome": "completed",
+    "uncertainty": 0.15,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Washer leaves the table, travels over the shaft, and comes to rest against the head at 3.18s.",
+     "frame_timestamps": [
+      2.12,
+      3.18
+     ],
+     "time_start": 1.5,
+     "time_end": 3.2
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "a2",
+    "action_type": "thread",
+    "description": "Thread the silver hexagonal nut onto the gray threaded bolt and spin it down to the dark small round washer.",
+    "start": 3.5,
+    "end": 8.5,
+    "actor": "person",
+    "object_local_ids": [
+     "o4",
+     "o1",
+     "o2"
+    ],
+    "initial_state": "nut separate on the lid",
+    "final_state": "nut tight against the dark lock washer near the head",
+    "outcome": "completed",
+    "uncertainty": 0.3,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Nut engages the shaft around 4.25s, is still mid-shaft at 5.32s, and contacts the lock washer by 8.5s.",
+     "frame_timestamps": [
+      4.25,
+      5.32,
+      8.5
+     ],
+     "time_start": 3.5,
+     "time_end": 8.5
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "a3",
+    "action_type": "slide",
+    "description": "Slide the silver flat round washer onto the gray threaded bolt shaft.",
+    "start": 11.0,
+    "end": 11.7,
+    "actor": "person",
+    "object_local_ids": [
+     "o3",
+     "o1"
+    ],
+    "initial_state": "flat washer separate on the lid",
+    "final_state": "flat washer threaded over the shaft tip, outside the nut",
+    "outcome": "completed",
+    "uncertainty": 0.3,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Flat washer is put over the shaft tip at 11.7s while the nut stack is held in the left hand.",
+     "frame_timestamps": [
+      11.7
+     ],
+     "time_start": 11.0,
+     "time_end": 11.7
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "a4",
+    "action_type": "spin",
+    "description": "Spin the silver flat round washer further down the shaft toward the silver hexagonal nut with the left thumb.",
+    "start": 12.8,
+    "end": 14.83,
+    "actor": "person",
+    "object_local_ids": [
+     "o3",
+     "o1",
+     "o4"
+    ],
+    "initial_state": "flat washer near the shaft tip, outside the nut",
+    "final_state": "flat washer against silver hex nut (INFERRED contact, thumb occlusion)",
+    "outcome": "completed",
+    "uncertainty": 0.5,
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Flat washer still near the tip at 12.77s and sits against the nut face in the final frame at 14.83s, with the contact point partly hidden by the thumb.",
+     "frame_timestamps": [
+      12.77,
+      14.83
+     ],
+     "time_start": 12.8,
+     "time_end": 14.83
+    },
+    "accepted": true
+   }
+  ],
+  "workflow_steps": [
+   {
+    "local_id": "s1",
+    "name": "Place dark small washer on bolt",
+    "required_objects": [
+     "o1",
+     "o2"
+    ],
+    "preconditions": [
+     "Bolt and dark small washer both separate on the lid."
+    ],
+    "expected_action": "Put the lock washer on the bolt.",
+    "completion_condition": "Dark small round washer is around the bolt shaft and against the bolt head.",
+    "observed_result": "completed: dark washer on hex bolt beside the head at 3.18s",
+    "action_local_ids": [
+     "a1"
+    ],
+    "time_start": 0.8,
+    "time_end": 3.2,
+    "uncertainty": 0.2,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lock washer appears against the head after being passed over the shaft.",
+     "frame_timestamps": [
+      3.18
+     ],
+     "time_start": 1.5,
+     "time_end": 3.2
+    },
+    "parallel_group": "",
+    "accepted": true
+   },
+   {
+    "local_id": "s2",
+    "name": "Thread nut against lock washer",
+    "required_objects": [
+     "o4",
+     "o1",
+     "o2"
+    ],
+    "preconditions": [
+     "Dark small round washer already on the bolt against the head."
+    ],
+    "expected_action": "Add and tighten the nut over the lock washer.",
+    "completion_condition": "Silver hexagonal nut is threaded on the bolt and seated against the dark small round washer.",
+    "observed_result": "completed: nut threaded on bolt against lock washer at 8.5s",
+    "action_local_ids": [
+     "a2"
+    ],
+    "time_start": 3.5,
+    "time_end": 8.5,
+    "uncertainty": 0.3,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Nut reaches the lock washer by 8.5s.",
+     "frame_timestamps": [
+      8.5
+     ],
+     "time_start": 3.5,
+     "time_end": 8.5
+    },
+    "parallel_group": "",
+    "accepted": true
+   },
+   {
+    "local_id": "s3",
+    "name": "Place flat washer on bolt outside nut",
+    "required_objects": [
+     "o3",
+     "o1",
+     "o4"
+    ],
+    "preconditions": [
+     "Nut already seated on the bolt, leaving the shaft tip free."
+    ],
+    "expected_action": "Slide the flat washer down to the nut.",
+    "completion_condition": "Silver flat round washer is around the bolt shaft and against the outer face of the silver hexagonal nut.",
+    "observed_result": "completed (contact inferred): flat washer on bolt against nut at 14.83s",
+    "action_local_ids": [
+     "a3",
+     "a4"
+    ],
+    "time_start": 11.0,
+    "time_end": 15.45,
+    "uncertainty": 0.5,
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Flat washer goes over the tip at 11.7s and is flush with the nut in the final frame, contact partly occluded.",
+     "frame_timestamps": [
+      11.7,
+      14.83
+     ],
+     "time_start": 11.0,
+     "time_end": 14.83
+    },
+    "parallel_group": "",
+    "accepted": true
+   }
+  ],
+  "dependencies": [
+   {
+    "from_step": "s1",
+    "to_step": "s2",
+    "category": "necessary_physical",
+    "rationale": "The dark small round washer ends up between the bolt head and the nut, so it must be placed on the shaft before the nut is run down to it.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "The lock washer must be on the shaft before the nut can trap it against the head.",
+     "frame_timestamps": [
+      3.18,
+      8.5
+     ],
+     "time_start": 3.18,
+     "time_end": 8.5
+    },
+    "accepted": true
+   },
+   {
+    "from_step": "s2",
+    "to_step": "s3",
+    "category": "necessary_physical",
+    "rationale": "The nut must be seated against the lock washer before the flat washer can be slid down against the nut's outer face in the observed stack order.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "The nut stops advancing once it meets the lock washer, leaving the tip free for the flat washer.",
+     "frame_timestamps": [
+      8.5,
+      11.7
+     ],
+     "time_start": 8.5,
+     "time_end": 11.7
+    },
+    "accepted": true
+   }
+  ],
+  "ambiguities": [
+   {
+    "local_id": "amb1",
+    "kind": "unverifiable_completion",
+    "description": "The dark small round washer is called dark in the reference but appears silver as a split lock washer in the video; identity is matched by size and shape and by being picked up second.",
+    "time_start": 0.0,
+    "time_end": 2.12,
+    "object_local_ids": [
+     "o2",
+     "o3"
+    ],
+    "action_local_ids": [],
+    "alternative": "The small washer seated first is the split lock washer despite being lighter in colour.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Two washers are visible at 0.0s: a larger flat one and a smaller split one; the smaller split one is placed on the bolt first.",
+     "frame_timestamps": [
+      0.0,
+      1.05,
+      2.12
+     ],
+     "time_start": 0.0,
+     "time_end": 2.12
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "amb2",
+    "kind": "occlusion",
+    "description": "Contact between the silver flat round washer and the silver hexagonal nut at the end is partly hidden under the thumb, so their touching arrangement is inferred.",
+    "time_start": 13.83,
+    "time_end": 15.45,
+    "object_local_ids": [
+     "o3",
+     "o4"
+    ],
+    "action_local_ids": [
+     "a4"
+    ],
+    "alternative": "The flat washer may only be touching the thumb rather than the nut face.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Final frame shows the flat washer face flush against the nut stack but the exact interface is covered by the thumb.",
+     "frame_timestamps": [
+      14.83
+     ],
+     "time_start": 13.83,
+     "time_end": 14.83
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "amb3",
+    "kind": "unverifiable_completion",
+    "description": "Whether the nut is fully tightened to any specified torque cannot be verified; all tightening visible is by fingers only.",
+    "time_start": 8.5,
+    "time_end": 15.45,
+    "object_local_ids": [
+     "o4",
+     "o1",
+     "o2"
+    ],
+    "action_local_ids": [
+     "a1",
+     "a2",
+     "a3",
+     "a4"
+    ],
+    "alternative": "Tightness could be greater than visible if a tool pass occurred off-camera after the clip ended.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "No tool appears in any frame and no later check is shown at the end of the 15.45s clip.",
+     "frame_timestamps": [
+      8.5,
+      14.83
+     ],
+     "time_start": 8.5,
+     "time_end": 15.45
+    },
+    "accepted": true
+   }
+  ],
+  "validation_issues": [
+   {
+    "severity": "warning",
+    "code": "unrecognized_action",
+    "message": "Action type 'slide' is outside the core vocabulary and was kept.",
+    "entity_type": "action",
+    "entity_id": "a1"
+   },
+   {
+    "severity": "warning",
+    "code": "unrecognized_action",
+    "message": "Action type 'thread' is outside the core vocabulary and was kept.",
+    "entity_type": "action",
+    "entity_id": "a2"
+   },
+   {
+    "severity": "warning",
+    "code": "unrecognized_action",
+    "message": "Action type 'slide' is outside the core vocabulary and was kept.",
+    "entity_type": "action",
+    "entity_id": "a3"
+   },
+   {
+    "severity": "warning",
+    "code": "unrecognized_action",
+    "message": "Action type 'spin' is outside the core vocabulary and was kept.",
+    "entity_type": "action",
+    "entity_id": "a4"
+   }
+  ],
+  "reinspection_notes": [],
+  "reinspection_proposals": [],
+  "perception": null
+ }
+}

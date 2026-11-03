@@ -57,7 +57,7 @@ _TASK = """
 This is a short recording from a fixed camera of a person handling a few distinct objects.
 Return only what matters for checking the physical result. Do not return boxes or per-frame tracks.
 
-objects: the objects the task acts on, and a base or container they end up on. Leave out hands and the bare work surface. The label is short and names color and shape. Identical parts each get their own object with the same label.
+objects: the objects the task acts on, and a base or container they end up on. Leave out hands and the bare work surface. The label is short and names the kind of part, its color, and any shape feature that tells it apart from similar parts, such as a split, teeth, a flange, a slot, or a thread. visual_characteristics states those features. Identical parts each get their own object with the same label.
 observations: for each object, one observation at the first moment and one at the last moment of the recording, with its visibility at that moment. Use visible, partial, occluded, or absent. Use absent only when the place the object would be is in view and the object is not there, and classify that DIRECTLY_OBSERVED. If the place is hidden or out of frame, use occluded and classify it UNKNOWN.
 relationships: for each pair that ends in a physical arrangement, one relationship. The subject is the object that was moved. The other is the part in direct contact that holds it. When parts are stacked, do not skip to the largest body: name the nearest part it was pressed into or onto, judged from the last clear view before and the first clear view after the hand moves away. time_start is when the arrangement is first achieved. time_end is the last moment it is visible. Choose the most specific kind: inside, attached, supported_by, above, below, left_of, right_of, around, touching. Use inside only when most of the part disappears into the other. A part that stays mostly visible while held on is attached. Do not use near for a completed placement. Classify it DIRECTLY_OBSERVED only when the arrangement itself can be seen in the frames, and INFERRED or UNKNOWN when it cannot. If an object was moved and the arrangement is wrong or incomplete, report the arrangement that is actually there.
 transitions: to_state and from_state are chosen from: separate, placed, attached, inserted, removed, open, closed, flipped, empty, full, other.
@@ -71,7 +71,8 @@ Keep descriptions and notes to one short sentence.
 _REFERENCE = """
 A reference list of objects from an earlier recording follows. It says what to look for. It does not say this attempt is correct, and it may be wrong or incomplete: parts may be missing, misplaced, swapped, or extra.
 Rules for the list:
-- When you see an object that fits an entry, use exactly that label. Use a different label for anything else.
+- Use an entry's exact label only for an object that is the same kind of part: the same shape, with the features the label and description name, such as a split, teeth, a flange, a slot, or a thread. A different color or finish alone does not make it a different part, so it keeps the entry's label.
+- An object that looks similar but is a different kind of part, such as a flat ring where the entry is a split ring, gets its own label naming what it is, and visual_characteristics says how it differs from the entry. Never give it the entry's label. Look closely at the shape before deciding.
 - Every entry gets observations, including one that is never seen. If it is not seen, still list it as an object, with visibility absent or occluded under the rules above.
 - For each pair to check, report the arrangement you see at the end, if any. Do not report an arrangement you cannot see.
 """.strip()

@@ -684,7 +684,8 @@ def test_a_missing_size_measurement_does_not_lower_a_role_score():
     mapped = map_roles(_cylinder_role(), _loose_cylinder())[0]
     assert mapped.status == "assigned"
     assert "size" not in mapped.hypotheses[0].features
-    assert mapped.score == pytest.approx(0.4526, abs=0.03)
+    # The part is loose, so it shares none of the learned relations. That is not evidence it is another part.
+    assert mapped.score == pytest.approx(0.6852, abs=0.03)
 
 
 def test_a_measured_size_mismatch_still_lowers_a_role_score():

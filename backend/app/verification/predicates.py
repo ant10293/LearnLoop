@@ -67,7 +67,7 @@ def _relation(predicate, execution, subject, target, roles, video_id: str) -> Pr
         item for item in _reversed_relations(execution, predicate.relation, subject_ids, target_ids)
         if item.time_end >= window[0] - 1e-6
     ]
-    if swapped and _visible(execution, target_ids, window):
+    if swapped and _seen(execution, target_ids, window):
         return PredicateJudgement(
             predicate_id=predicate.id,
             status="fail",
@@ -78,8 +78,12 @@ def _relation(predicate, execution, subject, target, roles, video_id: str) -> Pr
         )
     # A part that belongs to another step can share the anchor. Only a part with no role is a wrong component.
     in_procedure = {object_id for role in roles.values() for object_id in role.object_local_ids}
-    occupants = _occupants(execution, predicate.relation, target_ids, subject_ids | in_procedure)
-    if occupants and _visible(execution, target_ids, window):
+    occupants = [
+        item
+        for item in _occupants(execution, predicate.relation, target_ids, subject_ids | in_procedure)
+        if item.time_end >= window[0] - 1e-6
+    ]
+    if occupants and _seen(execution, target_ids, window):
         return PredicateJudgement(
             predicate_id=predicate.id,
             status="fail",
@@ -93,7 +97,7 @@ def _relation(predicate, execution, subject, target, roles, video_id: str) -> Pr
         )
     if subject_ids:
         others = _other_strong(execution, predicate.relation, subject_ids, target_ids)
-        if others and _visible(execution, target_ids, window):
+        if others and _seen(execution, target_ids, window):
             return PredicateJudgement(
                 predicate_id=predicate.id,
                 status="fail",
@@ -417,12 +421,19 @@ def _visible(execution: AnalysisDocument, object_ids: set[str], window: tuple[fl
     return any(_is_visible(observation, object_ids, window) for observation in execution.observations)
 
 
-def _is_visible(observation, object_ids: set[str], window: tuple[float, float]) -> bool:
+def _seen(execution: AnalysisDocument, object_ids: set[str], window: tuple[float, float]) -> bool:
+    """Enough to judge a relation that is itself directly observed. A hand on the part leaves it partly visible."""
+    return any(
+        _is_visible(observation, object_ids, window, kinds=("visible", "partial")) for observation in execution.observations
+    )
+
+
+def _is_visible(observation, object_ids: set[str], window: tuple[float, float], kinds: tuple[str, ...] = ("visible",)) -> bool:
     if observation.object_local_id not in object_ids:
         return False
     if evidence_class(observation) != "DIRECTLY_OBSERVED":
         return False
-    if enum_value(observation.visibility) != "visible":
+    if enum_value(observation.visibility) not in kinds:
         return False
     return window[0] - 1e-6 <= observation.timestamp <= window[1] + 1e-6
 

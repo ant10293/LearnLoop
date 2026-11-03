@@ -1,8 +1,14 @@
 """Map procedure roles onto the instances in another recording.
 
-Instance ids are not compared across recordings. A shared label is one feature
-among relations, appearance text, state, and box size. Close scores stay as
+Instance ids are not compared across recordings. Identity comes from what a
+part is: its label, appearance text, state, and box size. Relations are what
+verification checks, so they only break a tie between parts that look alike;
+a part placed in the wrong order is still the same part. Close scores stay as
 competing hypotheses.
+
+An attempt analyzed against the reference list reuses an entry's label only
+for the same kind of part. There the label decides identity: a part whose label
+replaces a word of the role's label, other than a color, is a different part.
 """
 
 from __future__ import annotations
@@ -18,13 +24,20 @@ AMBIGUITY_MARGIN = 0.12
 HYPOTHESIS_FLOOR = 0.2
 
 _WEIGHTS = {
-    "label": 0.25,
-    "description": 0.15,
-    "visual": 0.15,
-    "relation": 0.25,
+    "label": 0.35,
+    "description": 0.2,
+    "visual": 0.2,
     "state": 0.15,
-    "size": 0.05,
+    "size": 0.1,
 }
+# A color or finish word can change between two copies of the same part.
+_COLORS = frozenset(
+    {
+        "black", "white", "gray", "grey", "silver", "gold", "golden", "brass", "bronze", "copper", "chrome",
+        "dark", "light", "red", "orange", "yellow", "green", "blue", "purple", "pink", "brown", "tan", "beige",
+        "shiny", "matte", "bright", "dull", "metal", "metallic", "steel", "zinc", "plated", "clear",
+    }
+)
 
 
 def map_roles(
@@ -34,12 +47,19 @@ def map_roles(
 ) -> list[RoleAssignment]:
     overrides = overrides or {}
     areas = {item.local_id: median_area(execution, item.local_id) for item in execution.objects}
+    referenced = _uses_reference_labels(template, execution)
     ranked: dict[str, list[tuple[float, dict, str]]] = {}
     for role in template.roles:
         options = []
         for item in execution.objects:
+            if referenced and not same_kind(role.label, item.label):
+                continue
             features = _features(role, item, execution, areas.get(item.local_id))
-            options.append((_score(features), features, item.local_id))
+            score = _score(features)
+            if referenced and _base_label(role.label) == _base_label(item.label):
+                # The analysis reused this entry's label, which it does only for the same kind of part.
+                score = max(score, ASSIGN_THRESHOLD)
+            options.append((score, features, item.local_id))
         options.sort(key=lambda option: option[0], reverse=True)
         ranked[role.role_id] = options
 
@@ -72,6 +92,21 @@ def assignment_index(assignments: list[RoleAssignment]) -> dict[str, RoleAssignm
 
 def _base_label(label: str) -> str:
     return re.sub(r"\s+\d+$", "", label or "").strip().lower()
+
+
+def same_kind(role_label: str, label: str) -> bool:
+    """Words left out are a shorter name for the same part. A word replaced, other than a color, names another part."""
+    role_words = tokens(_base_label(role_label)) - _COLORS
+    words = tokens(_base_label(label)) - _COLORS
+    if not role_words or not words:
+        return bool(tokens(_base_label(role_label)) & tokens(_base_label(label)))
+    return role_words <= words or words <= role_words
+
+
+def _uses_reference_labels(template: LearnedTemplate, execution: AnalysisDocument) -> bool:
+    """True when the attempt was labeled from this template's reference list."""
+    bases = {_base_label(role.label) for role in template.roles if role.label}
+    return any(_base_label(item.label) in bases for item in execution.objects)
 
 
 def _has_twin(role: ObjectRole, template: LearnedTemplate) -> bool:
@@ -122,9 +157,15 @@ def _assign(
             ),
         )
     best = viable[0]
-    second = viable[1] if len(viable) > 1 else None
+    close = [option for option in viable if best[0] - option[0] < AMBIGUITY_MARGIN]
+    if len(close) > 1:
+        # Parts that look alike are told apart by where they sit, if one clearly fits the learned arrangement better.
+        close.sort(key=lambda option: option[1]["relation"], reverse=True)
+        if close[0][1]["relation"] - close[1][1]["relation"] >= AMBIGUITY_MARGIN:
+            best, close = close[0], [close[0]]
+    second = close[1] if len(close) > 1 else None
     # Identical parts have no right instance to pick, so a tie between them is not a doubt.
-    if second and best[0] - second[0] < AMBIGUITY_MARGIN and not interchangeable:
+    if second and not interchangeable:
         return RoleAssignment(
             role_id=role.role_id,
             label=role.label,
@@ -157,19 +198,21 @@ def _features(role: ObjectRole, item, execution: AnalysisDocument, area: float |
         "label": label,
         "description": description,
         "visual": visual,
-        "relation": relation,
         "state": state,
     }
     role_area = role.reference_area
     if area is not None and role_area is not None and area > 0 and role_area > 0:
         features["size"] = min(area, role_area) / max(area, role_area)
+    # Kept for breaking ties and for the record. It is not part of the identity score.
+    features["relation"] = relation
     return features
 
 
 def _score(features: dict) -> float:
     """A feature with no measurement is left out. It is not evidence against the match."""
-    available = sum(_WEIGHTS[name] for name in features)
-    return round(sum(_WEIGHTS[name] * value for name, value in features.items()) / available, 4)
+    scored = {name: value for name, value in features.items() if name in _WEIGHTS}
+    available = sum(_WEIGHTS[name] for name in scored)
+    return round(sum(_WEIGHTS[name] * value for name, value in scored.items()) / available, 4)
 
 
 def _text_support(features: dict) -> bool:
