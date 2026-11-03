@@ -19,6 +19,7 @@ from app.perception.sam_fusion import (
     merge_reconciliation,
     plan_prompts,
     prompt_prior,
+    reject_area_outliers,
     sam_evidence_block,
     write_sam_summary,
 )
@@ -563,3 +564,33 @@ def test_a_deferred_mask_keeps_its_payload_without_decoding(tmp_path):
     files = materialize_record(record, tmp_path, "mask", decode=False)
     assert files.raw_path is not None and files.raw_path.read_text() == record.mask_data
     assert files.png_path is None and not files.decoded and files.error == ""
+
+
+def _sized(raw, timestamp, side, session="c0p0s0") -> TrackSample:
+    sample = _sample(session, raw, 0.1, 0.1, timestamp=timestamp)
+    sample.bbox = _box(0.1, 0.1, w=side, h=side)
+    return sample
+
+
+def test_a_mask_that_collapses_to_a_dot_is_rejected():
+    track = [_sized("1", index * 0.1, 0.3) for index in range(9)]
+    dot = _sized("1", 0.45, 0.02)
+    kept, dropped = reject_area_outliers(track + [dot])
+    assert dropped == [dot]
+    assert len(kept) == 9
+
+
+def test_a_mask_that_swells_for_one_frame_is_rejected():
+    track = [_sized("1", index * 0.1, 0.2) for index in range(9)]
+    swollen = _sized("1", 0.45, 0.6)
+    _kept, dropped = reject_area_outliers(track + [swollen])
+    assert dropped == [swollen]
+
+
+def test_gradual_growth_and_short_tracks_are_kept():
+    growing = [_sized("1", index * 0.1, 0.1 + index * 0.03) for index in range(10)]
+    short = [_sized("2", 0.0, 0.3), _sized("2", 0.1, 0.02)]
+    other = [_sized("1", index * 0.1, 0.02, session="c1p0s0") for index in range(3)]
+    kept, dropped = reject_area_outliers(growing + short + other)
+    assert dropped == []
+    assert len(kept) == 15

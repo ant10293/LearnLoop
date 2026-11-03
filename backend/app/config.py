@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     sam_price_per_frame_usd: float | None = None
     # A live Meta call spends credits. Nothing is sent unless this is set on purpose.
     live_inference: bool = False
-    guided_max_output_tokens: int = 24_000
+    guided_max_output_tokens: int = 65_536
     # SAM thumbnails and timelines on demonstrations. Bills per frame, separately from the guided call.
     object_views: bool = True
     # Research endpoints from the source lab. The product does not use them.

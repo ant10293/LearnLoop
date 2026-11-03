@@ -46,6 +46,8 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   // Null keeps the server's default until the person picks.
   const [inference, setInference] = useState<string | null>(null);
   const [segmentation, setSegmentation] = useState<string | null>(null);
+  // Skips stored answers for this video. The requests it sends still wait for approval.
+  const [fresh, setFresh] = useState(false);
   const segments = recording.role === "demonstration";
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
     setError("");
     setBusy(true);
     try {
-      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "" });
+      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "", fresh });
       setPlan(null);
       setRunId(created.id);
     } catch (exc) {
@@ -77,7 +79,12 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   const running = runLoading || status === "pending" || status === "running";
   if (video.ingest_status === "failed") return <ErrorNote message={video.ingest_error || "This recording could not be read."} />;
   if (video.ingest_status && video.ingest_status !== "ready") {
-    return <p className="status-line" role="status">Preparing the recording. {video.ingest_detail}</p>;
+    return (
+      <div className="analysis">
+        <p className="status-line" role="status">Preparing the recording. {video.ingest_detail}</p>
+        <button className="btn primary" disabled>{action}</button>
+      </div>
+    );
   }
   return (
     <div className="analysis">
@@ -99,6 +106,10 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
               </label>
             )}
           </div>
+          <label className="row small">
+            <input type="checkbox" checked={fresh} onChange={(event) => setFresh(event.target.checked)} />
+            <span>Analyze from scratch. Stored answers for this video are not replayed, so new Meta requests are sent.</span>
+          </label>
           <button className="btn primary" disabled={busy} onClick={() => void start(false)}>
             {status === "failed" ? "Analyze again" : action}
           </button>
@@ -210,7 +221,7 @@ function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: b
   return (
     <div className="plan" role="dialog" aria-label="Approve Meta request">
       <h3>{views > 0 ? "This needs Meta requests" : "This needs a Meta request"}</h3>
-      <p>No stored response matches this exact video, model, and prompt.</p>
+      <p>{plan.fresh ? "Stored responses for this video are skipped. New ones replace them." : "No stored response matches this exact video, model, and prompt."}</p>
       <dl>
         <dt>Model</dt><dd>{humanizeModel(plan.model_id)}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
         <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>

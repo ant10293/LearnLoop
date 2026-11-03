@@ -230,6 +230,22 @@ describe("Teach", () => {
     return undefined;
   };
 
+  it("keeps the learn button visible but disabled until a demonstration is ready", async () => {
+    let demo: unknown = null;
+    mockApi((url) => {
+      if (url.endsWith("/procedures/p1")) return { body: procedure({ recordings: demo ? [demo] : [], templates: [], template: null, verifications: [] }) };
+      if (url.endsWith("/recordings/v1")) return { body: demo };
+      return base(url);
+    });
+    const view = show("/procedures/p1/teach");
+    expect((await screen.findByRole("button", { name: "Learn the procedure" })).hasAttribute("disabled")).toBe(true);
+    view.unmount();
+    demo = { role: "demonstration", video: { ...video, ingest_status: "processing", ingest_detail: "Preparing playback" }, run: null };
+    show("/procedures/p1/teach");
+    expect(await screen.findByRole("status")).toHaveTextContent("Preparing the recording. Preparing playback");
+    expect(screen.getByRole("button", { name: "Learn the procedure" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it("uploads a demonstration from the drop zone and shows progress", async () => {
     mockApi(base);
     const sent: FormData[] = [];

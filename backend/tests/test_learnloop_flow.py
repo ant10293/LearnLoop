@@ -492,7 +492,7 @@ def test_a_guided_run_uses_one_request_without_sam_or_tracking(lab):
     assert len(stub.calls) == 1
     request = stub.calls[0]
     assert request.modality == "native_video" and request.model_id == "muse-wonder-1.0"
-    assert request.max_output_tokens == 24_000 and request.schema_name == "learnloop_guided_task"
+    assert request.max_output_tokens == 65_536 and request.schema_name == "learnloop_guided_task"
     for stage in ("spatial_tracking", "segmentation", "evidence_fusion", "reinspection", "transcription"):
         assert run["stages"][stage] == "skipped"
 
