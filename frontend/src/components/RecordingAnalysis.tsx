@@ -135,16 +135,18 @@ function ModelSelect({ label, options, value, onChange, none }: { label: string;
 }
 
 function PlanCard({ plan, busy, onApprove, onCancel }: { plan: CallPlan; busy: boolean; onApprove: () => void; onCancel: () => void }) {
+  const views = plan.object_view_requests ?? 0;
+  const locate = plan.object_view_locate_requests ?? 0;
   return (
     <div className="plan" role="dialog" aria-label="Approve Meta request">
-      <h3>This needs a Meta request</h3>
+      <h3>{views > 0 ? "This needs Meta requests" : "This needs a Meta request"}</h3>
       <p>No stored response matches this exact video, model, and prompt.</p>
       <dl>
         <dt>Model</dt><dd>{humanizeModel(plan.model_id)}, {plan.modality === "native_video" ? "video file" : "frames"}</dd>
         <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
-        <dt>Requests</dt><dd>At most {plan.max_requests}, with no automatic retry</dd>
+        <dt>Requests</dt><dd>{views > 0 ? `At most ${plan.max_requests + locate + views}: ${plan.max_requests} to analyze the video, up to ${locate} to find the objects, and ${views} to follow them. No automatic retry.` : `At most ${plan.max_requests}, with no automatic retry`}</dd>
         {plan.object_view_requests > 0 && <><dt>Object views</dt><dd>One more Meta request to find the objects on the first frame, and a second on a few later stills only if some object is not there. Then one {humanizeModel(plan.segmentation_model_id)} request, about {plan.object_view_frames.toLocaleString()} billed frames.</dd></>}
-        <dt>Output limit</dt><dd>{plan.max_output_tokens.toLocaleString()} tokens</dd>
+        <dt>Output limit</dt><dd>{plan.max_output_tokens.toLocaleString()} tokens{views > 0 ? " for the analysis" : ""}</dd>
         <dt>Estimated cost</dt><dd>{plan.estimated_cost_usd == null ? "Unknown. No rate is recorded for this model." : `$${plan.estimated_cost_usd}`}</dd>
       </dl>
       {plan.live_enabled ? (
