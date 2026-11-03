@@ -300,13 +300,13 @@ describe("Teach", () => {
   it("counts every request a demonstration can send", async () => {
     mockApi((url) => {
       if (url.endsWith("/analyze")) {
-        return { status: 409, body: { detail: { code: "live_call_required", plan: { model_id: "muse-wonder-1.0", modality: "native_video", video_seconds: 10, max_requests: 1, automatic_retries: 0, max_output_tokens: 24000, estimated_input_tokens: 1, estimated_cost_usd: null, live_enabled: true, object_view_requests: 1, object_view_locate_requests: 2, object_view_frames: 81, segmentation_model_id: "sam-3.1" } } } };
+        return { status: 409, body: { detail: { code: "live_call_required", plan: { model_id: "muse-wonder-1.0", modality: "native_video", video_seconds: 10, max_requests: 1, automatic_retries: 0, max_output_tokens: 24000, estimated_input_tokens: 1, estimated_cost_usd: null, live_enabled: true, object_view_requests: 2, object_view_locate_requests: 2, object_view_frames: 81, segmentation_model_id: "sam-3.1" } } } };
       }
       return base(url);
     });
     show("/procedures/p1/teach");
     fireEvent.click(await screen.findByRole("button", { name: "Learn the procedure" }));
-    expect(await screen.findByRole("dialog")).toHaveTextContent("At most 4: 1 to analyze the video, up to 2 to find the objects, and 1 to follow them. No automatic retry.");
+    expect(await screen.findByRole("dialog")).toHaveTextContent("At most 5: 1 to analyze the video, up to 2 to find the objects, and up to 2 to follow them. No automatic retry.");
     expect(screen.getByRole("dialog")).toHaveTextContent("24,000 tokens for the analysis");
   });
 

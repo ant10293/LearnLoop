@@ -144,22 +144,35 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) 
         error = later_error
     stage.progress_current = 2
     session.commit()
-    if seeds:
-        prompt = _prompt(seeds, media)
-        key = _cache_key(video.checksum_sha256, prompt, model_id)
+    # A part boxed later is followed forward only, from a copy that starts on its frame. Followed backward,
+    # SAM would carry it onto a similar part before it ever came into view, and take that part's pixels.
+    later_seeds = [seed for seed in seeds if seed.timestamp > 0]
+    groups = [
+        (group, start, direction)
+        for group, start, direction in (
+            ([seed for seed in seeds if seed.timestamp == 0], 0, "both"),
+            (later_seeds, _first_frame(later_seeds), "forward"),
+        )
+        if group
+    ]
+    for group, start, direction in groups:
+        clip = _clip_from(media, start)
+        prompt = _prompt(group, clip, start)
+        key = _cache_key(video.checksum_sha256, prompt, model_id, start, direction)
         text = _cached(key)
         if text is not None:
-            replayed = 1
+            replayed += 1
         elif allow_live and secret:
-            requests = 1
-            text, error = await _call(session, run, media, prompt, secret, model_id)
+            requests += 1
+            text, failure = await _call(session, run, clip, prompt, secret, model_id, direction)
+            error = error or failure
             # An empty answer may be the prompt or the footage, so a later run may try again.
             if text:
                 _store(key, text)
         else:
-            error = "No stored SAM answer matches, and a live call was not approved."
+            error = error or "No stored SAM answer matches, and a live call was not approved."
         if text:
-            tracked = _assign(parse_sam_output(text), seeds)
+            tracked.update(_assign(parse_sam_output(text), group, start))
     stage.progress_current = 3
     session.commit()
     manifest = _render(run.id, document, media, tracked, _last_frame_time(video))
@@ -379,7 +392,12 @@ def _seeds(document: AnalysisDocument, answer: GuidedLocateOutput) -> list[Seed]
     return seeds
 
 
-def _prompt(seeds: list[Seed], media: Path) -> str:
+def _first_frame(seeds: list[Seed]) -> int:
+    return min((int(round(seed.timestamp * SAM_FPS)) for seed in seeds), default=0)
+
+
+def _prompt(seeds: list[Seed], media: Path, start: int = 0) -> str:
+    """Frame numbers count from the first frame of the copy SAM is sent, which is frame start of the recording."""
     info = probe(media)
     width, height = info.display_width, info.display_height
     last = max(info.frame_count - 1, 0)
@@ -389,12 +407,12 @@ def _prompt(seeds: list[Seed], media: Path) -> str:
         y1 = min(max(int(seed.box["y"] * height), 0), height - 1)
         x2 = min(int((seed.box["x"] + seed.box["w"]) * width), width - 1)
         y2 = min(int((seed.box["y"] + seed.box["h"]) * height), height - 1)
-        frame = min(int(round(seed.timestamp * SAM_FPS)), last)
+        frame = min(max(int(round(seed.timestamp * SAM_FPS)) - start, 0), last)
         marks.append(SpatialMark(frame, seed.object_id, "box", width, height, x1, y1, max(x2, x1), max(y2, y1)))
     return render_spatial_prompt(marks)
 
 
-async def _call(session, run, media: Path, prompt: str, secret: str, model_id: str) -> tuple[str | None, str]:
+async def _call(session, run, media: Path, prompt: str, secret: str, model_id: str, direction: str) -> tuple[str | None, str]:
     from app.pipeline.sam_stage import _finish
     from app.services.costs import fail_provider_call, open_provider_call
 
@@ -405,11 +423,11 @@ async def _call(session, run, media: Path, prompt: str, secret: str, model_id: s
         provider_id="meta",
         model_id=model_id,
         modality="native_video",
-        parameters={"prompt_kind": "spatial", "prompt": prompt, "fps": SAM_FPS},
+        parameters={"prompt_kind": "spatial", "prompt": prompt, "fps": SAM_FPS, "propagation_direction": direction},
     )
     session.commit()
     try:
-        result = await SamAdapter(secret, model_id=model_id).segment_video(media, prompt, prompt_kind="spatial", propagation_direction="both")
+        result = await SamAdapter(secret, model_id=model_id).segment_video(media, prompt, prompt_kind="spatial", propagation_direction=direction)
     except Exception as exc:
         log.warning("SAM failed: %s", exc)
         fail_provider_call(call, exc)
@@ -420,14 +438,15 @@ async def _call(session, run, media: Path, prompt: str, secret: str, model_id: s
     return result.text, ""
 
 
-def _assign(records: list[SamRecord], seeds: list[Seed]) -> dict[str, list[Sighting]]:
-    """SAM answers with the id each box was prompted under."""
+def _assign(records: list[SamRecord], seeds: list[Seed], start: int = 0) -> dict[str, list[Sighting]]:
+    """SAM answers with the id each box was prompted under, and frame numbers from the start of the copy it was sent."""
     owners = {str(seed.object_id): seed.local_id for seed in seeds}
     tracks: dict[str, list[Sighting]] = {}
     for record in records:
         box = normalized_box(record)
         owner = owners.get(record.track_id)
         if owner and box is not None:
+            record.frame_index += start
             tracks.setdefault(owner, []).append(Sighting(record.frame_index / SAM_FPS, box, record))
     return tracks
 
@@ -472,8 +491,10 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
 
 
 def _cell_times(last_frame: float) -> list[float]:
-    """Every interval, then the last frame. A mark within one sample of the last frame would show the same image."""
-    return [step * _CELL_INTERVAL for step in range(math.ceil((last_frame - 1 / SAM_FPS) / _CELL_INTERVAL))] + [last_frame]
+    """Every interval, then the last frame. A mark closer to the last frame than the shortest allowed gap is dropped,
+    since its frame could not sit far enough from the last one."""
+    shortest = (1 - _CELL_SPREAD) * _CELL_INTERVAL
+    return [step * _CELL_INTERVAL for step in range(math.ceil((last_frame - shortest) / _CELL_INTERVAL))] + [last_frame]
 
 
 def _last_frame_time(video: VideoAsset) -> float:
@@ -484,15 +505,18 @@ def _last_frame_time(video: VideoAsset) -> float:
 
 def _picks(sightings: list[Sighting], times: list[float]) -> list[Sighting | None]:
     """The most confident sighting in each cell's interval, one interval, give or take _CELL_SPREAD of one, after the frame
-    shown before it. The last cell is one moment, so it takes the nearest sighting that keeps that spacing."""
+    shown before it. The last cell is the end of the recording and always shows it, so the cell before it leaves room."""
     picks: list[Sighting | None] = []
     previous: float | None = None
     for index, moment in enumerate(times):
-        allowed = [item for item in sightings if _spaced(item.timestamp, previous)]
         if index == len(times) - 1:
-            pick = _nearest(allowed, moment)
+            pick = _nearest(sightings, moment)
         else:
-            within = [item for item in allowed if moment <= item.timestamp < times[index + 1]]
+            allowed = [item for item in sightings if _spaced(item.timestamp, previous)]
+            end = times[index + 1]
+            if index == len(times) - 2:
+                end = min(end, times[-1] - (1 - _CELL_SPREAD) * _CELL_INTERVAL + 1e-9)
+            within = [item for item in allowed if moment <= item.timestamp < end]
             pick = max(within, key=lambda item: (item.record.confidence or 0, -item.timestamp), default=None)
         picks.append(pick)
         # An empty cell breaks the chain, so the next one is held only to its own interval.
@@ -584,8 +608,28 @@ def _low_rate_copy(source: Path, dest: Path) -> Path:
     return dest
 
 
-def _cache_key(checksum: str, prompt: str, model_id: str = _DEFAULT_SAM) -> str:
+def _clip_from(media: Path, start: int) -> Path:
+    """The low frame rate copy from frame start on, so a request is billed only for frames it can follow."""
+    if start <= 0:
+        return media
+    dest = media.with_name(f"{media.stem}_from_{start}{media.suffix}")
+    if dest.exists():
+        return dest
+    tmp = dest.with_name(f".{dest.stem}.tmp{dest.suffix}")
+    subprocess.run(
+        ["ffmpeg", "-y", "-i", str(media), "-an", "-vf", f"trim=start_frame={start},setpts=PTS-STARTPTS", "-c:v", "libx264", "-pix_fmt", "yuv420p", str(tmp)],
+        capture_output=True,
+        check=True,
+    )
+    tmp.replace(dest)
+    return dest
+
+
+def _cache_key(checksum: str, prompt: str, model_id: str = _DEFAULT_SAM, start: int = 0, direction: str = "both") -> str:
     fields = {"video": checksum, "prompt": prompt, "fps": SAM_FPS, "side": _LONG_SIDE}
+    # The first-frame request keeps the key it had when it was the only request.
+    if start or direction != "both":
+        fields.update({"start_frame": start, "direction": direction})
     # Answers stored before models could be chosen are all from the default, so its key stays the same.
     if model_id != _DEFAULT_SAM:
         fields["model"] = model_id

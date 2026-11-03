@@ -648,8 +648,9 @@ def test_an_object_missing_from_the_first_frame_is_found_on_a_later_still(lab, m
             pass
 
         async def segment_video(self, media, prompt, **kwargs):
-            prompts.append(prompt)
-            text = "\n".join(_sam_line(frame, [(0, 10), (1, 60)]) for frame in range(56, 60))
+            prompts.append((prompt, kwargs["propagation_direction"], media))
+            # Each request answers for every track, so a box from the other request must be ignored.
+            text = "\n".join(_sam_line(frame, [(0, 10), (1, 60)]) for frame in range(4))
             return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
 
     monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
@@ -676,12 +677,19 @@ def test_an_object_missing_from_the_first_frame_is_found_on_a_later_still(lab, m
     assert len(sent) == 1 and 1 <= len(sent[0]) <= 6 and all(moment >= 0.5 for moment in sent[0])
     assert views["located_later"] == [ids[3]]
     frame = round(sent[0][0] * 8)
-    assert prompts[0].startswith("<0f>0<|box;") and f"<{frame}f>1<|box;" in prompts[0]
+    # The first-frame boxes keep their request. The later one is followed forward only, on a copy starting at its frame.
+    assert len(prompts) == 2 and views["requests"] == 2
+    assert prompts[0][0].startswith("<0f>0<|box;") and "1<|box;" not in prompts[0][0] and prompts[0][1] == "both"
+    assert prompts[1][0].startswith("<0f>1<|box;") and prompts[1][1] == "forward" and prompts[1][2].name == f"tracked_from_{frame}.mp4"
+    assert [row["time"] for row in views["objects"][ids[3]]["track"]] == [(frame + index) / 8 for index in range(4)]
+    assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [0, 0.125, 0.25, 0.375]
+    assert views["objects"][ids[3]]["first_seen"] == frame / 8
     assert views["objects"][ids[3]]["seen_cells"] and not views["objects"][ids[1]]["seen_cells"]
 
     again = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
-    assert len(sent) == 1
-    assert client.get(f"/api/learnloop/runs/{again['id']}/objects").json()["located_later"] == [ids[3]]
+    assert len(sent) == 1 and len(prompts) == 2
+    replayed = client.get(f"/api/learnloop/runs/{again['id']}/objects").json()
+    assert replayed["located_later"] == [ids[3]] and replayed["replayed_requests"] == 2
 
 
 def test_no_later_request_when_the_first_frame_shows_everything(lab, monkeypatch):
@@ -733,7 +741,10 @@ def test_each_second_shows_its_most_confident_sighting():
     assert picks == [None, 1.5, 2.0, None, 3.875]
     # 2.0 is the most confident in its second but only an eighth of a second after 1.875.
     close = [sighting(1.875, 0.9), sighting(2.0, 0.99), sighting(2.5, 0.5)]
-    assert [item.timestamp if item else None for item in object_views._picks(close, [0.0, 1.0, 2.0, 2.93])] == [None, 1.875, 2.5, None]
+    assert [item.timestamp if item else None for item in object_views._picks(close, [0.0, 1.0, 2.0, 3.0, 3.93])] == [None, 1.875, 2.5, None, None]
+    # The end always shows, so the cell before it skips 1.1, which would sit too close to it.
+    ending = [sighting(0.5, 0.6), sighting(1.1, 0.99), sighting(1.25, 0.7)]
+    assert [item.timestamp if item else None for item in object_views._picks(ending, [0.0, 1.3])] == [0.5, 1.25]
 
 
 def test_the_timeline_shows_each_second_then_the_end():
@@ -742,6 +753,8 @@ def test_the_timeline_shows_each_second_then_the_end():
     assert _cell_times(2.93) == [0, 1, 2, 2.93]
     assert _cell_times(3.0) == [0, 1, 2, 3.0]
     assert _cell_times(3.02) == [0, 1, 2, 3.02]
+    # 21 would sit too close to the end at 21.3.
+    assert _cell_times(2.3) == [0, 1, 2.3]
 
 
 def test_bad_starting_boxes_send_nothing_to_sam(lab, monkeypatch):
