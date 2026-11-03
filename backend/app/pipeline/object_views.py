@@ -45,7 +45,8 @@ from app.video.probe import probe
 
 log = logging.getLogger("learnloop.object_views")
 
-SAM_FPS = 8.0
+# At 8 a part picked up quickly in a close shot can go from flat on the table to a sliver between fingers in one frame, and SAM lets it go.
+SAM_FPS = 12.0
 # Seconds between timeline cells. A shown frame sits within half an interval of where an even spacing would put it.
 _CELL_INTERVAL = 1.0
 _CELL_SPREAD = 0.5
@@ -127,7 +128,8 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     secret, _source = load_secret(session, "meta")
     directory = views_dir(run.id)
     directory.mkdir(parents=True, exist_ok=True)
-    media = _low_rate_copy(resolve_stored(video.stored_path), directory / "tracked.mp4")
+    # Named by rate, so a copy made at an earlier rate is never read as this one.
+    media = _low_rate_copy(resolve_stored(video.stored_path), directory / f"tracked_{SAM_FPS:g}fps.mp4")
     stage.progress_total = 4
     stage.progress_current = 0
     session.commit()

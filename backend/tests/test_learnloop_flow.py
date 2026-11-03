@@ -623,7 +623,7 @@ def test_a_demonstration_follows_every_box_in_one_sam_request_and_replays_it(lab
     assert views["objects"][ids[0]]["seen_cells"] and views["objects"][ids[2]]["seen_cells"]
     assert not views["objects"][ids[1]]["seen_cells"] and not views["objects"][ids[3]]["seen_cells"]
     assert client.get(views["objects"][ids[0]]["thumbnail_url"]).status_code == 200
-    assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [0, 0.125, 0.25, 0.375]
+    assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [round(index / object_views.SAM_FPS, 3) for index in range(4)]
     assert {cell["confidence"] for cell in views["objects"][ids[0]]["cells"] if cell["url"]} == {0.9}
     assert views["objects"][ids[1]]["track"] == []
     assert client.get(f"/api/learnloop/runs/{run['id']}/objects/manifest.json").status_code == 404
@@ -676,14 +676,14 @@ def test_an_object_missing_from_the_first_frame_is_found_on_a_later_still(lab, m
     views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
     assert len(sent) == 1 and 1 <= len(sent[0]) <= 6 and all(moment >= 0.5 for moment in sent[0])
     assert views["located_later"] == [ids[3]]
-    frame = round(sent[0][0] * 8)
+    frame = round(sent[0][0] * object_views.SAM_FPS)
     # The first-frame boxes keep their request. The later one is followed forward only, on a copy starting at its frame.
     assert len(prompts) == 2 and views["requests"] == 2
     assert prompts[0][0].startswith("<0f>0<|box;") and "1<|box;" not in prompts[0][0] and prompts[0][1] == "both"
-    assert prompts[1][0].startswith("<0f>1<|box;") and prompts[1][1] == "forward" and prompts[1][2].name == f"tracked_from_{frame}.mp4"
-    assert [row["time"] for row in views["objects"][ids[3]]["track"]] == [(frame + index) / 8 for index in range(4)]
-    assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [0, 0.125, 0.25, 0.375]
-    assert views["objects"][ids[3]]["first_seen"] == frame / 8
+    assert prompts[1][0].startswith("<0f>1<|box;") and prompts[1][1] == "forward" and prompts[1][2].name == f"tracked_12fps_from_{frame}.mp4"
+    assert [row["time"] for row in views["objects"][ids[3]]["track"]] == [round((frame + index) / object_views.SAM_FPS, 3) for index in range(4)]
+    assert [row["time"] for row in views["objects"][ids[0]]["track"]] == [round(index / object_views.SAM_FPS, 3) for index in range(4)]
+    assert views["objects"][ids[3]]["first_seen"] == round(frame / object_views.SAM_FPS, 3)
     assert views["objects"][ids[3]]["seen_cells"] and not views["objects"][ids[1]]["seen_cells"]
 
     again = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
@@ -707,8 +707,8 @@ def test_an_object_sam_loses_is_boxed_again_after_it_was_lost(lab, monkeypatch):
         async def segment_video(self, media, prompt, **kwargs):
             prompts.append((prompt, kwargs["propagation_direction"]))
             if kwargs["propagation_direction"] == "both":
-                # Every object to the end, but red only for the first half second.
-                text = "\n".join(_sam_line(frame, [(0, 10), *([(1, 40)] if frame < 4 else []), (2, 70), (3, 100)]) for frame in range(80))
+                # Every object to the end, but red only for the first four frames.
+                text = "\n".join(_sam_line(frame, [(0, 10), *([(1, 40)] if frame < 4 else []), (2, 70), (3, 100)]) for frame in range(120))
             else:
                 text = "\n".join(_sam_line(frame, [(4, 40)]) for frame in range(4))
             return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
@@ -730,13 +730,13 @@ def test_an_object_sam_loses_is_boxed_again_after_it_was_lost(lab, monkeypatch):
     views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
     # Only the lost object is asked about, and only on stills from after its track ended.
     assert len(sent) == 1 and f"- {ids[1]}:" in sent[0][1] and f"- {ids[0]}:" not in sent[0][1]
-    assert all(moment >= 0.375 + 1.0 for moment in sent[0][0])
+    assert all(moment >= 3 / object_views.SAM_FPS + 1.0 for moment in sent[0][0])
     assert views["relocated"] == [ids[1]] and views["located_later"] == []
-    frame = round(sent[0][0][0] * 8)
+    frame = round(sent[0][0][0] * object_views.SAM_FPS)
     assert len(prompts) == 2 and prompts[1][1] == "forward" and prompts[1][0].startswith("<0f>4<|box;")
     # The first request's sightings stay, and the new box carries the track on from its frame.
     times = [row["time"] for row in views["objects"][ids[1]]["track"]]
-    assert times == [0, 0.125, 0.25, 0.375] + [(frame + index) / 8 for index in range(4)]
+    assert times == [round(index / object_views.SAM_FPS, 3) for index in range(4)] + [round((frame + index) / object_views.SAM_FPS, 3) for index in range(4)]
     assert views["objects"][ids[1]]["first_seen"] == 0
 
     again = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
