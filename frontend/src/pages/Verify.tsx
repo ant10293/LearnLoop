@@ -5,7 +5,7 @@ import { RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { Bone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag, VerdictTag } from "../components/ui";
-import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type Procedure, type Recording, type Run, type StepResult, type Verification, type VideoInfo } from "../lib/learnloop";
+import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type FilmTrack, type ObjectViews, type Procedure, type Recording, type Role, type Run, type StepResult, type Verification, type VideoInfo } from "../lib/learnloop";
 
 const RESULT_PLACEHOLDERS = 3;
 
@@ -105,10 +105,15 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
   const report = query.data?.report;
   const step = report?.steps.find((item) => item.step_id === stepId) ?? report?.steps.find((item) => item.verdict === "FAIL") ?? report?.steps[0];
   useEffect(() => setTick((value) => value + 1), [step?.step_id]);
+  const demoRun = procedure.templates.find((item) => item.id === query.data?.template_id)?.source_run_id ?? "";
+  const demoViews = useQuery({ queryKey: ["object-views", demoRun], queryFn: () => api.objectViews(demoRun), enabled: Boolean(demoRun) });
+  const attemptRun = recording.run?.id ?? "";
+  const attemptViews = useQuery({ queryKey: ["object-views", attemptRun], queryFn: () => api.objectViews(attemptRun), enabled: Boolean(attemptRun) });
   if (query.error) return <ErrorNote message={(query.error as Error).message} />;
   if (!query.data || !report || !step) return <ReportSkeleton video={recording.video} />;
   const verification = query.data;
   const demo = procedure.recordings.find((item) => item.video.id === report.demonstration_video_id);
+  const template = procedure.templates.find((item) => item.id === verification.template_id);
   const evidenceTime = step.execution_time ?? step.evidence[0]?.timestamp ?? null;
   return (
     <ReportView
@@ -123,8 +128,8 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
       }
       action={<a className="btn" href={`/api/verifications/${verification.id}/export`} download={`learnloop-report-${verification.id}.json`}>Export report</a>}
       warnings={report.warnings.map((warning) => <p key={warning} className="warning">{warning}</p>)}
-      demonstration={<Film src={demo?.video.playback_url ?? ""} time={step.demo_time_start} seek={tick} label="Demonstration" caption={`How “${step.name}” was shown`} />}
-      attempt={<Film src={recording.video.playback_url} time={evidenceTime} seek={tick} label="This attempt" caption={evidenceTime == null ? "No timestamp was tied to this step." : "Evidence moment for this step"} />}
+      demonstration={<Film src={demo?.video.playback_url ?? ""} time={step.demo_time_start} seek={tick} label="Demonstration" caption={`How “${step.name}” was shown`} tracks={roleTracks(demoViews.data, template?.document.roles ?? [])} />}
+      attempt={<Film src={recording.video.playback_url} time={evidenceTime} seek={tick} label="This attempt" caption={evidenceTime == null ? "No timestamp was tied to this step." : "Evidence moment for this step"} tracks={objectTracks(attemptViews.data)} />}
       results={report.steps.map((item) => (
         <li key={item.step_id}>
           <button className={`result ${item.step_id === step.step_id ? "active" : ""}`} onClick={() => { setStepId(item.step_id); setTick((value) => value + 1); }}>
@@ -146,6 +151,21 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
       }
     />
   );
+}
+
+/** The demonstration's boxes, named as the accepted procedure names its roles. */
+function roleTracks(views: ObjectViews | undefined, roles: Role[]): FilmTrack[] {
+  if (!views || views.running) return [];
+  return roles.flatMap((role) => {
+    const track = views.objects[role.source_object_ids[0]]?.track;
+    return track?.length ? [{ label: role.label, track }] : [];
+  });
+}
+
+/** The attempt's boxes, named as its own analysis named them. */
+function objectTracks(views: ObjectViews | undefined): FilmTrack[] {
+  if (!views || views.running) return [];
+  return Object.values(views.objects).flatMap((view) => (view.track?.length ? [{ label: view.label, track: view.track }] : []));
 }
 
 /** The report's layout, for the loaded report and its skeleton. */

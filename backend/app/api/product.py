@@ -19,6 +19,7 @@ from app.models.runs import AnalysisRun, Job, ModelRequestRow, PipelineStageRun
 from app.models.util import new_id
 from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
 from app.pipeline import guided, object_views
+from app.pipeline.infer import load_working
 from app.providers.types import UnsupportedMode
 from app.services import verification_store as store
 from app.services.ingest import accept_reference, accept_upload, ingest_file, playback_path, referenced_file, schedule_ingest
@@ -295,7 +296,10 @@ def run_objects(run_id: str, session: Session = Depends(db)) -> dict:
     manifest["progress"] = stage.progress_current if manifest["running"] and stage and stage.status == "running" else 0
     manifest["can_remake"] = bool(run and _makes_views(run) and run.status == "completed")
     base = f"/api/learnloop/runs/{run_id}/objects"
-    for item in manifest["objects"].values():
+    # What the analysis called each object, for a page with no learned roles to name its boxes.
+    labels = {item.local_id: item.label for item in load_working(run_id).objects} if manifest["objects"] else {}
+    for local_id, item in manifest["objects"].items():
+        item["label"] = labels.get(local_id) or local_id
         item["thumbnail_url"] = f"{base}/{item['thumbnail']}" if item.get("thumbnail") else None
         item["cells"] = [
             {"time": cell["time"], "frame_time": cell.get("frame_time"), "url": f"{base}/{cell['image']}" if cell["image"] else None, "confidence": cell.get("confidence")}

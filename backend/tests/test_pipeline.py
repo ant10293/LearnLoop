@@ -296,6 +296,33 @@ def test_project_video_order_and_delete(client):
     assert [item["id"] for item in remaining] == [older_id]
 
 
+def test_deleting_a_video_keeps_files_another_video_shares(client):
+    from app.db import SessionLocal
+    from app.models.media import VideoAsset
+    from app.services.storage import data_path
+
+    project = client.post("/api/projects", json={"name": "Shared"}).json()
+    original = data_path("originals", "shared.mov")
+    proxy = data_path("proxies", "shared.mp4")
+    for path in (original, proxy):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"video")
+    session = SessionLocal()
+    first, second = (
+        VideoAsset(project_id=project["id"], original_filename="IMG.mov", stored_path="originals/shared.mov", proxy_path="proxies/shared.mp4", checksum_sha256="c" * 64)
+        for _ in range(2)
+    )
+    session.add_all([first, second])
+    session.commit()
+    first_id, second_id = first.id, second.id
+    session.close()
+
+    assert client.delete(f"/api/videos/{first_id}").status_code == 200
+    assert original.exists() and proxy.exists()
+    assert client.get(f"/api/media/videos/{second_id}/playback").status_code == 200
+    assert client.delete(f"/api/videos/{second_id}").status_code == 200
+    assert not original.exists() and not proxy.exists()
+
 def test_upload_analyzes_after_the_response(client, tmp_path: Path):
     from app.config import settings
     from app.demo.encode import write_clip

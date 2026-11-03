@@ -259,6 +259,8 @@ export interface ObjectViewsPlan {
 }
 
 export interface ObjectView {
+  /** What the analysis called the object. */
+  label: string;
   thumbnail_url: string | null;
   cells: { time: number; frame_time?: number | null; url: string | null; confidence?: number | null }[];
   seen_cells: number;

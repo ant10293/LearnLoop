@@ -537,14 +537,21 @@ def delete_video(video_id: str, session: Session = Depends(db)) -> dict:
         raise HTTPException(409, "delete the runs that use this video first")
     cancel_ingest(video_id)
     checksum = video.checksum_sha256
-    for stored in (video.stored_path, video.proxy_path, video.thumbnail_path, video.contact_sheet_path):
-        if not stored or is_external(stored):
+    stored_paths = [video.stored_path, video.proxy_path, video.thumbnail_path, video.contact_sheet_path]
+    session.delete(video)
+    session.commit()
+    # The same file uploaded twice shares its original and proxy, named by checksum. Keep any another video still uses.
+    for stored in {path for path in stored_paths if path and not is_external(path)}:
+        remaining = session.scalar(
+            select(func.count()).select_from(VideoAsset).where(
+                or_(VideoAsset.stored_path == stored, VideoAsset.proxy_path == stored)
+            )
+        ) or 0
+        if remaining:
             continue
         path = resolve_stored(stored)
         if path.exists() and path.is_file():
             path.unlink()
-    session.delete(video)
-    session.commit()
     _remove_tree("frames", video_id)
     _drop_pts_if_unused(session, checksum)
     return {"deleted": video_id}
