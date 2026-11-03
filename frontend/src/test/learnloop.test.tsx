@@ -430,19 +430,21 @@ describe("Procedure review", () => {
   it("shows an object's full frame with only its own box", async () => {
     const tracked = template("accepted");
     tracked.document.roles = [{ ...roles[0], source_object_ids: ["o1"] as never[] }, { ...roles[1], source_object_ids: ["o2"] as never[] }];
-    const cells = [{ time: 2, url: "/f2" }];
+    const cells = [{ time: 1, frame_time: 1.375, url: "/f1" }, { time: 2, frame_time: 1.875, url: "/f2" }];
     mockApi((url) => {
       if (url.endsWith("/procedures/p1")) return { body: { ...procedure(), template: tracked, templates: [tracked] } };
       if (url.endsWith("/objects")) {
         return { body: { objects: {
-          o1: { thumbnail_url: null, seen_cells: 1, cells, track: [{ time: 1.875, x: 0.1, y: 0.2, w: 0.3, h: 0.4 }] },
+          o1: { thumbnail_url: null, seen_cells: 2, cells, track: [{ time: 1.375, x: 0.6, y: 0.6, w: 0.1, h: 0.1 }, { time: 1.875, x: 0.1, y: 0.2, w: 0.3, h: 0.4 }] },
           o2: { thumbnail_url: null, seen_cells: 1, cells: [{ time: 2, url: "/g2" }], track: [{ time: 2, x: 0.5, y: 0.5, w: 0.1, h: 0.1 }] },
         } } };
       }
       return undefined;
     });
     show("/procedures/p1/procedure");
-    fireEvent.click((await screen.findAllByRole("button", { name: "Expand frame at 0:02.0" }))[0]);
+    // Each cell is labeled with the time its frame came from, not the second it stands for.
+    expect(await screen.findByRole("button", { name: "Expand frame at 0:01.4" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Expand frame at 0:01.9" }));
     const dialog = screen.getByRole("dialog");
     expect(dialog.querySelector(".asset-preview-box")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Full image" }));

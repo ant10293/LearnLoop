@@ -42,6 +42,9 @@ from app.video.probe import probe
 log = logging.getLogger("learnloop.object_views")
 
 SAM_FPS = 8.0
+# Seconds between timeline cells. A shown frame sits within half an interval of where an even spacing would put it.
+_CELL_INTERVAL = 1.0
+_CELL_SPREAD = 0.5
 _DEFAULT_SAM = "sam-3.1"
 _LONG_SIDE = 1080
 _CROP_SIDE = 160
@@ -293,26 +296,29 @@ def _assign(records: list[SamRecord], seeds: list[Seed]) -> dict[str, list[Sight
 def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float) -> dict:
     directory = views_dir(run_id)
     times = _cell_times(last_frame)
+    picks = {local_id: _picks(sightings, times) for local_id, sightings in tracked.items()}
     wanted = set()
-    for sightings in tracked.values():
+    for local_id, sightings in tracked.items():
         wanted.add(_first(sightings).record.frame_index)
-        wanted.update(item.record.frame_index for item in (_nearest(sightings, moment) for moment in times) if item)
+        wanted.update(item.record.frame_index for item in picks[local_id] if item)
     frames = _read_frames(media, wanted)
     objects = {}
     for position, item in enumerate(document.objects):
         sightings = tracked.get(item.local_id, [])
+        chosen = picks.get(item.local_id) or [None] * len(times)
         cells = []
-        for index, moment in enumerate(times):
-            sighting = _nearest(sightings, moment)
+        for index, (moment, sighting) in enumerate(zip(times, chosen)):
             image = None
             confidence = None
+            frame_time = None
             if sighting is not None:
                 name = f"o{position}_c{index}.jpg"
                 frame = frames.get(sighting.record.frame_index)
                 if frame is not None and cv2.imwrite(str(directory / name), _crop(frame, sighting.box)):
                     image = name
                     confidence = sighting.record.confidence
-            cells.append({"time": round(moment, 3), "image": image, "confidence": confidence})
+                    frame_time = round(sighting.timestamp, 3)
+            cells.append({"time": round(moment, 3), "frame_time": frame_time, "image": image, "confidence": confidence})
         objects[item.local_id] = {
             "thumbnail": _thumbnail(directory, position, sightings, frames),
             "cells": cells,
@@ -327,14 +333,39 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
 
 
 def _cell_times(last_frame: float) -> list[float]:
-    """Every whole second, then the last frame. A second within one sample of the last frame would show the same image."""
-    return [float(second) for second in range(math.ceil(last_frame - 1 / SAM_FPS))] + [last_frame]
+    """Every interval, then the last frame. A mark within one sample of the last frame would show the same image."""
+    return [step * _CELL_INTERVAL for step in range(math.ceil((last_frame - 1 / SAM_FPS) / _CELL_INTERVAL))] + [last_frame]
 
 
 def _last_frame_time(video: VideoAsset) -> float:
     """The container's duration runs one frame past the start of the last frame."""
     duration = float(video.duration_sec or 0)
     return max(duration - 1 / video.fps, 0.0) if video.fps else duration
+
+
+def _picks(sightings: list[Sighting], times: list[float]) -> list[Sighting | None]:
+    """The most confident sighting in each cell's interval, one interval, give or take _CELL_SPREAD of one, after the frame
+    shown before it. The last cell is one moment, so it takes the nearest sighting that keeps that spacing."""
+    picks: list[Sighting | None] = []
+    previous: float | None = None
+    for index, moment in enumerate(times):
+        allowed = [item for item in sightings if _spaced(item.timestamp, previous)]
+        if index == len(times) - 1:
+            pick = _nearest(allowed, moment)
+        else:
+            within = [item for item in allowed if moment <= item.timestamp < times[index + 1]]
+            pick = max(within, key=lambda item: (item.record.confidence or 0, -item.timestamp), default=None)
+        picks.append(pick)
+        # An empty cell breaks the chain, so the next one is held only to its own interval.
+        previous = pick.timestamp if pick else None
+    return picks
+
+
+def _spaced(timestamp: float, previous: float | None) -> bool:
+    if previous is None:
+        return True
+    gap = timestamp - previous
+    return (1 - _CELL_SPREAD) * _CELL_INTERVAL - 1e-9 <= gap <= (1 + _CELL_SPREAD) * _CELL_INTERVAL + 1e-9
 
 
 def _nearest(sightings: list[Sighting], moment: float) -> Sighting | None:

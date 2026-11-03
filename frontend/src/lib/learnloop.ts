@@ -235,7 +235,7 @@ export interface ModelChoices {
 
 export interface ObjectView {
   thumbnail_url: string | null;
-  cells: { time: number; url: string | null; confidence?: number | null }[];
+  cells: { time: number; frame_time?: number | null; url: string | null; confidence?: number | null }[];
   seen_cells: number;
   track?: TrackBox[];
 }

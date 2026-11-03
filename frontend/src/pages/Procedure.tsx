@@ -236,16 +236,17 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
 function ObjectTimeline({ view, label, videoId, onSeek }: { view: ObjectView; label: string; videoId: string; onSeek: (time: number) => void }) {
   const [preview, setPreview] = useState<number | null>(null);
   if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
+  // The crop came from the most confident sighting in its second, so the cell is labeled, seeks, and shows its full frame at that sighting's own time.
+  const shown = (cell: ObjectView["cells"][number]) => cell.frame_time ?? cell.time;
   const frames = view.cells.flatMap((cell) => {
     if (!cell.url) return [];
-    // The crop came from the sighting nearest this moment, so the full frame is taken at that sighting's own time.
-    const box = boxAt(view.track ?? [], cell.time);
-    return [{ time: cell.time, src: cell.url, filename: `${label} · ${clock(cell.time)}`, confidence: cell.confidence, full: box ? { src: frameUrl(videoId, box.time), box } : undefined }];
+    const box = boxAt(view.track ?? [], shown(cell));
+    return [{ time: shown(cell), src: cell.url, filename: `${label} · ${clock(shown(cell))}`, confidence: cell.confidence, full: box ? { src: frameUrl(videoId, box.time), box } : undefined }];
   });
   return (
     <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
       {view.cells.map((cell) => {
-        const stamp = clock(cell.time);
+        const stamp = clock(shown(cell));
         return (
           <div key={cell.time} role="listitem" className="object-cell" aria-label={cell.url ? `Frame at ${stamp}` : `Not found at ${stamp}`}>
             {cell.url ? (
@@ -255,8 +256,8 @@ function ObjectTimeline({ view, label, videoId, onSeek }: { view: ObjectView; la
                 title={stamp}
                 aria-label={`Expand frame at ${stamp}`}
                 onClick={() => {
-                  onSeek(cell.time);
-                  setPreview(frames.findIndex((frame) => frame.time === cell.time));
+                  onSeek(shown(cell));
+                  setPreview(frames.findIndex((frame) => frame.src === cell.url));
                 }}
               >
                 <img src={cell.url} alt="" loading="lazy" />

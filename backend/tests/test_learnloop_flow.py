@@ -638,6 +638,24 @@ def test_the_thumbnail_is_the_first_view_not_the_largest():
     assert object_views._first([sighting(2, 0.5, 0), sighting(1, 0.1, 0)]).timestamp == 1
 
 
+def test_each_second_shows_its_most_confident_sighting():
+    from app.pipeline import object_views
+    from app.providers.sam import SamRecord
+
+    def sighting(time, confidence):
+        record = SamRecord(int(time * 8), "0", 0, 0, 1, 1, 100, 100, confidence, "", "", 0, 0, "")
+        return object_views.Sighting(time, {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}, record)
+
+    times = [0.0, 1.0, 2.0, 3.0, 3.93]
+    sightings = [sighting(1.0, 0.5), sighting(1.5, 0.95), sighting(1.875, 0.7), sighting(2.0, 0.99), sighting(2.25, 0.6), sighting(3.625, 0.8), sighting(3.875, 0.9)]
+    picks = [item.timestamp if item else None for item in object_views._picks(sightings, times)]
+    # 3.625 is more than one and a half seconds after 2.0, so that cell is empty and the last frame starts afresh.
+    assert picks == [None, 1.5, 2.0, None, 3.875]
+    # 2.0 is the most confident in its second but only an eighth of a second after 1.875.
+    close = [sighting(1.875, 0.9), sighting(2.0, 0.99), sighting(2.5, 0.5)]
+    assert [item.timestamp if item else None for item in object_views._picks(close, [0.0, 1.0, 2.0, 2.93])] == [None, 1.875, 2.5, None]
+
+
 def test_the_timeline_shows_each_second_then_the_end():
     from app.pipeline.object_views import _cell_times
 
