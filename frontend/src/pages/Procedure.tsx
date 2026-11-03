@@ -3,7 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { AssetPreview } from "../components/AssetPreview";
-import { AnalysisStages } from "../components/RecordingAnalysis";
+import { AnalysisStages, ObjectViewsNotice } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
 import { api, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
@@ -46,6 +46,7 @@ export function ProcedurePage() {
     queryKey: ["object-views", template?.source_run_id],
     queryFn: () => api.objectViews(template?.source_run_id ?? ""),
     enabled: Boolean(template?.source_run_id),
+    refetchInterval: (query) => (query.state.data?.running ? 1000 : false),
   });
   useEffect(() => {
     setSteps({});
@@ -165,21 +166,25 @@ export function ProcedurePage() {
                 <TeachingStatus recording={latest} procedureId={id} />
               </div>
             )}
+            {template.source_run_id && (
+              <ObjectViewsNotice runId={template.source_run_id} views={views.data} onStarted={() => void client.invalidateQueries({ queryKey: ["object-views", template.source_run_id] })} />
+            )}
             {required.length === 0 && <p className="warning">Mark at least one step as required before accepting.</p>}
           </>
         }
         film={<Film src={demo?.video.playback_url ?? ""} time={seek.time} seek={seek.tick} label="Demonstration" caption={template.document.summary} tracks={roles.flatMap((role) => {
-          const track = views.data?.objects[role.source_object_ids[0]]?.track;
+          const track = views.data?.running ? undefined : views.data?.objects[role.source_object_ids[0]]?.track;
           return track?.length ? [{ label: labels[role.role_id] ?? role.label, track }] : [];
         })} />}
         history={history}
         objects={roles.map((role) => {
-          const view = views.data?.objects[role.source_object_ids[0]];
+          const remaking = Boolean(views.data?.running);
+          const view = remaking ? undefined : views.data?.objects[role.source_object_ids[0]];
           return (
             <div key={role.role_id} className="object">
               <div className="object-head">
                 <span className="object-thumb-wrap">
-                  {view?.thumbnail_url ? <img className="object-thumb" src={view.thumbnail_url} alt={role.label} /> : <span className="object-thumb empty" aria-hidden="true" />}
+                  {remaking ? <Bone className="object-thumb" /> : view?.thumbnail_url ? <img className="object-thumb" src={view.thumbnail_url} alt={role.label} /> : <span className="object-thumb empty" aria-hidden="true" />}
                   {view && view.seen_cells > 0 && (
                     <span className="object-count" title={`Seen in ${view.seen_cells} timeline ${view.seen_cells === 1 ? "frame" : "frames"}`}>
                       {view.seen_cells}
@@ -188,6 +193,7 @@ export function ProcedurePage() {
                 </span>
                 <input className="field" aria-label={`Label for ${role.label}`} value={labels[role.role_id] ?? role.label} onChange={(event) => setLabels((current) => ({ ...current, [role.role_id]: event.target.value }))} />
               </div>
+              {remaking && <Bone width="100%" />}
               {view && <ObjectTimeline view={view} label={role.label} videoId={template.source_video_id} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
               {role.original_label && <span className="edited">Human-corrected from “{role.original_label}”</span>}
             </div>

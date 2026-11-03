@@ -362,6 +362,34 @@ describe("Teach", () => {
 });
 
 describe("Procedure review", () => {
+  it("makes object views again only after the person approves the requests", async () => {
+    const state = { running: false };
+    const plan = { model_id: "muse-wonder-1.0", segmentation_model_id: "sam-3.1", video_seconds: 10, object_view_locate_requests: 2, object_view_requests: 2, object_view_frames: 81, live_enabled: true };
+    const calls = mockApi((url, init) => {
+      if (url.endsWith("/procedures/p1")) return { body: procedure() };
+      if (url.endsWith("/objects/run")) {
+        const approved = JSON.parse(String(init?.body)).allow_live;
+        if (!approved) return { status: 409, body: { detail: { code: "live_call_required", plan } } };
+        state.running = true;
+        return { body: { objects: {}, error: "", running: true, progress: 0, can_remake: true } };
+      }
+      if (url.endsWith("/objects")) return { body: { objects: {}, error: "No stored SAM answer matches, and a live call was not approved.", running: state.running, progress: state.running ? 2 : 0, can_remake: true } };
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    expect(await screen.findByText(/Object views were not made: No stored SAM answer matches/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Run object views" }));
+    const dialog = await screen.findByRole("dialog", { name: "Approve object view requests" });
+    expect(dialog).toHaveTextContent("At most 4: up to 2");
+    expect(calls.filter((call) => call.url.endsWith("/objects/run")).map((call) => JSON.parse(String(call.init?.body)).allow_live)).toEqual([false]);
+    fireEvent.click(screen.getByRole("button", { name: "Send requests" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Making object views");
+    const progress = await screen.findByRole("list", { name: "Object view progress" });
+    await waitFor(() => expect(progress.querySelector("li.running")).toHaveTextContent("Follow each object"));
+    expect(progress.querySelectorAll("li.completed")).toHaveLength(2);
+    expect(calls.filter((call) => call.url.endsWith("/objects/run")).map((call) => JSON.parse(String(call.init?.body)).allow_live)).toEqual([false, true]);
+  });
+
   it("shows the draft state, condition, and origin, and sends edits as one revision", async () => {
     const calls = mockApi((url, init) => {
       if (url.includes("/workflow-templates/") && init?.method === "PATCH") return { body: template("accepted") };

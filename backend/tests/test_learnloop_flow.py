@@ -214,7 +214,7 @@ def _run_job(run_id):
 
     session = SessionLocal()
     try:
-        job = session.scalar(select(Job).where(Job.run_id == run_id))
+        job = session.scalar(select(Job).where(Job.run_id == run_id, Job.status == "pending").order_by(Job.created_at))
         job.status, job.attempt = "running", job.attempt + 1
         session.commit()
         asyncio.run(execute_job(session, job))
@@ -802,6 +802,61 @@ def test_sam_failure_keeps_the_analysis(lab, monkeypatch):
     views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
     assert "SAM is down" in views["error"]
     assert all(not item["seen_cells"] for item in views["objects"].values())
+
+
+def test_object_views_can_be_made_again_with_approval_and_leave_the_analysis_alone(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    calls = []
+    state = {"down": True}
+
+    class FlakySam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            calls.append(kwargs["propagation_direction"])
+            if state["down"]:
+                raise RuntimeError("SAM is down")
+            text = "\n".join(_sam_line(frame, [(0, 10)]) for frame in range(4))
+            return SimpleNamespace(text=text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FlakySam)
+    first = json.loads(stub.text)["objects"][0]["local_id"]
+    stub.locate_text = json.dumps({"objects": [{"local_id": first, "bbox": {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}}]})
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Again"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    assert "SAM is down" in views["error"] and views["can_remake"] and not views["running"]
+
+    # Nothing is queued until the person approves the live calls.
+    asked = client.post(f"/api/learnloop/runs/{run['id']}/objects/run", json={})
+    assert asked.status_code == 409 and asked.json()["detail"]["code"] == "live_call_required"
+    assert asked.json()["detail"]["plan"]["object_view_requests"] == 2
+    state["down"] = False
+    queued = client.post(f"/api/learnloop/runs/{run['id']}/objects/run", json={"allow_live": True})
+    assert queued.status_code == 200 and queued.json()["running"] and queued.json()["progress"] == 0
+    assert client.post(f"/api/learnloop/runs/{run['id']}/objects/run", json={"allow_live": True}).status_code == 409
+    analysis_calls = [request.schema_name for request in stub.calls].count("learnloop_guided_task")
+    _run_job(run["id"])
+
+    views = client.get(f"/api/learnloop/runs/{run['id']}/objects").json()
+    assert not views["running"] and views["error"] == "" and views["objects"][first]["seen_cells"]
+    assert calls == ["both", "both"]
+    assert [request.schema_name for request in stub.calls].count("learnloop_guided_task") == analysis_calls
+    after = client.get(f"/api/learnloop/runs/{run['id']}").json()
+    assert after["status"] == "completed" and after["stages"]["segmentation"] == "completed"
+
+
+def test_object_views_are_not_made_again_for_an_attempt(lab):
+    client, stub, tmp = lab
+    procedure, template = _accepted(lab)
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "blue.mp4", "blue"), "execution"))
+    assert not client.get(f"/api/learnloop/runs/{run['id']}/objects").json()["can_remake"]
+    assert client.post(f"/api/learnloop/runs/{run['id']}/objects/run", json={"allow_live": True}).status_code == 400
 
 
 def test_models_come_from_the_account_and_segmentation_is_optional(lab, monkeypatch):

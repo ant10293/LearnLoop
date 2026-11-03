@@ -112,12 +112,14 @@ def read_manifest(run_id: str) -> dict | None:
         return None
 
 
-async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage) -> dict:
+async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, allow_live: bool | None = None) -> dict:
+    """allow_live, when given, replaces the run's own approval. A person approves it again to make views for a finished run."""
     from app.pipeline.infer import load_working
     from app.services.credentials import load_secret
 
     document = load_working(run.id)
-    allow_live = bool((run.config_json or {}).get("allow_live")) and settings.live_inference
+    approved = (run.config_json or {}).get("allow_live") if allow_live is None else allow_live
+    allow_live = bool(approved) and settings.live_inference
     model_id = (run.config_json or {}).get("segmentation_model_id") or _DEFAULT_SAM
     secret, _source = load_secret(session, "meta")
     directory = views_dir(run.id)

@@ -234,6 +234,28 @@ export interface ModelChoices {
   default_segmentation: string;
 }
 
+export interface ObjectViews {
+  objects: Record<string, ObjectView>;
+  error?: string;
+  /** A job is making them again. */
+  running?: boolean;
+  /** While running: 0 first-frame boxes, 1 later boxes, 2 SAM, 3 the pictures. */
+  progress?: number;
+  /** The analysis finished and makes object views, so they can be made again. */
+  can_remake?: boolean;
+}
+
+/** What making object views again could send. Stored answers are replayed. */
+export interface ObjectViewsPlan {
+  model_id: string;
+  segmentation_model_id: string;
+  video_seconds: number;
+  object_view_locate_requests: number;
+  object_view_requests: number;
+  object_view_frames: number;
+  live_enabled: boolean;
+}
+
 export interface ObjectView {
   thumbnail_url: string | null;
   cells: { time: number; frame_time?: number | null; url: string | null; confidence?: number | null }[];
@@ -341,7 +363,8 @@ export const api = {
     post<Run>(`/api/learnloop/recordings/${videoId}/analyze`, { allow_live: allowLive, ...models }),
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),
-  objectViews: (runId: string) => request<{ objects: Record<string, ObjectView> }>(`/api/learnloop/runs/${runId}/objects`),
+  objectViews: (runId: string) => request<ObjectViews>(`/api/learnloop/runs/${runId}/objects`),
+  remakeObjectViews: (runId: string, allowLive: boolean) => post<ObjectViews>(`/api/learnloop/runs/${runId}/objects/run`, { allow_live: allowLive }),
   learn: (id: string, runId: string) => post<Template>(`/api/learnloop/procedures/${id}/learn`, { run_id: runId }),
   revise: (templateId: string, patch: TemplatePatch) => request<Template>(`/api/workflow-templates/${templateId}`, { method: "PATCH", body: JSON.stringify(patch) }),
   removeTemplate: (templateId: string) => request<{ deleted: string }>(`/api/learnloop/templates/${templateId}`, { method: "DELETE" }),

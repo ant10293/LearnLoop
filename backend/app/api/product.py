@@ -15,7 +15,7 @@ from app.config import settings
 from app.db import get_session
 from app.models.media import Project, VideoAsset
 from app.models.product import ProcedureRecording
-from app.models.runs import AnalysisRun, ModelRequestRow, PipelineStageRun
+from app.models.runs import AnalysisRun, Job, ModelRequestRow, PipelineStageRun
 from app.models.util import new_id
 from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
 from app.pipeline import guided, object_views
@@ -49,6 +49,11 @@ class AnalyzeBody(BaseModel):
     model_id: str = ""
     # None uses the default segmentation model. Empty means no segmentation.
     segmentation_model_id: str | None = None
+
+
+class ObjectViewsBody(BaseModel):
+    # False means: say what the live calls would involve.
+    allow_live: bool = False
 
 
 class LearnBody(BaseModel):
@@ -254,9 +259,15 @@ def get_run(run_id: str, session: Session = Depends(db)) -> dict:
 
 
 @router.get("/runs/{run_id}/objects")
-def run_objects(run_id: str) -> dict:
+def run_objects(run_id: str, session: Session = Depends(db)) -> dict:
     """Thumbnails and timelines, keyed by the analysis's object id. Empty until they exist."""
     manifest = object_views.read_manifest(run_id) or {"objects": {}}
+    run = session.get(AnalysisRun, run_id)
+    manifest["running"] = _remaking_views(session, run_id)
+    # Which part of making them is under way: 0 first-frame boxes, 1 later boxes, 2 SAM, 3 the pictures.
+    stage = session.scalar(select(PipelineStageRun).where(PipelineStageRun.run_id == run_id, PipelineStageRun.stage == "segmentation"))
+    manifest["progress"] = stage.progress_current if manifest["running"] and stage and stage.status == "running" else 0
+    manifest["can_remake"] = bool(run and _makes_views(run) and run.status == "completed")
     base = f"/api/learnloop/runs/{run_id}/objects"
     for item in manifest["objects"].values():
         item["thumbnail_url"] = f"{base}/{item['thumbnail']}" if item.get("thumbnail") else None
@@ -265,6 +276,51 @@ def run_objects(run_id: str) -> dict:
             for cell in item["cells"]
         ]
     return manifest
+
+
+@router.post("/runs/{run_id}/objects/run")
+def remake_object_views(run_id: str, payload: ObjectViewsBody, session: Session = Depends(db)) -> dict:
+    """Make object views again for a finished analysis, as one queued job. Live calls need the person's approval."""
+    from app.pipeline.runner import OBJECT_VIEWS_JOB
+
+    run = session.get(AnalysisRun, run_id)
+    if run is None:
+        raise HTTPException(404, "analysis not found")
+    if not _makes_views(run):
+        raise HTTPException(400, "This analysis does not make object views.")
+    if run.status != "completed":
+        raise HTTPException(409, "Object views can be made again once the analysis has finished.")
+    if _remaking_views(session, run_id):
+        raise HTTPException(409, "Object views are already being made for this analysis.")
+    video = session.get(VideoAsset, run.video_id)
+    config = run.config_json or {}
+    plan = {
+        "model_id": run.model_id,
+        "segmentation_model_id": config.get("segmentation_model_id") or "",
+        "video_seconds": float(video.duration_sec or 0) if video else 0.0,
+        # Stored answers are replayed. These are the most that could be sent.
+        "object_view_locate_requests": 2,
+        "object_view_requests": 2,
+        "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)) if video else 0,
+        "live_enabled": settings.live_inference,
+    }
+    if not (payload.allow_live and settings.live_inference):
+        raise HTTPException(409, {"code": "live_call_required", "plan": plan})
+    session.add(Job(run_id=run.id, from_stage=OBJECT_VIEWS_JOB, max_attempts=1))
+    session.commit()
+    return run_objects(run_id, session)
+
+
+def _makes_views(run: AnalysisRun) -> bool:
+    return guided.is_guided(run) and bool((run.config_json or {}).get("object_views"))
+
+
+def _remaking_views(session: Session, run_id: str) -> bool:
+    from app.pipeline.runner import OBJECT_VIEWS_JOB
+
+    return session.scalar(
+        select(Job.id).where(Job.run_id == run_id, Job.from_stage == OBJECT_VIEWS_JOB, Job.status.in_(["pending", "running"]))
+    ) is not None
 
 
 @router.get("/runs/{run_id}/objects/{name}")

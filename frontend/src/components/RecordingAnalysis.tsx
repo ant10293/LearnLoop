@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
-import { ApiError, api, humanizeModel, type CallPlan, type ModelOption, type Recording, type Run } from "../lib/learnloop";
+import { ApiError, api, humanizeModel, type CallPlan, type ModelOption, type ObjectViews, type ObjectViewsPlan, type Recording, type Run } from "../lib/learnloop";
 import { FieldBone } from "./Skeleton";
 import { ErrorNote } from "./ui";
 
@@ -131,6 +131,76 @@ function ModelSelect({ label, options, value, onChange, none }: { label: string;
       {none && <option value="">{none}</option>}
       {options.map((item) => <option key={item.model_id} value={item.model_id}>{item.label || humanizeModel(item.model_id)}</option>)}
     </select>
+  );
+}
+
+const VIEW_STAGES = ["Find the objects on the first frame", "Find objects that appear later", "Follow each object", "Make thumbnails and timelines"];
+
+/** Object views that were not made, or are being made again. Making them again asks first, like an analysis. */
+export function ObjectViewsNotice({ runId, views, onStarted }: { runId: string; views?: ObjectViews; onStarted: () => void }) {
+  const [plan, setPlan] = useState<ObjectViewsPlan | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!views) return null;
+  if (views.running) {
+    const current = views.progress ?? 0;
+    return (
+      <div className="panel views-notice" role="status">
+        <h2>Making object views</h2>
+        <ol className="stages" aria-label="Object view progress">
+          {VIEW_STAGES.map((label, index) => (
+            <li key={label} className={index < current ? "completed" : index === current ? "running" : "pending"}>{label}</li>
+          ))}
+        </ol>
+      </div>
+    );
+  }
+  if (!views.can_remake || !(views.error || Object.keys(views.objects).length === 0)) return null;
+
+  async function start(allowLive: boolean) {
+    setError("");
+    setBusy(true);
+    try {
+      await api.remakeObjectViews(runId, allowLive);
+      setPlan(null);
+      onStarted();
+    } catch (exc) {
+      const detail = exc instanceof ApiError ? (exc.detail as { code?: string; plan?: ObjectViewsPlan }) : undefined;
+      if (detail?.code === "live_call_required" && detail.plan) setPlan(detail.plan);
+      else setError((exc as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="panel views-notice">
+      <p className="small">Object views were not made{views.error ? `: ${views.error}` : "."}</p>
+      <button className="btn" disabled={busy} onClick={() => void start(false)}>Run object views</button>
+      <ErrorNote message={error} />
+      {plan && (
+        <div className="plan" role="dialog" aria-label="Approve object view requests">
+          <h3>This may need Meta requests</h3>
+          <p>Stored answers are replayed. Only the requests without one are sent. The analysis is not run again.</p>
+          <dl>
+            <dt>Recording</dt><dd>{plan.video_seconds.toFixed(1)} seconds</dd>
+            <dt>Requests</dt><dd>{`At most ${plan.object_view_locate_requests + plan.object_view_requests}: up to ${plan.object_view_locate_requests} ${humanizeModel(plan.model_id)} requests to find the objects, and up to ${plan.object_view_requests} ${humanizeModel(plan.segmentation_model_id)} requests to follow them. No automatic retry.`}</dd>
+            <dt>Billed frames</dt><dd>About {plan.object_view_frames.toLocaleString()} for the first {humanizeModel(plan.segmentation_model_id)} request, and fewer for a second, which covers only the rest of the recording after an object first found later.</dd>
+          </dl>
+          {plan.live_enabled ? (
+            <div className="row">
+              <button className="btn primary" disabled={busy} onClick={() => void start(true)}>Send requests</button>
+              <button className="btn" onClick={() => setPlan(null)}>Cancel</button>
+            </div>
+          ) : (
+            <>
+              <p className="muted">Live calls are off on this server. Set <code>LEARNLOOP_LIVE_INFERENCE=1</code> and restart to allow them. Nothing was sent.</p>
+              <button className="btn" onClick={() => setPlan(null)}>Close</button>
+            </>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

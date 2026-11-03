@@ -70,6 +70,9 @@ async def execute_job(session: Session, job: Job) -> None:
     if video is None:
         _fail_job(session, job, run, "video missing")
         return
+    if job.from_stage == OBJECT_VIEWS_JOB:
+        await _remake_object_views(session, job, run, video)
+        return
     run.status = "running"
     run.started_at = run.started_at or utcnow()
     run.error = ""
@@ -199,6 +202,34 @@ def _stage(session, run_id: str, name: str) -> PipelineStageRun:
         session.add(stage)
         session.flush()
     return stage
+
+
+# Not a pipeline stage: a job that only makes object views again for a finished run.
+OBJECT_VIEWS_JOB = "object_views"
+
+
+async def _remake_object_views(session, job: Job, run: AnalysisRun, video: VideoAsset) -> None:
+    """Live calls were approved for this job. The analysis, its revision, and the run's status are left alone."""
+    from app.pipeline.object_views import run_object_views
+
+    stage = _stage(session, run.id, "segmentation")
+    stage.status = "running"
+    stage.attempt += 1
+    stage.started_at = utcnow()
+    stage.error = ""
+    session.commit()
+    try:
+        stage.checkpoint_json = await run_object_views(session, run, video, stage, allow_live=True)
+        stage.status = "completed"
+    except Exception as exc:
+        session.rollback()
+        stage = _stage(session, run.id, "segmentation")
+        stage.status = "skipped"
+        stage.checkpoint_json = {"reason": f"Object views were not made: {_error_text(exc, 400)}"}
+    stage.finished_at = utcnow()
+    job.status = "completed"
+    job.finished_at = utcnow()
+    session.commit()
 
 
 async def _object_views(session, run, video, stage) -> None:
