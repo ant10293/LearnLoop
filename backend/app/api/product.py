@@ -117,6 +117,29 @@ def get_procedure(project_id: str, session: Session = Depends(db)) -> dict:
     }
 
 
+@router.patch("/procedures/{project_id}")
+def rename_procedure(project_id: str, payload: ProcedureBody, session: Session = Depends(db)) -> dict:
+    project = _project(session, project_id)
+    name = payload.name.strip()
+    if not name:
+        raise HTTPException(400, "Name the procedure.")
+    project.name = name[:200]
+    session.commit()
+    return _summary(session, project)
+
+
+@router.delete("/procedures/{project_id}")
+def delete_procedure(project_id: str, session: Session = Depends(db)) -> dict:
+    """Remove a procedure with its recordings, learned versions, analyses, and reports."""
+    from app.api.routes import delete_project
+
+    project = _project(session, project_id)
+    if not _is_procedure(session, project):
+        raise HTTPException(404, "procedure not found")
+    store.delete_procedure_records(session, project_id)
+    return delete_project(project_id, session)
+
+
 @router.post("/procedures/{project_id}/recordings")
 async def upload_recording(
     project_id: str,

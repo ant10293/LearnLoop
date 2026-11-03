@@ -894,3 +894,27 @@ def _analyze_with(client, video_id, **models):
     assert response.status_code == 200, response.text
     _run_job(response.json()["id"])
     return client.get(f"/api/learnloop/runs/{response.json()['id']}").json()
+
+
+def test_procedure_can_be_renamed(lab):
+    client = lab[0]
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    assert client.patch(f"/api/learnloop/procedures/{procedure}", json={"name": "  "}).status_code == 400
+    renamed = client.patch(f"/api/learnloop/procedures/{procedure}", json={"name": " Cube assembly "})
+    assert renamed.status_code == 200 and renamed.json()["name"] == "Cube assembly"
+    assert client.get(f"/api/learnloop/procedures/{procedure}").json()["name"] == "Cube assembly"
+
+
+def test_deleting_a_procedure_removes_its_recordings_versions_and_reports(lab):
+    procedure, template = _accepted(lab)
+    report = _check(lab, procedure, template, CORRECT, "blue")
+    client = lab[0]
+    detail = client.get(f"/api/learnloop/procedures/{procedure}").json()
+    videos = [item["video"]["id"] for item in detail["recordings"]]
+    assert client.delete(f"/api/learnloop/procedures/{procedure}").json() == {"deleted": procedure}
+    assert client.get(f"/api/learnloop/procedures/{procedure}").status_code == 404
+    assert procedure not in [item["id"] for item in client.get("/api/learnloop/procedures").json()]
+    assert client.get(f"/api/verifications/{report['id']}/export").status_code == 404
+    for video in videos:
+        assert client.get(f"/api/learnloop/recordings/{video}").status_code == 404
+    assert client.delete(f"/api/learnloop/procedures/{procedure}").status_code == 404

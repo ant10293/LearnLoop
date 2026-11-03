@@ -10,7 +10,7 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.models.media import Project, VideoAsset
-from app.models.product import HumanObservation
+from app.models.product import HumanObservation, ProcedureRecording
 from app.models.runs import AnalysisRevision, AnalysisRun
 from app.models.util import utcnow
 from app.models.verification import (
@@ -91,21 +91,35 @@ def delete_template_family(session: Session, template_id: str) -> LearnedWorkflo
     reports = list(
         session.scalars(select(VerificationRunRow.id).where(VerificationRunRow.template_id.in_([row.id for row in family])))
     )
-    if reports:
-        for model in (
-            StepVerification,
-            VerificationEvidence,
-            VerificationRoleMapping,
-            VerificationReinspection,
-            VerificationGroundTruth,
-            HumanObservation,
-        ):
-            session.execute(delete(model).where(model.verification_id.in_(reports)))
-        session.execute(delete(VerificationRunRow).where(VerificationRunRow.id.in_(reports)))
+    _delete_reports(session, reports)
     for row in family:
         session.delete(row)
     session.commit()
     return current
+
+
+def delete_procedure_records(session: Session, project_id: str) -> None:
+    """Remove a procedure's learned versions, reports, and recording links. Its videos and runs are left to the caller."""
+    _project(session, project_id)
+    _delete_reports(session, list(session.scalars(select(VerificationRunRow.id).where(VerificationRunRow.project_id == project_id))))
+    session.execute(delete(LearnedWorkflowTemplate).where(LearnedWorkflowTemplate.project_id == project_id))
+    session.execute(delete(ProcedureRecording).where(ProcedureRecording.project_id == project_id))
+    session.commit()
+
+
+def _delete_reports(session: Session, reports: list[str]) -> None:
+    if not reports:
+        return
+    for model in (
+        StepVerification,
+        VerificationEvidence,
+        VerificationRoleMapping,
+        VerificationReinspection,
+        VerificationGroundTruth,
+        HumanObservation,
+    ):
+        session.execute(delete(model).where(model.verification_id.in_(reports)))
+    session.execute(delete(VerificationRunRow).where(VerificationRunRow.id.in_(reports)))
 
 
 CONTENT_FIELDS = ("name", "expected_action", "completion_text", "removed", "completion_conditions", "required")

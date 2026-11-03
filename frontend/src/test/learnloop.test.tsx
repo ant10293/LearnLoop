@@ -100,6 +100,37 @@ describe("Projects", () => {
     expect(humanizeModel("muse-wonder-1.0")).toBe("Muse Wonder 1.0");
   });
 
+  it("renames a procedure in a dialog and deletes it from the card menu", async () => {
+    let name = "Cubes";
+    let deleted = false;
+    const calls = mockApi((url, init) => {
+      if (url === "/api/learnloop/procedures/p1" && init?.method === "PATCH") {
+        name = JSON.parse(String(init.body)).name;
+        return { body: { ...summary, name } };
+      }
+      if (url === "/api/learnloop/procedures/p1" && init?.method === "DELETE") {
+        deleted = true;
+        return { body: { deleted: "p1" } };
+      }
+      if (url === "/api/learnloop/procedures") return { body: deleted ? [] : [{ ...summary, name }] };
+      return undefined;
+    });
+    vi.stubGlobal("confirm", () => true);
+    show("/");
+    fireEvent.click(await screen.findByRole("button", { name: "Options for Cubes" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Rename" }));
+    const dialog = screen.getByRole("dialog", { name: "Rename procedure" });
+    expect(screen.queryByRole("menu")).toBeNull();
+    fireEvent.change(screen.getByLabelText("Procedure name"), { target: { value: "Cube tower" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    expect(await screen.findByText("Cube tower")).toBeTruthy();
+    await waitFor(() => expect(dialog.isConnected).toBe(false));
+    fireEvent.click(screen.getByRole("button", { name: "Options for Cube tower" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Delete" }));
+    expect(await screen.findByText(/No procedures yet/)).toBeTruthy();
+    expect(calls.filter((call) => call.init?.method).map((call) => call.init?.method)).toEqual(["PATCH", "DELETE"]);
+  });
+
   it("reports a failed load instead of spinning", async () => {
     mockApi(() => ({ status: 500, body: { detail: "The database is unavailable." } }));
     show("/");
