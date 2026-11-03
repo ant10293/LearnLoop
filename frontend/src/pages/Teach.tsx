@@ -59,7 +59,13 @@ export function TeachPage() {
             <li>Finished result visible at the end of the recording</li>
           </ul>
           <p className="muted small">Moving or head-mounted cameras and small parts are not supported in this version.</p>
-          {demo && <RecordingAnalysis key={demo.video.id} recording={demo} onDone={learned} action="Learn the procedure" />}
+          {demo ? (
+            <RecordingAnalysis key={demo.video.id} recording={demo} onDone={learned} action="Learn the procedure" />
+          ) : procedure.data && (
+            <div className="analysis">
+              <button className="btn primary" disabled>Learn the procedure</button>
+            </div>
+          )}
         </section>
       </div>
     </Layout>

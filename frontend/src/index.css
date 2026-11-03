@@ -59,6 +59,13 @@ p { margin: 0.3rem 0; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.danger { color: var(--fail); border-color: var(--fail); }
 .btn.danger:hover:not(:disabled) { background: var(--fail-bg); border-color: var(--fail); }
+.btn.icon { padding: 0.35rem; }
+.menu { position: relative; }
+.menu-list { position: absolute; top: calc(100% + 0.25rem); left: 0; z-index: 10; min-width: 9rem; display: flex; flex-direction: column; padding: 0.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.12); }
+.menu-list button { padding: 0.45rem 0.6rem; background: none; border: 0; border-radius: 5px; text-align: left; font-size: 0.9rem; cursor: pointer; }
+.menu-list button:hover, .menu-list button:focus-visible { background: var(--line); }
+.menu-list button.danger { color: var(--fail); }
+.menu-list button.danger:hover, .menu-list button.danger:focus-visible { background: var(--fail-bg); }
 .procedure-footer { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
 .btn.big { padding: 0.75rem 1.4rem; font-size: 1rem; }
 .btn.small { padding: 0.25rem 0.55rem; font-size: 0.8rem; }
@@ -89,6 +96,12 @@ select:not(.bone) {
 a.card:hover { border-color: var(--ink); }
 .card img, .thumb-empty { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; background: #e7e6df; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 0.85rem; }
 .card-body { padding: 0.8rem 1rem 1rem; }
+.card-item { position: relative; }
+.card-item .card-body { padding-right: 3rem; }
+.card-menu { position: absolute; right: 0.6rem; bottom: 0.6rem; }
+.card-menu .btn.icon { border-color: transparent; }
+.card-menu .menu-list { top: auto; bottom: calc(100% + 0.25rem); left: auto; right: 0; }
+.card-rename { display: flex; gap: 0.4rem; align-items: center; margin-bottom: 0.4rem; }
 
 .verdict { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 5px; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.03em; white-space: nowrap; }
 .verdict.pass { color: var(--pass); background: var(--pass-bg); }

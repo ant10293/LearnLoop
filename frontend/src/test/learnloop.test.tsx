@@ -381,6 +381,7 @@ describe("Procedure review", () => {
     fireEvent.click(screen.getByRole("button", { name: "Run object views" }));
     const dialog = await screen.findByRole("dialog", { name: "Approve object view requests" });
     expect(dialog).toHaveTextContent("At most 4: up to 2");
+    expect(screen.queryByRole("button", { name: "Run object views" })).toBeNull();
     expect(calls.filter((call) => call.url.endsWith("/objects/run")).map((call) => JSON.parse(String(call.init?.body)).allow_live)).toEqual([false]);
     fireEvent.click(screen.getByRole("button", { name: "Send requests" }));
     expect(await screen.findByRole("status")).toHaveTextContent("Making object views");

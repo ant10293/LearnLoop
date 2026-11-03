@@ -1,5 +1,6 @@
-import { useQuery } from "@tanstack/react-query";
-import { useState, type FormEvent } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { Ellipsis } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Bone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Layout, ReviewTag, VerdictTag } from "../components/ui";
@@ -7,12 +8,12 @@ import { api, type ProcedureSummary } from "../lib/learnloop";
 
 const CARD_PLACEHOLDERS = 3;
 
-function ProcedureCardFace({ item }: { item?: ProcedureSummary }) {
+function ProcedureCardFace({ item, title }: { item?: ProcedureSummary; title?: ReactNode }) {
   return (
     <>
       {item?.thumbnail_url ? <img src={item.thumbnail_url} alt="" /> : <div className="thumb-empty">{item ? "No demonstration yet" : <Bone className="bone-fill" />}</div>}
       <div className="card-body">
-        <h2>{item ? item.name : <Bone width="60%" />}</h2>
+        {title ?? <h2>{item ? item.name : <Bone width="60%" />}</h2>}
         <p className="muted small">{item ? <>{item.step_count} expected {item.step_count === 1 ? "step" : "steps"} · {item.execution_count} {item.execution_count === 1 ? "attempt" : "attempts"}</> : <Bone width="80%" />}</p>
         <div className="row">
           {item ? <ReviewTag state={item.review_state} /> : <TagBone />}
@@ -67,13 +68,102 @@ export function ProjectsPage() {
           </li>
         ))}
         {procedures.data?.map((item) => (
-          <li key={item.id}>
-            <Link className="card" to={`/procedures/${item.id}/${item.review_state === "accepted" ? "verify" : item.step_count ? "procedure" : "teach"}`}>
-              <ProcedureCardFace item={item} />
-            </Link>
-          </li>
+          <ProcedureCard key={item.id} item={item} />
         ))}
       </ul>
     </Layout>
+  );
+}
+
+/** A procedure's card, with a menu to rename or delete it. Renaming puts the name field where the name was. */
+function ProcedureCard({ item }: { item: ProcedureSummary }) {
+  const client = useQueryClient();
+  const menu = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [renaming, setRenaming] = useState(false);
+  const [draft, setDraft] = useState(item.name);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent ? event.key === "Escape" : !menu.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [open]);
+
+  async function rename(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.renameProcedure(item.id, draft);
+      await Promise.all([client.invalidateQueries({ queryKey: ["procedures"] }), client.invalidateQueries({ queryKey: ["procedure", item.id] })]);
+      setRenaming(false);
+    } catch (exc) {
+      setError((exc as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function remove() {
+    setOpen(false);
+    if (!window.confirm(`Delete “${item.name}”? Its recordings, learned procedures, and verification reports will be removed. This cannot be undone.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.removeProcedure(item.id);
+      client.removeQueries({ queryKey: ["procedure", item.id] });
+      await client.invalidateQueries({ queryKey: ["procedures"] });
+    } catch (exc) {
+      setError((exc as Error).message);
+      setBusy(false);
+    }
+  }
+
+  return (
+    <li>
+      <div className="card-item">
+        {renaming ? (
+          <div className="card">
+            <ProcedureCardFace
+              item={item}
+              title={
+                <form className="card-rename" onSubmit={(event) => void rename(event)}>
+                  <input className="field grow" autoFocus onFocus={(event) => event.target.select()} aria-label="Procedure name" value={draft} onChange={(event) => setDraft(event.target.value)} />
+                  <button className="btn small primary" disabled={busy || !draft.trim()}>Save</button>
+                  <button className="btn small" type="button" onClick={() => setRenaming(false)}>Cancel</button>
+                </form>
+              }
+            />
+          </div>
+        ) : (
+          <Link className="card" to={`/procedures/${item.id}/${item.review_state === "accepted" ? "verify" : item.step_count ? "procedure" : "teach"}`}>
+            <ProcedureCardFace item={item} />
+          </Link>
+        )}
+        {!renaming && (
+          <div className="menu card-menu" ref={menu}>
+            <button className="btn icon" aria-label={`Options for ${item.name}`} aria-haspopup="menu" aria-expanded={open} disabled={busy} onClick={() => setOpen((current) => !current)}>
+              <Ellipsis size={18} aria-hidden="true" />
+            </button>
+            {open && (
+              <div className="menu-list" role="menu">
+                <button role="menuitem" onClick={() => { setOpen(false); setDraft(item.name); setRenaming(true); }}>Rename</button>
+                <button role="menuitem" className="danger" onClick={() => void remove()}>Delete</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <ErrorNote message={error} />
+    </li>
   );
 }

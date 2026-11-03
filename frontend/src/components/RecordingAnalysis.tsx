@@ -176,7 +176,7 @@ export function ObjectViewsNotice({ runId, views, onStarted }: { runId: string; 
   return (
     <div className="panel views-notice">
       <p className="small">Object views were not made{views.error ? `: ${views.error}` : "."}</p>
-      <button className="btn" disabled={busy} onClick={() => void start(false)}>Run object views</button>
+      {!plan && <button className="btn" disabled={busy} onClick={() => void start(false)}>Run object views</button>}
       <ErrorNote message={error} />
       {plan && (
         <div className="plan" role="dialog" aria-label="Approve object view requests">
