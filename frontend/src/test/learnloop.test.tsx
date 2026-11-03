@@ -1,4 +1,4 @@
-import { boxAt, humanizeModel, learnedProcedures, type TemplateDependency } from "../lib/learnloop";
+import { boxAt, boxBetween, humanizeModel, smoothTrack, learnedProcedures, type TemplateDependency } from "../lib/learnloop";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -607,6 +607,15 @@ describe("object tracks and earlier procedures", () => {
     const track = [{ time: 1, x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, { time: 1.125, x: 0.2, y: 0.1, w: 0.2, h: 0.2 }];
     expect(boxAt(track, 1.1)?.x).toBe(0.2);
     expect(boxAt(track, 3)).toBeNull();
+  });
+
+  it("glides a playing video's boxes between samples and evens out their wobble", () => {
+    const track = [{ time: 1, x: 0.1, y: 0.1, w: 0.2, h: 0.2 }, { time: 1.125, x: 0.2, y: 0.1, w: 0.2, h: 0.2 }];
+    expect(boxBetween(track, 1.0625)?.x).toBeCloseTo(0.15);
+    expect(boxBetween(track, 3)).toBeNull();
+    const wobble = [0.1, 0.14, 0.1].map((x, index) => ({ time: index / 8, x, y: 0.1, w: 0.2, h: 0.2 }));
+    expect(smoothTrack(wobble)[1].x).toBeCloseTo(0.12);
+    expect(smoothTrack([wobble[0], { ...wobble[2], time: 2 }])[0].x).toBe(0.1);
   });
 
   it("lists each learned procedure once, by its newest version", () => {

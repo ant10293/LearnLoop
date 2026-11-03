@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from "react";
 import { Link, NavLink } from "react-router-dom";
-import { boxAt, clock, reviewLabels, verdictLabels, verdictTone, type FilmTrack, type ReviewState } from "../lib/learnloop";
+import { boxBetween, clock, smoothTrack, reviewLabels, verdictLabels, verdictTone, type FilmTrack, type ReviewState } from "../lib/learnloop";
 import { Bone } from "./Skeleton";
 
 export function Logo() {
@@ -50,6 +50,7 @@ const BOX_COLORS = ["#ffb020", "#22d3ee", "#f472b6", "#a3e635", "#c084fc", "#fb7
 /** Tracked boxes over the picture. A video letterboxes inside its element, so they follow the picture, not the element. */
 function FilmBoxes({ video, tracks }: { video: RefObject<HTMLVideoElement | null>; tracks: FilmTrack[] }) {
   const [view, setView] = useState({ left: 0, top: 0, width: 0, height: 0, time: 0 });
+  const smoothed = useMemo(() => tracks.map((item) => smoothTrack(item.track)), [tracks]);
   useEffect(() => {
     let frame = 0;
     const tick = () => {
@@ -69,7 +70,7 @@ function FilmBoxes({ video, tracks }: { video: RefObject<HTMLVideoElement | null
   return (
     <div className="film-boxes" aria-hidden="true" style={{ left: view.left, top: view.top, width: view.width, height: view.height }}>
       {tracks.map((item, index) => {
-        const box = boxAt(item.track, view.time);
+        const box = boxBetween(smoothed[index], view.time);
         if (!box) return null;
         const color = BOX_COLORS[index % BOX_COLORS.length];
         return (

@@ -262,6 +262,34 @@ export function boxAt(track: TrackBox[], time: number): TrackBox | null {
   return best && Math.abs(best.time - time) <= 0.25 ? best : null;
 }
 
+const SIDES = ["x", "y", "w", "h"] as const;
+
+/** Each box averaged with its neighbors. SAM's boxes wobble from one sample to the next by about as much as the object moves. */
+export function smoothTrack(track: TrackBox[]): TrackBox[] {
+  const sorted = [...track].sort((a, b) => a.time - b.time);
+  return sorted.map((item, index) => {
+    const near = [sorted[index - 1], sorted[index + 1]].filter((other) => other && Math.abs(other.time - item.time) <= 0.25);
+    const weight = 2 + near.length;
+    const out = { ...item };
+    for (const side of SIDES) out[side] = (2 * item[side] + near.reduce((sum, other) => sum + other[side], 0)) / weight;
+    return out;
+  });
+}
+
+/** The box at this moment, gliding between samples, so a playing video's boxes move instead of jumping eight times a second. */
+export function boxBetween(track: TrackBox[], time: number): TrackBox | null {
+  const after = track.findIndex((item) => item.time > time);
+  const before = after === -1 ? track[track.length - 1] : track[after - 1];
+  const next = after === -1 ? undefined : track[after];
+  if (before && next && next.time - before.time <= 0.25) {
+    const share = (time - before.time) / (next.time - before.time);
+    const out = { ...before, time };
+    for (const side of SIDES) out[side] = before[side] + (next[side] - before[side]) * share;
+    return out;
+  }
+  return boxAt(track, time);
+}
+
 /** The newest version of each learned procedure, newest first. Versions of one are edits, not separate procedures. */
 export function learnedProcedures(templates: Template[]): Template[] {
   const newest = new Map<string, Template>();
