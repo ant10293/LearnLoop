@@ -129,7 +129,8 @@ export function ProcedurePage() {
   }
 
   async function remove() {
-    if (!window.confirm(`Delete “${template!.name}”? All its versions, its demonstration, and its verification reports will be removed. This cannot be undone.`)) return;
+    const learnedOn = new Date(`${template!.created_at}Z`).toLocaleString();
+    if (!window.confirm(`Delete the procedure learned from “${template!.source_filename || "the demonstration"}” on ${learnedOn}? All its versions, its demonstration, and its verification reports will be removed. This cannot be undone.`)) return;
     setSaving(true);
     setRemoveError("");
     try {
