@@ -1,4 +1,4 @@
-import { boxAt, boxBetween, humanizeModel, smoothTrack, learnedProcedures, type TemplateDependency } from "../lib/learnloop";
+import { boxAt, boxBetween, humanizeModel, smoothTrack, learnedProcedures, type Condition, type TemplateDependency } from "../lib/learnloop";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -371,13 +371,36 @@ describe("Procedure review", () => {
     });
     show("/procedures/p1/procedure");
     expect(await screen.findByText("AI-generated draft")).toBeTruthy();
-    expect(screen.getByText(/green cube is attached to gray base/)).toBeTruthy();
+    expect(screen.getByLabelText("Check 1 object")).toHaveValue("role:green");
+    expect(screen.getByLabelText("Check 1 relation")).toHaveValue("attached");
+    expect(screen.getByLabelText("Check 1 target")).toHaveValue("role:base");
     expect(screen.getByText("From Meta, directly observed")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Step 1 name"), { target: { value: "Seat the cube" } });
     fireEvent.click(screen.getByRole("button", { name: "Save edits" }));
     await waitFor(() => expect(calls.some((call) => call.init?.method === "PATCH")).toBe(true));
     const patch = JSON.parse(String(calls.find((call) => call.init?.method === "PATCH")?.init?.body));
     expect(patch.steps).toEqual([{ step_id: "s1", name: "Seat the cube" }]);
+  });
+
+  it("edits each check on its own and keeps the rest", async () => {
+    const second = { ...templateStep.completion_conditions[0], id: "rel:1", subject_role: "role:base", target_role: "role:green", relation: "inside" };
+    const step = { ...templateStep, completion_conditions: [...templateStep.completion_conditions, second] };
+    const calls = mockApi((url, init) => {
+      if (url.includes("/workflow-templates/") && init?.method === "PATCH") return { body: template("accepted") };
+      if (url.endsWith("/procedures/p1")) return { body: procedure({ template: template("ai_draft", step), templates: [template("ai_draft", step)] }) };
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    fireEvent.change(await screen.findByLabelText("Check 2 relation"), { target: { value: "touching" } });
+    expect(screen.getByLabelText("Check 1 relation")).toHaveValue("attached");
+    expect(screen.getByText("Human-specified")).toBeTruthy();
+    expect(screen.getByText("From Meta, directly observed")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Add check" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove check 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save edits" }));
+    await waitFor(() => expect(calls.some((call) => call.init?.method === "PATCH")).toBe(true));
+    const patch = JSON.parse(String(calls.find((call) => call.init?.method === "PATCH")?.init?.body));
+    expect(patch.steps[0].completion_conditions.map((item: Condition) => [item.id, item.relation])).toEqual([["rel:1", "touching"], [undefined, "attached"]]);
   });
 
   const untaught = (status: string, error = "") =>

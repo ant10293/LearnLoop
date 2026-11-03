@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -332,8 +333,7 @@ function ProcedureSkeleton({ notices, history }: { notices?: ReactNode; history?
               objects={<Bone width="40%" />}
               action={<FieldBone />}
               completion={<FieldBone />}
-              checks={<p className="condition"><Bone width="60%" /></p>}
-              conditionEdit={<><FieldBone select /><FieldBone select /><FieldBone select /></>}
+              checks={<div className="condition condition-edit"><FieldBone select /><FieldBone select /><FieldBone select /></div>}
               uncertainty={<Bone width="30%" />}
             />
           </StepFrame>
@@ -389,7 +389,7 @@ function StepFrame({ index, removed, title, time, footer, children }: { index: n
   );
 }
 
-function StepFields({ objects, action, completion, checks, conditionEdit, order, uncertainty, edited }: { objects: ReactNode; action: ReactNode; completion: ReactNode; checks: ReactNode; conditionEdit: ReactNode; order?: ReactNode; uncertainty: ReactNode; edited?: ReactNode }) {
+function StepFields({ objects, action, completion, checks, order, uncertainty, edited }: { objects: ReactNode; action: ReactNode; completion: ReactNode; checks: ReactNode; order?: ReactNode; uncertainty: ReactNode; edited?: ReactNode }) {
   return (
     <>
       <p className="small"><span className="muted">Objects</span> {objects}</p>
@@ -402,7 +402,6 @@ function StepFields({ objects, action, completion, checks, conditionEdit, order,
       <div className="stack small">
         <span className="muted">What the verifier checks</span>
         {checks}
-        <div className="row condition-edit">{conditionEdit}</div>
       </div>
       {order}
       <p className="muted small">{uncertainty}</p>
@@ -458,9 +457,11 @@ function StepCard({ index, step, edit, roles, others, onChange, onSeek }: { inde
   const removed = edit.removed ?? step.removed;
   const conditions = (edit.completion_conditions ?? step.completion_conditions) as Partial<Condition>[];
   const required = conditions.filter((item) => item.evidence_requirement !== "optional");
-  const relation = required.find((item) => item.relation);
   const objects = step.object_roles.map((role) => roles.find((item) => item.role_id === role)?.label ?? role);
-  const setCondition = (next: Partial<Condition>) => onChange({ completion_conditions: [{ subject_role: relation?.subject_role ?? roles[0]?.role_id, target_role: relation?.target_role ?? roles[1]?.role_id, relation: relation?.relation ?? "attached", ...next }] });
+  const setConditions = (next: Partial<Condition>[]) => onChange({ completion_conditions: next });
+  const setCondition = (position: number, next: Partial<Condition>) => setConditions(required.map((item, index) => (index === position ? { ...item, ...next, origin: "human" } : item)));
+  const addCondition = () => setConditions([...required, { subject_role: step.object_roles[0] ?? roles[0]?.role_id, target_role: step.object_roles[1] ?? roles[1]?.role_id, relation: "attached", origin: "human" }]);
+  const roleOptions = roles.map((role) => <option key={role.role_id} value={role.role_id}>{role.label}</option>);
   return (
     <StepFrame
       index={index}
@@ -483,26 +484,36 @@ function StepCard({ index, step, edit, roles, others, onChange, onSeek }: { inde
           objects={objects.join(", ") || "None identified"}
           action={<input className="field" value={edit.expected_action ?? step.expected_action} onChange={(event) => onChange({ expected_action: event.target.value })} />}
           completion={<input className="field" value={edit.completion_text ?? step.completion_text} onChange={(event) => onChange({ completion_text: event.target.value })} />}
-          checks={required.length > 0 ? required.map((item, position) => (
-            <p key={`${item.id ?? "new"}-${position}`} className="condition">
-              {conditionText(item, roles)}
-              <span className="origin">{item.origin === "human" || edit.completion_conditions ? "Human-specified" : item.source_evidence_class === "DIRECTLY_OBSERVED" ? "From Meta, directly observed" : item.source_evidence_class === "INFERRED" ? "From Meta, inferred. Please confirm" : "From Meta"}</span>
-            </p>
-          )) : <p className="warning">No checkable condition. This step reports CANNOT VERIFY until you set one.</p>}
-          conditionEdit={
+          checks={
             <>
-              <select className="field" aria-label="Object" value={relation?.subject_role ?? ""} onChange={(event) => setCondition({ subject_role: event.target.value })}>
-                <option value="" disabled>Object</option>
-                {roles.map((role) => <option key={role.role_id} value={role.role_id}>{role.label}</option>)}
-              </select>
-              <select className="field" aria-label="Relation" value={relation?.relation ?? ""} onChange={(event) => setCondition({ relation: event.target.value })}>
-                <option value="" disabled>Relation</option>
-                {Object.entries(relationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-              <select className="field" aria-label="Target" value={relation?.target_role ?? ""} onChange={(event) => setCondition({ target_role: event.target.value })}>
-                <option value="" disabled>Target</option>
-                {roles.map((role) => <option key={role.role_id} value={role.role_id}>{role.label}</option>)}
-              </select>
+              {required.length > 0 ? required.map((item, position) => (
+                <div key={`${item.id ?? "new"}-${position}`} className="condition check-row">
+                  <div className="condition-meta">
+                    <span className="origin">{item.origin === "human" ? "Human-specified" : item.source_evidence_class === "DIRECTLY_OBSERVED" ? "From Meta, directly observed" : item.source_evidence_class === "INFERRED" ? "From Meta, inferred. Please confirm" : "From Meta"}</span>
+                    <button type="button" className="condition-remove" aria-label={`Remove check ${position + 1}`} title="Remove check" onClick={() => setConditions(required.filter((_, index) => index !== position))}>
+                      <X size={14} strokeWidth={2} />
+                    </button>
+                  </div>
+                  {item.relation ? (
+                    <div className="row condition-edit">
+                      <select className="field" aria-label={`Check ${position + 1} object`} value={item.subject_role ?? ""} onChange={(event) => setCondition(position, { subject_role: event.target.value })}>
+                        <option value="" disabled>Object</option>
+                        {roleOptions}
+                      </select>
+                      <select className="field" aria-label={`Check ${position + 1} relation`} value={item.relation} onChange={(event) => setCondition(position, { relation: event.target.value })}>
+                        {Object.entries(relationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                      </select>
+                      <select className="field" aria-label={`Check ${position + 1} target`} value={item.target_role ?? ""} onChange={(event) => setCondition(position, { target_role: event.target.value })}>
+                        <option value="" disabled>Target</option>
+                        {roleOptions}
+                      </select>
+                    </div>
+                  ) : (
+                    <span>{conditionText(item, roles)}</span>
+                  )}
+                </div>
+              )) : <p className="warning">No checkable condition. This step reports CANNOT VERIFY until you set one.</p>}
+              <button type="button" className="btn small add-check" onClick={addCondition}>Add check</button>
             </>
           }
           order={others.length > 0 && <StepOrder number={index + 1} others={others} selected={orderAfter} dependencies={step.dependencies} onChange={(order_after) => onChange({ order_after })} />}
