@@ -219,6 +219,59 @@ describe("Teach", () => {
     expect(await screen.findByRole("progressbar")).toHaveTextContent("50%");
   });
 
+  it("keeps a second upload's row when the first upload finishes", async () => {
+    mockApi(base);
+    const requests: { status: number; response: unknown; onload?: () => void; upload: { onprogress?: (event: unknown) => void } }[] = [];
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:clip", revokeObjectURL: () => undefined }));
+    vi.stubGlobal("XMLHttpRequest", class {
+      status = 0;
+      response: unknown = null;
+      onload?: () => void;
+      upload = {} as { onprogress?: (event: unknown) => void };
+      constructor() { requests.push(this); }
+      open() {}
+      send() {}
+    });
+    const { container } = show("/procedures/p1/teach");
+    expect(await screen.findByText("Supported: MP4, MOV, WebM")).toBeTruthy();
+    const input = container.querySelector('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [new File(["x"], "first.mp4", { type: "video/mp4" })] } });
+    fireEvent.change(input, { target: { files: [new File(["x"], "second.mp4", { type: "video/mp4" })] } });
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(screen.getByText("first.mp4")).toBeTruthy();
+    expect(screen.getByText("second.mp4")).toBeTruthy();
+    act(() => requests[1].upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 2 }));
+    await act(async () => {
+      requests[0].status = 200;
+      requests[0].response = { role: "demonstration", video, run: null };
+      requests[0].onload?.();
+    });
+    await waitFor(() => expect(screen.queryByText("first.mp4")).toBeNull());
+    expect(screen.getByText("second.mp4")).toBeTruthy();
+    expect(screen.getByRole("progressbar", { name: "Uploading" })).toHaveTextContent("50%");
+  });
+
+  it("rejects a file that is not a supported video without uploading it", async () => {
+    mockApi(base);
+    const sent: unknown[] = [];
+    vi.stubGlobal("XMLHttpRequest", class {
+      upload = {};
+      open() {}
+      send(body: unknown) { sent.push(body); }
+    });
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:clip", revokeObjectURL: () => undefined }));
+    const { container } = show("/procedures/p1/teach");
+    expect(await screen.findByText("Supported: MP4, MOV, WebM")).toBeTruthy();
+    const input = container.querySelector('input[type="file"]')!;
+    fireEvent.change(input, { target: { files: [new File(["x"], "photo.png", { type: "image/png" })] } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("photo.png can't be used. Supported: MP4, MOV, WebM");
+    expect(sent).toHaveLength(0);
+    expect(screen.queryByText("photo.png")).toBeNull();
+    fireEvent.change(input, { target: { files: [new File(["x"], "clip.mov", { type: "" })] } });
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("references the original path without uploading when that is the setting", async () => {
     storageMode = "reference";
     const calls = mockApi((url) => {

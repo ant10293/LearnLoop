@@ -35,6 +35,17 @@ type Props = {
   loading?: boolean;
 };
 
+function matchesAccept(file: File, accept: string) {
+  const name = file.name.toLowerCase();
+  const type = file.type.toLowerCase();
+  return accept.split(",").some((entry) => {
+    const token = entry.trim().toLowerCase();
+    if (token.startsWith(".")) return name.endsWith(token);
+    if (token.endsWith("/*")) return type.startsWith(token.slice(0, -1));
+    return type === token;
+  });
+}
+
 export function AssetDropZone({
   accept,
   multiple = false,
@@ -61,6 +72,7 @@ export function AssetDropZone({
   const itemsRef = useRef<Item[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [items, setItems] = useState<Item[]>([]);
+  const [rejected, setRejected] = useState("");
   const controlled = rows !== undefined;
   itemsRef.current = items;
 
@@ -93,9 +105,15 @@ export function AssetDropZone({
 
   function take(list: FileList | null, hintedPaths?: string[]) {
     const files = [...(list ?? [])];
-    const chosen = multiple ? files : files.slice(0, 1);
+    if (!files.length) return;
+    const fits = files.map((file) => matchesAccept(file, accept));
+    const refused = files.filter((_, index) => !fits[index]);
+    setRejected(refused.length ? `${refused.map((file) => file.name).join(", ")} can't be used. ${supported}` : "");
+    const usable = files.filter((_, index) => fits[index]);
+    const chosen = multiple ? usable : usable.slice(0, 1);
     if (!chosen.length) return;
-    const paths = hintedPaths?.slice(0, chosen.length);
+    // Hinted paths line up with the dropped files, so they are filtered the same way.
+    const paths = hintedPaths?.filter((_, index) => fits[index]).slice(0, chosen.length);
     if (controlled) {
       onFiles(chosen, paths);
       return;
@@ -257,6 +275,7 @@ export function AssetDropZone({
       })}
       {!shown.length && pending && pendingLabel && <p className="drop-zone-status">{pendingLabel}</p>}
       {!shown.length && error && <p className="drop-zone-status is-error">{error}</p>}
+      {rejected && <p className="drop-zone-status is-error" role="alert">{rejected}</p>}
       {settings && <div className="drop-zone-settings">{settings}</div>}
     </div>
   );

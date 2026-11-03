@@ -7,9 +7,9 @@ import { ErrorNote } from "./ui";
 
 const ACCEPT = "video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm";
 
-type Upload = { name: string; url: string; subtitle: string; percent: number | null; error: string };
+type Upload = { id: string; name: string; url: string; subtitle: string; percent: number | null; error: string };
 
-/** The upload section from vision-test-bench. It sends one recording and lists this role's recordings. */
+/** The upload section from vision-test-bench. It sends recordings and lists this role's recordings. */
 export function RecordingDrop({
   procedureId,
   role,
@@ -26,20 +26,36 @@ export function RecordingDrop({
   loading?: boolean;
 }) {
   const storage = useQuery({ queryKey: ["storage"], queryFn: api.storage });
-  const [upload, setUpload] = useState<Upload | null>(null);
+  const [uploads, setUploads] = useState<Upload[]>([]);
   const [error, setError] = useState("");
-  const abort = useRef<(() => void) | null>(null);
-  const previewUrl = upload?.url;
+  const aborts = useRef(new Map<string, () => void>());
+  const nextUpload = useRef(0);
+  const uploadsRef = useRef(uploads);
+  uploadsRef.current = uploads;
   useEffect(() => () => {
-    if (previewUrl) URL.revokeObjectURL(previewUrl);
-  }, [previewUrl]);
+    for (const item of uploadsRef.current) URL.revokeObjectURL(item.url);
+  }, []);
+
+  function patchUpload(id: string, changes: Partial<Upload>) {
+    setUploads((current) => current.map((item) => (item.id === id ? { ...item, ...changes } : item)));
+  }
+
+  function dropUploads(gone: (item: Upload) => boolean) {
+    setUploads((current) => current.filter((item) => {
+      if (!gone(item)) return true;
+      URL.revokeObjectURL(item.url);
+      return false;
+    }));
+  }
 
   async function send(files: File[], paths?: string[]) {
     const file = files[0];
     if (!file) return;
     setError("");
     const reference = storage.data?.video_storage === "reference";
-    setUpload({ name: file.name, url: URL.createObjectURL(file), subtitle: reference ? "Finding the original file" : "Uploading", percent: reference ? null : 0, error: "" });
+    const id = `upload-${++nextUpload.current}`;
+    dropUploads((item) => Boolean(item.error));
+    setUploads((current) => [...current, { id, name: file.name, url: URL.createObjectURL(file), subtitle: reference ? "Finding the original file" : "Uploading", percent: reference ? null : 0, error: "" }]);
     try {
       let created: Recording;
       if (reference) {
@@ -50,30 +66,30 @@ export function RecordingDrop({
           procedureId,
           role,
           file,
-          (ratio) => setUpload((current) => current && { ...current, percent: Math.round(ratio * 100) }),
+          (ratio) => patchUpload(id, { percent: Math.round(ratio * 100) }),
           (cancel) => {
-            abort.current = cancel;
+            aborts.current.set(id, cancel);
           },
         );
       }
       await onChange(created);
-      setUpload(null);
+      dropUploads((item) => item.id === id);
     } catch (exc) {
       if ((exc as Error).name === "AbortError") {
-        setUpload(null);
+        dropUploads((item) => item.id === id);
         return;
       }
-      const message = (exc as Error).message;
-      setUpload((current) => current && { ...current, error: message });
+      patchUpload(id, { error: (exc as Error).message });
     } finally {
-      abort.current = null;
+      aborts.current.delete(id);
     }
   }
 
   async function remove(id: string) {
-    if (id === "upload") {
-      if (abort.current) abort.current();
-      else setUpload(null);
+    if (uploads.some((item) => item.id === id)) {
+      const cancel = aborts.current.get(id);
+      if (cancel) cancel();
+      else dropUploads((item) => item.id === id);
       return;
     }
     const recording = recordings.find((item) => item.video.id === id);
@@ -99,8 +115,8 @@ export function RecordingDrop({
       failed,
     };
   });
-  if (upload) {
-    rows.push({ id: "upload", name: upload.name, url: upload.url, subtitle: upload.error || upload.subtitle, progress: upload.error ? null : upload.percent, failed: Boolean(upload.error) });
+  for (const upload of uploads) {
+    rows.push({ id: upload.id, name: upload.name, url: upload.url, subtitle: upload.error || upload.subtitle, progress: upload.error ? null : upload.percent, failed: Boolean(upload.error) });
   }
 
   return (
