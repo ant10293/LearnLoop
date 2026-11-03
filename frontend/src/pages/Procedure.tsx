@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { AssetPreview } from "../components/AssetPreview";
 import { AnalysisStages } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
@@ -226,7 +227,9 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
 
 /** Where SAM found the object, moment by moment. A blank cell means it was not found, not that it was gone. */
 function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: string; onSeek: (time: number) => void }) {
+  const [preview, setPreview] = useState<number | null>(null);
   if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
+  const frames = view.cells.flatMap((cell) => (cell.url ? [{ time: cell.time, src: cell.url, filename: `${label} · ${clock(cell.time)}` }] : []));
   return (
     <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
       {view.cells.map((cell) => {
@@ -234,7 +237,16 @@ function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: stri
         return (
           <div key={cell.time} role="listitem" className="object-cell" aria-label={cell.url ? `Frame at ${stamp}` : `Not found at ${stamp}`}>
             {cell.url ? (
-              <button type="button" className="object-frame" title={stamp} onClick={() => onSeek(cell.time)}>
+              <button
+                type="button"
+                className="object-frame"
+                title={stamp}
+                aria-label={`Expand frame at ${stamp}`}
+                onClick={() => {
+                  onSeek(cell.time);
+                  setPreview(frames.findIndex((frame) => frame.time === cell.time));
+                }}
+              >
                 <img src={cell.url} alt="" loading="lazy" />
               </button>
             ) : (
@@ -244,6 +256,7 @@ function ObjectTimeline({ view, label, onSeek }: { view: ObjectView; label: stri
           </div>
         );
       })}
+      {preview != null && <AssetPreview images={frames} startIndex={preview} onClose={() => setPreview(null)} />}
     </div>
   );
 }

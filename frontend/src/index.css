@@ -177,6 +177,25 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .object-frame { display: block; width: 3.5rem; height: 3.5rem; padding: 0; overflow: hidden; background: #000; border: 0; border-radius: 0; cursor: pointer; }
 .object-frame.missing { background: var(--panel-2); border: 1px dashed var(--line); cursor: default; }
 .object-frame img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center; }
+
+/* Full-screen image preview, from vision-test-bench. */
+.asset-preview { position: fixed; inset: 0; z-index: 80; display: flex; align-items: center; justify-content: center; background: rgba(0, 0, 0, 0.85); }
+.asset-preview-topbar { position: absolute; top: 0; left: 0; z-index: 1; display: flex; align-items: center; gap: 0.5rem; padding: 10px 16px; }
+.asset-preview-close, .asset-preview-action, .asset-preview-nav, .asset-preview-zoom { display: flex; align-items: center; justify-content: center; background: none; border: none; cursor: pointer; }
+.asset-preview-close { padding: 6px; color: #9aa0a6; border-radius: 50%; transition: background 0.15s, color 0.15s; }
+.asset-preview-close:hover, .asset-preview-action:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
+.asset-preview-filename { max-width: 40vw; overflow: hidden; color: #fff; font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
+.asset-preview-actions { position: absolute; top: 10px; right: 16px; z-index: 1; display: flex; align-items: center; gap: 4px; }
+.asset-preview-action { padding: 8px; color: #9aa0a6; border-radius: 50%; transition: background 0.15s, color 0.15s; }
+.asset-preview-viewport { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; overflow: auto; padding: 3rem 4rem; }
+.asset-preview-img { max-width: 90vw; max-height: 85vh; min-width: min(512px, 90vw); min-height: min(512px, 70vh); object-fit: contain; transition: transform 0.15s ease; user-select: none; }
+.asset-preview-nav { position: absolute; top: 50%; z-index: 1; width: 44px; height: 44px; color: #fff; background: rgba(255, 255, 255, 0.12); border-radius: 50%; transform: translateY(-50%); transition: background 0.15s; }
+.asset-preview-nav:hover { background: rgba(255, 255, 255, 0.25); }
+.asset-preview-nav.is-prev { left: 16px; }
+.asset-preview-nav.is-next { right: 16px; }
+.asset-preview-controls { position: absolute; bottom: 20px; left: 50%; z-index: 1; display: flex; align-items: center; gap: 4px; padding: 4px 6px; background: rgba(0, 0, 0, 0.6); border-radius: 24px; transform: translateX(-50%); }
+.asset-preview-zoom { width: 36px; height: 36px; color: #fff; font-size: 1.2rem; border-radius: 50%; transition: background 0.15s; }
+.asset-preview-zoom:hover { background: rgba(255, 255, 255, 0.15); }
 .object-time { margin-top: 0.25rem; text-align: center; font-size: 10px; line-height: 1; color: var(--muted); }
 .step-time { flex: none; white-space: nowrap; }
 

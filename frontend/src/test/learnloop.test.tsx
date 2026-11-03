@@ -405,6 +405,25 @@ describe("Procedure review", () => {
     await waitFor(() => expect(screen.queryByLabelText("Step 1 name")).toBeNull());
   });
 
+  it("expands an object's timeline frame and steps past the moments it was not found", async () => {
+    const tracked = template("accepted");
+    tracked.document.roles = [{ ...roles[0], source_object_ids: ["o1"] as never[] }];
+    mockApi((url) => {
+      if (url.endsWith("/procedures/p1")) return { body: { ...procedure(), template: tracked, templates: [tracked] } };
+      if (url.endsWith("/objects")) {
+        return { body: { objects: { o1: { thumbnail_url: null, seen_cells: 2, cells: [{ time: 0, url: "/f0" }, { time: 1, url: null }, { time: 2, url: "/f2" }] } } } };
+      }
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    fireEvent.click(await screen.findByRole("button", { name: "Expand frame at 0:02.0" }));
+    expect(screen.getByRole("dialog", { name: "green cube · 0:02.0" }).querySelector("img")).toHaveAttribute("src", "/f2");
+    fireEvent.click(screen.getByRole("button", { name: "Next" }));
+    expect(screen.getByRole("dialog", { name: "green cube · 0:00.0" }).querySelector("img")).toHaveAttribute("src", "/f0");
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
   it("learns once when the analysis finished after leaving Teach", async () => {
     const calls = mockApi((url) => {
       if (url.endsWith("/procedures/p1")) return { body: untaught("completed") };
