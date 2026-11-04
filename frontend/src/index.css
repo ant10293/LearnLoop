@@ -515,9 +515,6 @@ button.linkish {
 }
 
 /* Reliability Lab */
-.lab-link { margin-left: auto; padding: 0.35rem 0.6rem; border-radius: 6px; color: var(--muted); font-size: 0.82rem; border: 1px dashed var(--line); white-space: nowrap; }
-.lab-link:hover { color: var(--ink); border-color: var(--ink); }
-.flow + .lab-link { margin-left: 0.5rem; }
 .lab-section { margin-bottom: 1rem; }
 .lab-section > summary { cursor: pointer; }
 .lab-inline { display: inline; }

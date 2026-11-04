@@ -1,11 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { ErrorNote, Layout } from "../components/ui";
 import { humanizeModel } from "../lib/learnloop";
 import {
   fraction,
   isActive,
+  labPath,
   lab,
   modalVerdicts,
   percent,
@@ -23,7 +24,7 @@ import {
 import { StepLabels } from "./Lab";
 
 export function LabBatchPage() {
-  const { batchId = "" } = useParams();
+  const { id = "", batchId = "" } = useParams();
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ["lab-batch", batchId],
@@ -44,8 +45,9 @@ export function LabBatchPage() {
   }
 
   return (
-    <Layout title="Reliability Lab">
-      <p className="small"><Link to="/lab">← All experiments</Link></p>
+    <Layout procedureId={id} title={batch?.procedure_name} titleLoading={query.isPending}>
+      {batch && batch.project_id !== id && <Navigate to={labPath(batch.project_id, batch.id)} replace />}
+      <p className="small"><Link to={labPath(id)}>← All experiments</Link></p>
       <ErrorNote message={query.error ? (query.error as Error).message : error} />
       {!batch && !query.error && <p className="muted">Loading the experiment…</p>}
       {batch && (
@@ -194,7 +196,7 @@ function RunMatrix({ batch }: { batch: Batch }) {
           <tbody>
             {rows.map((run) => (
               <tr key={run.id} className={run.status === "failed" ? "errored" : ""}>
-                <td className="mono"><Link to={`/lab/${batch.id}/runs/${run.id}`}>{String(run.index).padStart(2, "0")}</Link></td>
+                <td className="mono"><Link to={labPath(batch.project_id, batch.id, run.id)}>{String(run.index).padStart(2, "0")}</Link></td>
                 <td>
                   <span className={`verdict ${runTone(run)}`}>{runLabel(run)}</span>
                   {run.status === "running" && run.progress && <div className="muted small">{run.progress.phase}{run.progress.stage ? `: ${run.progress.stage.replaceAll("_", " ")}` : ""} ({run.progress.stages_done}/{run.progress.stages_total})</div>}
@@ -206,7 +208,7 @@ function RunMatrix({ batch }: { batch: Batch }) {
                   return (
                     <td key={stepId} className={unstable.has(stepId) ? "unstable" : ""}>
                       {step ? (
-                        <button type="button" className={`lab-cell ${step.verdict ?? "none"}${differs ? " differs" : ""}`} title={`${step.name}: ${step.verdict ?? step.raw_verdict} · ${step.evidence_count} evidence${step.reason ? ` · ${step.reason}` : ""}`} onClick={() => navigate(`/lab/${batch.id}/runs/${run.id}?step=${encodeURIComponent(stepId)}`)}>
+                        <button type="button" className={`lab-cell ${step.verdict ?? "none"}${differs ? " differs" : ""}`} title={`${step.name}: ${step.verdict ?? step.raw_verdict} · ${step.evidence_count} evidence${step.reason ? ` · ${step.reason}` : ""}`} onClick={() => navigate(`${labPath(batch.project_id, batch.id, run.id)}?step=${encodeURIComponent(stepId)}`)}>
                           {stepMark[step.verdict ?? ""] ?? "·"}
                         </button>
                       ) : <span className="muted">·</span>}
@@ -410,7 +412,7 @@ function LearningView({ batch }: { batch: Batch }) {
             <tbody>
               {batch.runs.map((run) => (
                 <tr key={run.id} className={run.status === "failed" ? "errored" : ""}>
-                  <td className="mono"><Link to={`/lab/${batch.id}/runs/${run.id}`}>{String(run.index).padStart(2, "0")}</Link></td>
+                  <td className="mono"><Link to={labPath(batch.project_id, batch.id, run.id)}>{String(run.index).padStart(2, "0")}</Link></td>
                   <td><span className={`verdict ${run.status === "completed" ? "muted" : runTone(run)}`}>{run.status.toUpperCase()}</span>{run.status === "failed" && <div className="lab-error-text small" title={run.error}>{run.error_kind.replaceAll("_", " ")}</div>}{run.progress && <div className="muted small">{run.progress.phase} {run.progress.stages_done}/{run.progress.stages_total}</div>}</td>
                   <td className="mono">{run.result.step_count ?? "—"}</td>
                   <td className="mono">{run.result.required_steps ?? "—"}</td>

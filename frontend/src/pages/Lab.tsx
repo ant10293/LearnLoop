@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { ErrorNote, Layout } from "../components/ui";
 import { ApiError, humanizeModel } from "../lib/learnloop";
-import { isActive, lab, seconds, type BatchBrief, type GroundTruth, type Mode } from "../lib/reliability";
+import { isActive, lab, labPath, seconds, type BatchBrief, type GroundTruth, type Mode } from "../lib/reliability";
 
 /** What sending the batch would involve, from the server's 409 answer. Nothing is sent until the person approves. */
 interface LivePlan {
@@ -20,28 +20,41 @@ interface LivePlan {
 }
 
 export function LabPage() {
+  const { id = "" } = useParams();
+  const options = useQuery({ queryKey: ["lab-options"], queryFn: lab.options });
   const batches = useQuery({
     queryKey: ["lab-batches"],
     queryFn: lab.batches,
     refetchInterval: (query) => (query.state.data?.some((item) => isActive(item.status)) ? 2000 : false),
   });
+  const procedure = options.data?.procedures.find((item) => item.id === id);
+  const mine = batches.data?.filter((item) => item.project_id === id);
   return (
-    <Layout title="Reliability Lab">
+    <Layout procedureId={id} title={procedure?.name} titleLoading={options.isPending}>
       <div className="heading">
         <div>
           <h1>Reliability Lab</h1>
-          <p className="muted">Run one recording through verification or learning several times under identical conditions, then compare the results. Developer tool.</p>
+          <p className="muted">Run one recording of this procedure through verification or learning several times under identical conditions, then compare the results. Developer tool.</p>
         </div>
       </div>
-      <NewExperiment />
+      {options.data && !procedure ? <p className="error" role="alert">This procedure was not found.</p> : <NewExperiment projectId={id} />}
       <section className="panel lab-section">
         <h2>Experiments</h2>
         <ErrorNote message={batches.error ? (batches.error as Error).message : ""} />
-        {batches.data?.length === 0 && <p className="muted small">No experiments yet.</p>}
-        {batches.data && batches.data.length > 0 && <History items={batches.data} />}
+        {mine?.length === 0 && <p className="muted small">No experiments on this procedure yet.</p>}
+        {mine && mine.length > 0 && <History items={mine} />}
       </section>
     </Layout>
   );
+}
+
+/** Experiments used to live at /lab/...; send old links to the experiment's procedure. */
+export function LegacyLabRedirect() {
+  const { batchId = "", runId } = useParams();
+  const batch = useQuery({ queryKey: ["lab-batch", batchId], queryFn: () => lab.batch(batchId) });
+  if (batch.data) return <Navigate to={labPath(batch.data.project_id, batchId, runId)} replace />;
+  if (batch.error) return <Navigate to="/" replace />;
+  return null;
 }
 
 function History({ items }: { items: BatchBrief[] }) {
@@ -65,7 +78,7 @@ function History({ items }: { items: BatchBrief[] }) {
         <tbody>
           {items.map((item) => (
             <tr key={item.id}>
-              <td><Link to={`/lab/${item.id}`}>{item.name}</Link><div className="muted small">{item.procedure_name}{item.template_version ? ` · v${item.template_version}` : ""}{!item.project_exists && " (procedure deleted)"}</div></td>
+              <td><Link to={labPath(item.project_id, item.id)}>{item.name}</Link>{item.template_version ? <div className="muted small">v{item.template_version}</div> : null}</td>
               <td>{item.mode}{!item.independent_inference && <div className="muted small">replay allowed</div>}</td>
               <td><span className={`lab-status ${item.status}`}>{item.status}</span></td>
               <td className="mono">{item.counts.finished}/{item.repetitions}{item.counts.execution_errors + item.counts.invalid_results > 0 && <span className="lab-error-text"> · {item.counts.execution_errors + item.counts.invalid_results} err</span>}</td>
@@ -96,12 +109,11 @@ function summaryText(item: BatchBrief): string {
   return [shapes || "—", `${summary.steps_in_every_run ?? 0} steps in every run`].join(" · ");
 }
 
-function NewExperiment() {
+function NewExperiment({ projectId }: { projectId: string }) {
   const client = useQueryClient();
   const navigate = useNavigate();
   const options = useQuery({ queryKey: ["lab-options"], queryFn: lab.options });
   const [mode, setMode] = useState<Mode>("verification");
-  const [projectId, setProjectId] = useState("");
   const [templateId, setTemplateId] = useState("");
   const [referenceId, setReferenceId] = useState("");
   const [videoId, setVideoId] = useState("");
@@ -121,15 +133,14 @@ function NewExperiment() {
   const template = accepted.find((item) => item.id === templateId);
   const recordings = (procedure?.recordings ?? []).filter((item) => (mode === "verification" ? item.role === "execution" : item.role === "demonstration"));
 
+  const firstAccepted = accepted[0]?.id ?? "";
+  const templateKnown = accepted.some((item) => item.id === templateId);
   useEffect(() => {
-    if (!projectId && procedures.length) setProjectId(procedures[0].id);
-  }, [procedures, projectId]);
-  useEffect(() => {
-    setTemplateId(accepted[0]?.id ?? "");
-    setReferenceId("");
-    setStepLabels({});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId]);
+    if (!templateKnown && templateId !== firstAccepted) {
+      setTemplateId(firstAccepted);
+      setStepLabels({});
+    }
+  }, [templateKnown, templateId, firstAccepted]);
   useEffect(() => {
     if (!recordings.some((item) => item.video_id === videoId)) setVideoId(recordings[recordings.length - 1]?.video_id ?? "");
   }, [recordings, videoId]);
@@ -160,7 +171,7 @@ function NewExperiment() {
         name,
       });
       await client.invalidateQueries({ queryKey: ["lab-batches"] });
-      navigate(`/lab/${created.id}`);
+      navigate(labPath(projectId, created.id));
     } catch (exc) {
       const detail = exc instanceof ApiError ? (exc.detail as { code?: string; plan?: LivePlan }) : null;
       if (detail && typeof detail === "object" && detail.code === "live_call_required" && detail.plan) setPlan(detail.plan);
@@ -181,12 +192,6 @@ function NewExperiment() {
           <button type="button" role="tab" aria-selected={mode === "learning"} className={`tab ${mode === "learning" ? "active" : ""}`} onClick={() => setMode("learning")}>Learning reliability</button>
         </div>
         <div className="lab-grid">
-          <label className="stack">
-            <span className="small muted">Procedure</span>
-            <select className="field" value={projectId} onChange={(event) => setProjectId(event.target.value)}>
-              {procedures.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-            </select>
-          </label>
           {mode === "verification" ? (
             <label className="stack">
               <span className="small muted">Accepted procedure version</span>

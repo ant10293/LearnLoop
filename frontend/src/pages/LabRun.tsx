@@ -1,12 +1,12 @@
 import { useQuery } from "@tanstack/react-query";
-import { Link, useParams, useSearchParams } from "react-router-dom";
+import { Link, Navigate, useParams, useSearchParams } from "react-router-dom";
 import { ErrorNote, Layout } from "../components/ui";
 import { api, clock, frameUrl, type Recording } from "../lib/learnloop";
-import { isActive, lab, runLabel, runTone, seconds, type Batch, type LabRun, type Learned } from "../lib/reliability";
+import { isActive, lab, labPath, runLabel, runTone, seconds, type Batch, type LabRun, type Learned } from "../lib/reliability";
 import { Report } from "./Verify";
 
 export function LabRunPage() {
-  const { batchId = "", runId = "" } = useParams();
+  const { id = "", batchId = "", runId = "" } = useParams();
   const [params, setParams] = useSearchParams();
   const stepId = params.get("step") ?? "";
   const query = useQuery({
@@ -19,11 +19,12 @@ export function LabRunPage() {
   const ordered = [...(batch?.runs ?? [])].sort((a, b) => a.index - b.index);
   const position = ordered.findIndex((item) => item.id === runId);
   const neighbour = (offset: number) => ordered[position + offset];
-  const link = (item: LabRun) => `/lab/${batchId}/runs/${item.id}${stepId ? `?step=${encodeURIComponent(stepId)}` : ""}`;
+  const link = (item: LabRun) => `${labPath(id, batchId, item.id)}${stepId ? `?step=${encodeURIComponent(stepId)}` : ""}`;
   return (
-    <Layout title="Reliability Lab">
+    <Layout procedureId={id} title={batch?.procedure_name} titleLoading={query.isPending}>
+      {batch && batch.project_id !== id && <Navigate to={labPath(batch.project_id, batchId, runId)} replace />}
       <p className="small row">
-        <Link to={`/lab/${batchId}`}>← {batch?.name ?? "Experiment"}</Link>
+        <Link to={labPath(id, batchId)}>← {batch?.name ?? "Experiment"}</Link>
         <span className="grow" />
         {neighbour(-1) && <Link className="btn small" to={link(neighbour(-1))}>← Run {neighbour(-1).index}</Link>}
         {neighbour(1) && <Link className="btn small" to={link(neighbour(1))}>Run {neighbour(1).index} →</Link>}
@@ -94,7 +95,7 @@ function StepAcrossRuns({ batch, run, stepId }: { batch: Batch; run: LabRun; ste
               const step = item.result.steps?.find((entry) => entry.step_id === stepId);
               return (
                 <tr key={item.id} className={item.id === run.id ? "current-row" : ""}>
-                  <td className="mono"><Link to={`/lab/${batch.id}/runs/${item.id}?step=${encodeURIComponent(stepId)}`}>{String(item.index).padStart(2, "0")}</Link></td>
+                  <td className="mono"><Link to={`${labPath(batch.project_id, batch.id, item.id)}?step=${encodeURIComponent(stepId)}`}>{String(item.index).padStart(2, "0")}</Link></td>
                   <td>{step ? <span className={`verdict ${step.verdict === "PASS" ? "pass" : step.verdict === "FAIL" ? "fail" : step.verdict === "CANNOT_VERIFY" ? "unknown" : "muted"}`}>{(step.verdict ?? step.raw_verdict).replaceAll("_", " ")}</span> : <span className="muted small">{runLabel(item)}</span>}</td>
                   <td className="small">{step ? `${step.basis.replaceAll("_", " ")}${step.error_category ? ` · ${step.error_category.toLowerCase().replaceAll("_", " ")}` : ""}${step.reinspected ? " · second look" : ""}` : ""}</td>
                   <td className="small">

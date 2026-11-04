@@ -400,3 +400,8 @@ export function modalVerdicts(runs: LabRun[], stepIds: string[]): Record<string,
   }
   return out;
 }
+
+/** Where an experiment lives: under its procedure, beside Teach, Procedure and Verify. */
+export function labPath(procedureId: string, batchId?: string, runId?: string): string {
+  return `/procedures/${procedureId}/lab${batchId ? `/${batchId}` : ""}${runId ? `/runs/${runId}` : ""}`;
+}

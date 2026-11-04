@@ -25,9 +25,9 @@ function show(path: string) {
     <QueryClientProvider client={client}>
       <MemoryRouter initialEntries={[path]}>
         <Routes>
-          <Route path="/lab" element={<LabPage />} />
-          <Route path="/lab/:batchId" element={<LabBatchPage />} />
-          <Route path="/lab/:batchId/runs/:runId" element={<p>drill-down</p>} />
+          <Route path="/procedures/:id/lab" element={<LabPage />} />
+          <Route path="/procedures/:id/lab/:batchId" element={<LabBatchPage />} />
+          <Route path="/procedures/:id/lab/:batchId/runs/:runId" element={<p>drill-down</p>} />
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
@@ -91,7 +91,7 @@ const batch = {
 describe("Experiment dashboard", () => {
   it("shows the verdict mix, keeps errors apart, and flags the unstable step", async () => {
     mockApi((url) => (url === "/api/reliability/batches/b1" ? { body: batch } : undefined));
-    show("/lab/b1");
+    show("/procedures/p1/lab/b1");
     expect(await screen.findByRole("heading", { name: "Baseline" })).toBeInTheDocument();
     expect(screen.getByText(/3 \/ 4/)).toBeInTheDocument();
     expect(screen.getAllByRole("table").length).toBeGreaterThanOrEqual(2);
@@ -106,7 +106,7 @@ describe("Experiment dashboard", () => {
 
   it("opens the run at the chosen step from a matrix cell", async () => {
     mockApi((url) => (url === "/api/reliability/batches/b1" ? { body: batch } : undefined));
-    show("/lab/b1");
+    show("/procedures/p1/lab/b1");
     const cells = await screen.findAllByRole("button", { name: "?" });
     fireEvent.click(cells[0]);
     expect(await screen.findByText("drill-down")).toBeInTheDocument();
@@ -130,11 +130,15 @@ describe("New experiment", () => {
         const body = JSON.parse(String(init.body));
         return body.allow_live ? { body: { ...batch, id: "new" } } : { status: 409, body: { detail: { code: "live_call_required", plan } } };
       }
-      if (url === "/api/reliability/batches") return { body: [] };
+      if (url === "/api/reliability/batches") return { body: [{ ...batch, name: "Mine" }, { ...batch, id: "b2", name: "Elsewhere", project_id: "p9" }] };
       if (url === "/api/settings") return { body: { video_storage: "copy" } };
       return undefined;
     });
-    show("/lab");
+    show("/procedures/p1/lab");
+    expect(await screen.findByRole("link", { name: "Mine" })).toHaveAttribute("href", "/procedures/p1/lab/b1");
+    expect(screen.queryByText("Elsewhere")).not.toBeInTheDocument();
+    expect(screen.queryByText("Procedure", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Lab" })).toHaveAttribute("href", "/procedures/p1/lab");
     fireEvent.click(await screen.findByRole("button", { name: "Review and start" }));
     const dialog = await screen.findByRole("dialog", { name: "Approve live calls" });
     expect(within(dialog).getByText(/Approve 5 independent runs/)).toBeInTheDocument();
@@ -158,7 +162,7 @@ describe("New experiment", () => {
       if (url === "/api/settings") return { body: { video_storage: "copy" } };
       return undefined;
     });
-    show("/lab");
+    show("/procedures/p1/lab");
     const reps = (await screen.findByLabelText("Repetitions")) as HTMLInputElement;
     fireEvent.change(reps, { target: { value: "" } });
     expect(reps.value).toBe("");
