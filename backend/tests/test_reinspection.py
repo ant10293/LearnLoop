@@ -71,6 +71,22 @@ def test_a_contradiction_resting_on_one_frame_cannot_fail_a_step():
     assert kept[0]["outcome"] == "contradicted"
 
 
+def test_a_part_inside_another_can_be_supported_from_partial_views_but_not_contradicted():
+    # Seen live: the cylinder's end showed through the body in several frames; the rest of it cannot show.
+    inside = {"p1": "inside"}
+    target = _target()
+
+    def check(relations, **over):
+        answer = ReinspectOutput.model_validate({"findings": [_finding(visibility="partial", **over)]})
+        return validate_findings(answer, target, [8.0, 9.5], relations)[0][0]["outcome"]
+
+    assert check(inside, evidence_timestamps=[8.0, 9.5]) == "supported"
+    assert check(inside, evidence_timestamps=[9.5]) == "inconclusive"
+    assert check({"p1": "attached"}, evidence_timestamps=[8.0, 9.5]) == "inconclusive"
+    assert check(inside, evidence_timestamps=[8.0, 9.5], outcome="contradicted") == "inconclusive"
+    assert check(inside, evidence_timestamps=[8.0, 9.5], evidence_class="INFERRED") == "inconclusive"
+
+
 def test_conflicting_outcomes_for_one_condition_count_as_none():
     kept, problems = _validated(_finding(), _finding(outcome="contradicted"))
     assert kept[0]["outcome"] == "inconclusive" and any("conflicting" in item for item in problems)

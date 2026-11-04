@@ -51,6 +51,8 @@ Return JSON only.
 _OUTPUT_TOKENS = 16_000
 # Frames a contradicted finding must cite. A false FAIL costs more than an unresolved step.
 MIN_CONTRADICTING_FRAMES = 2
+# Relations whose subject ends up mostly hidden in its target.
+HIDDEN_BY_DESIGN = frozenset({"inside"})
 # A moment closer than this to one already chosen adds little.
 _MERGE_SEC = 0.4
 # The sharpest frame within this distance of a chosen moment is sent instead of it.
@@ -160,7 +162,7 @@ async def _inspect(session: Session, row: VerificationRunRow, target: dict) -> d
         return _record(session, row, target, times, question, "invalid", f"The answer did not match its contract: {str(exc)[:300]}")
     if source == "live":
         _store(key, {"text": text, "request_id": request_id, "model_id": run.model_id, "created_at": utcnow().isoformat()})
-    findings, problems = validate_findings(answer, target, times)
+    findings, problems = validate_findings(answer, target, times, predicate_relations(target, template.document_json))
     for finding in findings:
         finding["model_id"] = run.model_id
         finding["request_id"] = request_id
@@ -183,10 +185,13 @@ def _record(session, row, target, times, question, status, reason, findings=None
     return {"step_id": target["step_id"], "status": status, "reason": reason, "findings": len(findings or []), "request_id": request_id}
 
 
-def validate_findings(answer: ReinspectOutput, target: dict, times: list[float]) -> tuple[list[dict], list[str]]:
+def validate_findings(
+    answer: ReinspectOutput, target: dict, times: list[float], relations: dict[str, str] | None = None
+) -> tuple[list[dict], list[str]]:
     """Keep findings that answer what was asked, citing frames that were sent. Two answers for one condition
     that disagree count as none. A supported or contradicted finding without direct visible evidence is
-    kept as inconclusive."""
+    kept as inconclusive. relations maps a predicate id to its relation, for the one exception below."""
+    relations = relations or {}
     asked = {item["predicate_id"] for item in target["predicates"]}
     kept: dict[str, dict] = {}
     problems: list[str] = []
@@ -214,8 +219,20 @@ def validate_findings(answer: ReinspectOutput, target: dict, times: list[float])
             # Seen live: a model took a similar part for the subject in one frame while a hand hid the real one.
             finding["limitations"] = [*finding["limitations"], f"A contradiction needs at least {MIN_CONTRADICTING_FRAMES} frames that show it; one frame can hide a part behind a hand."]
             finding["outcome"] = "inconclusive"
+        # A part inside another is only ever partly visible. For that condition alone, a partial view supports it
+        # when it is directly observed in as many frames as a contradiction needs. Contradictions still need a full view.
+        hidden_by_design = (
+            finding["outcome"] == "supported"
+            and relations.get(item.predicate_id) in HIDDEN_BY_DESIGN
+            and finding["visibility"] == "partial"
+            and len(finding["evidence_timestamps"]) >= MIN_CONTRADICTING_FRAMES
+        )
+        if hidden_by_design:
+            finding["partial_accepted"] = True
         if finding["outcome"] != "inconclusive" and not (
-            finding["evidence_class"] == "DIRECTLY_OBSERVED" and finding["visibility"] == "visible" and finding["evidence_timestamps"]
+            finding["evidence_class"] == "DIRECTLY_OBSERVED"
+            and (finding["visibility"] == "visible" or hidden_by_design)
+            and finding["evidence_timestamps"]
         ):
             finding["limitations"] = [*finding["limitations"], f"Reported {finding['outcome']} without a directly observed, visible frame that was sent."]
             finding["outcome"] = "inconclusive"
@@ -230,6 +247,13 @@ def validate_findings(answer: ReinspectOutput, target: dict, times: list[float])
 
 
 # ---------------------------------------------------------------- frames and prompt
+
+
+def predicate_relations(target: dict, template: dict) -> dict[str, str]:
+    for step in template.get("steps") or []:
+        if step.get("step_id") == target["step_id"]:
+            return {item["id"]: item.get("relation") or "" for item in step.get("completion_conditions") or []}
+    return {}
 
 
 def condition_parts(target: dict, template: dict, report: dict) -> dict:

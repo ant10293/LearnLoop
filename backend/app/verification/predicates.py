@@ -396,7 +396,8 @@ def apply_reinspection(spec, machine: dict[str, list[PredicateJudgement]], findi
 
 def _reinspected_judgement(current: PredicateJudgement, finding: dict, video_id: str) -> PredicateJudgement:
     outcome = finding.get("outcome")
-    direct = finding.get("evidence_class") == "DIRECTLY_OBSERVED" and finding.get("visibility") == "visible"
+    visible = finding.get("visibility") == "visible" or (outcome == "supported" and finding.get("partial_accepted"))
+    direct = finding.get("evidence_class") == "DIRECTLY_OBSERVED" and visible
     stamps = [float(value) for value in finding.get("evidence_timestamps") or []]
     model = finding.get("model_id") or "the analysis model"
     reason = (finding.get("reason") or "").strip()
