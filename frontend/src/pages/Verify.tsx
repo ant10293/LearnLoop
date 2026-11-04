@@ -105,6 +105,12 @@ export function Report({ verificationId, procedure, recording, readOnly = false,
     queryFn: () => api.verification(verificationId),
     refetchInterval: (state) => (state.state.data?.report.reinspection?.status === "pending" ? 1500 : false),
   });
+  // The attempt tabs read verdicts from the procedure, so refresh it when this report's verdict moves (second look, human answers).
+  const overall = query.data?.overall;
+  const listed = procedure.verifications.find((item) => item.id === verificationId)?.overall;
+  useEffect(() => {
+    if (overall && listed && overall !== listed) void client.invalidateQueries({ queryKey: ["procedure", procedure.id] });
+  }, [overall, listed, client, procedure.id]);
   const [stepId, setStepId] = useState(initialStepId);
   useEffect(() => setStepId(initialStepId), [initialStepId]);
   const [tick, setTick] = useState(0);
