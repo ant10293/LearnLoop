@@ -489,6 +489,27 @@ def test_recovery_that_drifts_again_is_not_accepted(lab, monkeypatch):  # noqa: 
     assert not any(row["status"] == "recovered" for row in views["objects"][ids[0]]["track"])
 
 
+def test_a_recovery_that_cannot_be_checked_keeps_the_first_pass(lab, monkeypatch):  # noqa: F811
+    from app.pipeline import appearance_stage
+
+    real = appearance_stage.check_tracks
+    seen = []
+
+    def failing_second_check(**kwargs):
+        seen.append(kwargs["mode"])
+        if len(seen) > 1:
+            raise RuntimeError("frame read failed")
+        return real(**kwargs)
+
+    monkeypatch.setattr(appearance_stage, "check_tracks", failing_second_check)
+    views, ids, calls = _drift_flow(lab, monkeypatch, _follow_red)
+    recovery = views["recovery"]
+    assert len(seen) == 2 and recovery["recovered_sightings"] == 0 and "frame read failed" in recovery["error"]
+    # The views were still made from the first pass, with the drifted boxes left out.
+    track = views["objects"][ids[0]]["track"]
+    assert track and all(row["x"] < 0.5 for row in track)
+
+
 def test_no_recovery_request_is_sent_when_the_budget_is_spent(lab, monkeypatch):  # noqa: F811
     views, ids, calls = _drift_flow(lab, monkeypatch, _follow_red, budget=0)
     assert [call[1].get("propagation_direction") for call in calls].count("forward") == 0

@@ -154,6 +154,23 @@ def test_an_unresolved_step_gets_one_second_look_that_can_pass_it_and_keeps_the_
         f"/api/verifications/{report['id']}/steps/s3/observations", json={"answer": "not_installed", "timestamp": 9.5}
     ).json()
     assert _verdicts(reviewed)["s3"] == "FAIL"
+    # The reviewer's answer remakes the report but keeps what the automatic checks recorded.
+    assert reviewed["report"]["reinspection"]["changed"] == after["report"]["reinspection"]["changed"]
+    assert reviewed["report"]["appearance"] == after["report"]["appearance"]
+
+
+def test_a_reviewer_answer_while_a_second_look_runs_keeps_it_pending(lab):  # noqa: F811
+    client, stub, tmp = lab
+    procedure, template = _accepted(lab)
+    _stub_reinspect(stub, "supported")
+    report = _check(lab, procedure, template, HIDDEN, "white")
+    reviewed = client.post(
+        f"/api/verifications/{report['id']}/steps/s1/observations", json={"answer": "installed", "timestamp": 1.0}
+    ).json()
+    assert reviewed["report"]["reinspection"]["status"] == "pending"
+    _run_job(report["execution_run_id"])
+    after = client.get(f"/api/verifications/{report['id']}").json()
+    assert after["report"]["reinspection"]["status"] == "completed" and _verdicts(after)["s3"] == "PASS"
 
 
 def test_a_contradicted_condition_fails_and_an_inconclusive_answer_changes_nothing(lab):  # noqa: F811

@@ -543,6 +543,7 @@ def correct_role(session: Session, verification_id: str, role_id: str, object_lo
     report["verification_id"] = row.id
     report["template_id"] = template.id
     report["template_version"] = template.version
+    _carry_checks(row.report_json or {}, report)
     row.config_json = config
     row.report_json = report
     row.overall_result = report["overall"]
@@ -600,11 +601,20 @@ def record_observation(session: Session, verification_id: str, step_id: str, pay
     report["template_version"] = template.version
     report["execution_run_id"] = run.id
     report["execution_revision_id"] = revision.id
+    _carry_checks(row.report_json or {}, report)
     row.report_json = report
     row.overall_result = report["overall"]
     _replace_details(session, row, report)
     session.commit()
     return verification_payload(session, row)
+
+
+def _carry_checks(previous: dict, report: dict) -> None:
+    """Keep what the automatic checks recorded when a reviewer's action makes the report again. The engine does not
+    make these, so without this a pending second look would vanish from the page mid-run."""
+    for key in ("appearance", "reinspection", "reinspections"):
+        if key in previous:
+            report[key] = previous[key]
 
 
 def _observations(session: Session, verification_id: str) -> list[dict]:

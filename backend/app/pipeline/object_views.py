@@ -624,12 +624,24 @@ async def _recover(session, run, video, media: Path, tracked, checked, next_id: 
             item["decision"], item["reason"] = "unresolved", f"sam_not_run: {failure or 'no answer'}"
         out["unresolved"] = len(attempts)
         return out
-    followed = _assign(parse_sam_output(text), seeds, start)
     # A recovery is accepted only if the boxes SAM followed from the new seed look like the object.
-    again = check_tracks(
-        run_id=run.id, media=media, tracked=followed, seeds=seeds, labels=checked.labels, fps=SAM_FPS, mode="execution",
-        reference=(None, checked.galleries, {}, checked.look_alike),
-    )
+    try:
+        followed = _assign(parse_sam_output(text), seeds, start)
+        again = check_tracks(
+            run_id=run.id, media=media, tracked=followed, seeds=seeds, labels=checked.labels, fps=SAM_FPS, mode="execution",
+            reference=(None, checked.galleries, {}, checked.look_alike),
+        )
+        failure = "" if again.used else again.error or "the followed boxes were not checked"
+    except Exception as exc:
+        log.exception("Recovery check failed for run %s", run.id)
+        failure = str(exc)[:400]
+    if failure:
+        # The first pass's boxes stay as they were checked.
+        for item in chosen:
+            item["decision"], item["reason"] = "unresolved", f"recovery_not_checked: {failure}"
+        out["error"] = failure
+        out["unresolved"] = len(attempts)
+        return out
     for item in chosen:
         local_id = item["local_id"]
         new = sorted(followed.get(local_id, []), key=lambda sighting: sighting.timestamp)
