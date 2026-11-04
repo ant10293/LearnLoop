@@ -125,7 +125,7 @@ function ProcedureCard({ item }: { item: ProcedureSummary }) {
           </button>
           {open && (
             <div className="menu-list" role="menu">
-              <button role="menuitem" onClick={() => { setOpen(false); setRenaming(true); }}>Rename<Pencil size={15} aria-hidden="true" /></button>
+              <button role="menuitem" className="accent" onClick={() => { setOpen(false); setRenaming(true); }}>Rename<Pencil size={15} aria-hidden="true" /></button>
               <button role="menuitem" className="danger" onClick={() => void remove()}>Delete<Trash2 size={15} aria-hidden="true" /></button>
             </div>
           )}

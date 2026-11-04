@@ -64,6 +64,7 @@ p { margin: 0.3rem 0; }
 .menu-list { position: absolute; top: calc(100% + 0.25rem); left: 0; z-index: 10; min-width: 9rem; display: flex; flex-direction: column; padding: 0.25rem; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; box-shadow: 0 6px 20px rgb(0 0 0 / 0.12); }
 .menu-list button { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.45rem 0.6rem; background: none; border: 0; border-radius: 5px; text-align: left; font-size: 0.9rem; cursor: pointer; }
 .menu-list button:hover, .menu-list button:focus-visible { background: var(--line); }
+.menu-list button.accent { color: var(--accent); }
 .menu-list button.danger { color: var(--fail); }
 .menu-list button.danger:hover, .menu-list button.danger:focus-visible { background: var(--fail-bg); }
 .procedure-footer { display: flex; justify-content: flex-end; margin-top: 1.5rem; }
