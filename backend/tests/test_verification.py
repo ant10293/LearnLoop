@@ -298,6 +298,22 @@ def test_a_part_seen_nowhere_fails_unless_its_appearance_matched_or_the_work_was
     assert _steps(verify_execution(template, execution))["step_stud"]["verdict"] == "CANNOT_VERIFY"
 
 
+def test_both_parts_seen_nowhere_fail_as_missing_when_the_rest_of_the_attempt_was_shown():
+    # Seen live: a figure's legs, torso, and head were never in the attempt, only a motorcycle, and every
+    # "attached to" condition stayed undecided for lack of evidence.
+    template, _ = _never_seen_case()
+    execution = document(
+        objects=[obj("E_stud", "clear stud", "small clear stud", "clear"), obj("E_body", "body", "white body", "white"), obj("E_bike", "motorcycle", "red motorcycle", "red")],
+        observations=[obs("E_stud", 12, visibility="occluded"), obs("E_body", 12, visibility="occluded"), obs("E_bike", 12)],
+        relationships=[],
+        actions=[action("X_bike", "place", 0, 2, ["E_bike"])],
+    )
+    result = _steps(verify_execution(template, execution))["step_stud"]
+    assert result["verdict"] == "FAIL" and result["error_category"] == "MISSING_COMPONENT" and result["basis"] == "not_observed"
+    failed = next(item for item in result["predicates"] if item["status"] == "fail")
+    assert "Neither the" in failed["note"] and failed["evidence"][0]["object_local_ids"] == ["E_body", "E_stud"]
+
+
 def test_a_seen_part_cannot_end_up_against_a_part_seen_nowhere():
     # Seen live: the lock washer was never in the attempt, yet "nut touching lock washer" was left undecided and a
     # second Meta look reported a lock washer beside the nut.

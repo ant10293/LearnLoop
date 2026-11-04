@@ -501,9 +501,10 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
     """A part that appears nowhere in the attempt is treated as missing, by product decision.
 
     Nowhere means: no visible or partial observation at any time, no action, state change, or relation that
-    involves it, and no box that matched its learned appearance. The part it goes on must have been seen, so a
-    recording that does not show the work at all stays unresolved. A part seen once and hidden later is not this.
+    involves it, and no box that matched its learned appearance. Something in the attempt must have been seen, so
+    a recording that does not show the work at all stays unresolved. A part seen once and hidden later is not this.
     The same holds the other way round: a seen part cannot end up on, or touching, a part that appears nowhere.
+    When neither part appears anywhere but other parts of the attempt do, both are missing.
     """
     subject_ids = set(subject.object_local_ids if subject else [])
     target_ids = set(target.object_local_ids if target else [])
@@ -515,10 +516,19 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
 
     if not seen(subject_ids):
         if target_ids and not seen(target_ids):
+            others = {item.object_local_id for item in execution.observations} - subject_ids - target_ids
+            if not any(seen({object_id}) for object_id in others):
+                return None
+            subject_label = subject.label or "part"
+            target_label = target.label or "part it goes with"
+            missing, note = subject_ids | target_ids, (
+                f"Neither the {subject_label} nor the {target_label} was seen at any point in the recording, "
+                "while other parts of the attempt were, so both are treated as missing."
+            )
+        elif not target_ids and not execution.observations:
             return None
-        if not target_ids and not execution.observations:
-            return None
-        missing, note = subject_ids, "This part was not seen at any point in the recording, so it is treated as missing."
+        else:
+            missing, note = subject_ids, "This part was not seen at any point in the recording, so it is treated as missing."
     elif target_ids and not seen(target_ids):
         label = target.label or "part it goes with"
         missing, note = target_ids, f"The {label} was not seen at any point in the recording, so it is treated as missing and this condition cannot hold."
