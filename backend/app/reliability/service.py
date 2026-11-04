@@ -20,6 +20,7 @@ from app.models.util import elapsed_seconds, utcnow
 from app.models.verification import LearnedWorkflowTemplate
 from app.pipeline import guided
 from app.reliability import learning, metrics
+from app.services.storage import missing_original
 
 MODES = ("verification", "learning")
 ACTIVE = ("queued", "running", "canceling")
@@ -76,6 +77,10 @@ def fingerprint(config: dict) -> str:
     return hashlib.sha256(json.dumps(payload, sort_keys=True, default=str).encode()).hexdigest()[:12]
 
 
+def missing_recording_message(path) -> str:
+    return f"The recording was added by reference and is no longer at {path}. Put the file back there, or add it to the procedure again."
+
+
 def create_batch(session: Session, payload: dict) -> ReliabilityBatch:
     mode = payload.get("mode") or "verification"
     if mode not in MODES:
@@ -89,6 +94,8 @@ def create_batch(session: Session, payload: dict) -> ReliabilityBatch:
         raise LookupError("recording not found in this procedure")
     if (video.ingest_status or "ready") != "ready":
         raise ValueError("This recording is still being prepared.")
+    if (gone := missing_original(video.stored_path)) is not None:
+        raise ValueError(missing_recording_message(gone))
     if float(video.duration_sec or 0) > guided.MAX_CLIP_SECONDS:
         raise ValueError(f"This recording is {video.duration_sec:.0f} seconds. LearnLoop supports up to {guided.MAX_CLIP_SECONDS:.0f} seconds.")
     repetitions = int(5 if payload.get("repetitions") is None else payload["repetitions"])
@@ -423,7 +430,14 @@ def options(session: Session) -> dict:
             if video is None:
                 continue
             recordings.append(
-                {"video_id": video.id, "filename": video.original_filename, "role": row.role, "duration_sec": video.duration_sec, "ready": (video.ingest_status or "ready") == "ready"}
+                {
+                    "video_id": video.id,
+                    "filename": video.original_filename,
+                    "role": row.role,
+                    "duration_sec": video.duration_sec,
+                    "ready": (video.ingest_status or "ready") == "ready",
+                    "missing": missing_original(video.stored_path) is not None,
+                }
             )
         templates = [
             {

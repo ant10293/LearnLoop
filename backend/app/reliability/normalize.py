@@ -46,6 +46,8 @@ def classify_error(text: str) -> str:
         return "resource_exhausted"
     if "database is locked" in lowered or "database is busy" in lowered:
         return "database_busy"
+    if "no longer at" in lowered or "no such file or directory" in lowered:
+        return "missing_recording"
     if "worker stopped" in lowered or "process restart" in lowered:
         return "interrupted"
     return "pipeline_error"

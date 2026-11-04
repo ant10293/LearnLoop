@@ -213,7 +213,7 @@ function NewExperiment({ projectId }: { projectId: string }) {
             <span className="small muted">{mode === "verification" ? "Attempt recording" : "Demonstration recording"}</span>
             <select className="field" value={videoId} onChange={(event) => setVideoId(event.target.value)}>
               {recordings.length === 0 && <option value="">No {mode === "verification" ? "attempts" : "demonstrations"} yet</option>}
-              {recordings.map((item) => <option key={item.video_id} value={item.video_id} disabled={!item.ready}>{item.filename} · {item.duration_sec.toFixed(1)}s{item.ready ? "" : " (preparing)"}</option>)}
+              {recordings.map((item) => <option key={item.video_id} value={item.video_id} disabled={!item.ready || item.missing}>{item.filename} · {item.duration_sec.toFixed(1)}s{item.missing ? " (file missing)" : item.ready ? "" : " (preparing)"}</option>)}
             </select>
           </label>
           <label className="stack">

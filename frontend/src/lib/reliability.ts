@@ -307,7 +307,7 @@ export interface LabOptions {
   procedures: {
     id: string;
     name: string;
-    recordings: { video_id: string; filename: string; role: "demonstration" | "execution"; duration_sec: number; ready: boolean }[];
+    recordings: { video_id: string; filename: string; role: "demonstration" | "execution"; duration_sec: number; ready: boolean; missing?: boolean }[];
     templates: { id: string; version: number; name: string; family_id: string; acceptance_status: string; created_at: string; source_filename?: string; steps: { step_id: string; name: string; required: boolean }[] }[];
   }[];
   models: { default_inference: string; default_segmentation: string };

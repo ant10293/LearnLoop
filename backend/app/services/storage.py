@@ -44,6 +44,14 @@ def is_external(stored: str) -> bool:
     return stored.startswith(EXTERNAL_PREFIX)
 
 
+def missing_original(stored: str) -> Path | None:
+    """Where a referenced original was, when it is no longer there. Copied originals are not checked here."""
+    if not stored or not is_external(stored):
+        return None
+    path = resolve_stored(stored)
+    return None if path.is_file() else path
+
+
 def resolve_stored(stored: str) -> Path:
     if not stored:
         raise ValueError("empty stored path")

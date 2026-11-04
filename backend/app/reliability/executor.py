@@ -30,7 +30,8 @@ from app.models.runs import AnalysisRevision, AnalysisRun, Job
 from app.models.util import elapsed_seconds, utcnow
 from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
 from app.reliability import normalize
-from app.reliability.service import ACTIVE
+from app.reliability.service import ACTIVE, missing_recording_message
+from app.services.storage import missing_original
 
 log = logging.getLogger("learnloop.reliability")
 
@@ -98,6 +99,8 @@ def _launch(session: Session, batch: ReliabilityBatch, run: ReliabilityRun) -> N
     video = session.get(VideoAsset, batch.video_id)
     if video is None:
         raise LookupError("The recording was deleted.")
+    if (gone := missing_original(video.stored_path)) is not None:
+        raise FileNotFoundError(missing_recording_message(gone))
     template_document = config.get("template_document")
     if batch.mode == "verification" and session.get(LearnedWorkflowTemplate, batch.template_id) is None:
         raise LookupError("The procedure version was deleted.")

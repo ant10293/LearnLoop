@@ -63,7 +63,7 @@ class ReliabilityRun(Base):
     # learning mode: the procedure learned from this repetition, never stored as a procedure version.
     learned_json: Mapped[dict] = mapped_column(JSON, default=dict)
     error: Mapped[str] = mapped_column(Text, default="")
-    # pipeline_error, rate_limited, resource_exhausted, database_busy, invalid_result, canceled, interrupted
+    # pipeline_error, rate_limited, resource_exhausted, database_busy, missing_recording, invalid_result, canceled, interrupted
     error_kind: Mapped[str] = mapped_column(String(40), default="")
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(default=utcnow)
