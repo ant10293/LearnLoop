@@ -352,3 +352,19 @@ def test_a_single_part_seen_nowhere_fails_only_when_another_part_was_seen():
     assert _never_seen(predicate, dark, stud, None, set(), "v") is None
     shown = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded"), obs("E_body", 12)], relationships=[], actions=[])
     assert _never_seen(predicate, shown, stud, None, set(), "v").status == "fail"
+    # A part that was only handled, with no observation of its own, still shows the work was recorded.
+    handled = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded")], relationships=[], actions=[action("X_body", "place", 0, 2, ["E_body"])])
+    assert _never_seen(predicate, handled, stud, None, set(), "v").status == "fail"
+
+
+def test_a_report_reads_the_appearance_matches_it_was_made_with(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.services import verification_store as store
+
+    monkeypatch.setattr(store, "_appearance_seen", lambda run_id: {"live"})
+    row = lambda report: SimpleNamespace(report_json=report, execution_run_id="r")  # noqa: E731
+    assert store._seen_when_made(row({})) == set()
+    assert store._seen_when_made(row({"appearance": {"seen": ["kept"]}})) == {"kept"}
+    # Made before matches were kept with the report: it read the views then, and still does.
+    assert store._seen_when_made(row({"appearance": {"used": True}})) == {"live"}

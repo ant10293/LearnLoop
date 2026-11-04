@@ -674,6 +674,7 @@ def evaluate_verification(session: Session, verification_id: str, ground_truth_i
             role_overrides=config.get("role_overrides") or {},
             execution_video_id=row.execution_video_id,
             demonstration_video_id=template.source_video_id,
+            appearance_seen=_seen_when_made(row),
         )
     return {"metrics": metrics, "strategies": compared}
 
@@ -903,8 +904,14 @@ def _run_engine(
 
 def _seen_when_made(row: VerificationRunRow) -> set[str]:
     """The appearance matches the report was first made with. Views made again later do not change a verdict
-    when a reviewer acts; a report from before appearance checks had none."""
-    return set(((row.report_json or {}).get("appearance") or {}).get("seen") or [])
+    when a reviewer acts; a report from before appearance checks had none. A report made before matches were kept
+    with it reads the attempt's views, as it did then."""
+    appearance = (row.report_json or {}).get("appearance")
+    if appearance is None:
+        return set()
+    if "seen" not in appearance:
+        return _appearance_seen(row.execution_run_id)
+    return set(appearance["seen"])
 
 
 def _appearance_seen(run_id: str) -> set[str]:

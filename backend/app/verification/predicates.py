@@ -514,7 +514,7 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
     def seen(ids: set[str]) -> bool:
         return bool(ids & appearance_seen) or any(_involved(execution, object_id) for object_id in ids)
 
-    others = {item.object_local_id for item in execution.observations} - subject_ids - target_ids
+    others = {item.local_id for item in execution.objects} - subject_ids - target_ids
     if not seen(subject_ids):
         if not any(seen({object_id}) for object_id in others) and not (target_ids and seen(target_ids)):
             return None

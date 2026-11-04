@@ -148,7 +148,7 @@ def plan(
         "live_enabled": settings.live_inference,
         "segmentation_model_id": segmentation_model_id if follows else "",
         # A second follows, forward only, only when some object is boxed after the first frame. Recovery may add more.
-        "object_view_requests": 2 + (settings.recovery_max_sam_requests if settings.appearance_recovery else 0) if follows else 0,
+        "object_view_requests": 2 + (settings.recovery_max_sam_requests if settings.appearance_enabled and settings.appearance_recovery else 0) if follows else 0,
         # One still on the first frame, and a second only when some object is not on it or SAM loses one.
         "object_view_locate_requests": 2 if follows else 0,
         "object_view_frames": object_views.estimated_frames(float(video.duration_sec or 0)),
