@@ -126,7 +126,7 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
       summary={summaryLine(verification)}
       basis={
         <>
-          {report.human_assisted ? "Includes human-confirmed observations. Not a fully automatic result." : "Decided by the deterministic verifier from the Meta analysis of this recording."}
+          {report.human_assisted ? "Includes human-confirmed observations. Not a fully automatic result." : report.reinspection?.changed?.length ? "Decided by the deterministic verifier from the Meta analysis of this recording and a second Meta look at unclear steps." : "Decided by the deterministic verifier from the Meta analysis of this recording."}
           {" "}{recording.run?.source === "cached" ? "Cached Meta response." : recording.run?.source === "live" ? "Live Meta response." : ""}
         </>
       }
