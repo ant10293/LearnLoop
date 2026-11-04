@@ -9,7 +9,7 @@ import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
 import { api, appearanceLine, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
 type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] };
-type OtherStep = { step_id: string; number: number; name: string };
+type OtherStep = { step_id: string; number: number; name: string; follows: boolean };
 
 const ROLE_PLACEHOLDERS = 2;
 const STEP_PLACEHOLDERS = 3;
@@ -204,7 +204,7 @@ export function ProcedurePage() {
           );
         })}
         steps={template.document.steps.map((step, index) => (
-          <StepCard key={step.step_id} index={index} step={step} edit={steps[step.step_id] ?? {}} roles={roles} template={template} others={template.document.steps.flatMap((other, position) => (other.step_id === step.step_id || (steps[other.step_id]?.removed ?? other.removed) ? [] : [{ step_id: other.step_id, number: position + 1, name: steps[other.step_id]?.name ?? other.name }]))} onChange={(edit) => change(step.step_id, edit)} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />
+          <StepCard key={step.step_id} index={index} step={step} edit={steps[step.step_id] ?? {}} roles={roles} template={template} others={template.document.steps.flatMap((other, position) => (other.step_id === step.step_id || (steps[other.step_id]?.removed ?? other.removed) ? [] : [{ step_id: other.step_id, number: position + 1, name: steps[other.step_id]?.name ?? other.name, follows: (steps[other.step_id]?.order_after ?? other.dependencies.filter((dep) => dep.constrains_order).map((dep) => dep.step_id)).includes(step.step_id) }]))} onChange={(edit) => change(step.step_id, edit)} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />
         ))}
       />
       <ErrorNote message={removeError} />
@@ -420,24 +420,33 @@ function StepFields({ objects, action, completion, checks, order, uncertainty, e
   );
 }
 
-function orderSummary(numbers: number[]) {
-  if (numbers.length === 0) return "Any order";
-  if (numbers.length === 1) return `After step ${numbers[0]}`;
-  return `After steps ${numbers.slice(0, -1).join(", ")} and ${numbers[numbers.length - 1]}`;
+function stepList(numbers: number[]) {
+  if (numbers.length === 1) return `step ${numbers[0]}`;
+  return `steps ${numbers.slice(0, -1).join(", ")} and ${numbers[numbers.length - 1]}`;
+}
+
+function orderSummary(after: number[], before: number[]) {
+  const parts = [after.length > 0 && `after ${stepList(after)}`, before.length > 0 && `before ${stepList(before)}`].filter(Boolean) as string[];
+  if (parts.length === 0) return "Any order";
+  const text = parts.join(", ");
+  return text[0].toUpperCase() + text.slice(1);
 }
 
 function StepOrder({ number, others, selected, dependencies, onChange }: { number: number; others: OtherStep[]; selected: string[]; dependencies: TemplateDependency[]; onChange: (order_after: string[]) => void }) {
   const [editing, setEditing] = useState(false);
+  const after = others.filter((other) => selected.includes(other.step_id)).map((other) => other.number);
+  const before = others.filter((other) => other.follows).map((other) => other.number);
   return (
     <div className="stack small">
       <button type="button" className="order-row" aria-expanded={editing} onClick={() => setEditing(!editing)}>
         <span>Step order</span>
-        <span className="order-value muted">{orderSummary(others.filter((other) => selected.includes(other.step_id)).map((other) => other.number))}</span>
+        <span className="order-value muted">{orderSummary(after, before)}</span>
         <svg className="order-chevron" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
       </button>
       {editing && (
         <fieldset className="order-edit">
           <legend className="muted">Select the steps that must happen before this step (Step {number}). The rest can come in any order.</legend>
+          {before.length > 0 && <p className="muted">This step must happen before {stepList(before)}, which {before.length === 1 ? "is" : "are"} set to follow it.</p>}
           <div className="order-cards">
             {others.map((other) => {
               const checked = selected.includes(other.step_id);

@@ -657,6 +657,8 @@ describe("Procedure review", () => {
     expect(screen.getByText(/must happen before this step \(Step 2\)/)).toBeTruthy();
     fireEvent.click(screen.getByRole("checkbox", { name: "Step 1: Place green cube" }));
     expect(screen.getByText("After step 1")).toBeTruthy();
+    expect(screen.getByText("Before step 2")).toBeTruthy();
+    expect(screen.queryByText("Any order")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Save edits" }));
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toMatchObject({ steps: [{ step_id: "s2", order_after: ["s1"] }] });
