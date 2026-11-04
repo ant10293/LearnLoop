@@ -86,4 +86,4 @@ When a required step ends CANNOT VERIFY and no reviewer has decided it, `service
 
 ## What is not here
 
-The research code reused from vision-test-bench that the product does not run, including frame tracking, recovery experiments, evaluation, audio, and the lab API, was removed in `449e931`. See [PROVENANCE.md](PROVENANCE.md).
+The research code reused from vision-test-bench that the product does not run, including frame tracking, recovery experiments, evaluation, audio, and the lab API, was removed in `449e931`. See [PROVENANCE.md](PROVENANCE.md). The Reliability Lab (`backend/app/reliability/`, `/lab`) is unrelated to that removed code. It was built during the hackathon (`7401697`) as a developer tool that repeats independent runs on one recording to measure how much results vary.

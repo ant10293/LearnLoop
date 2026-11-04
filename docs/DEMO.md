@@ -12,7 +12,7 @@ Judges must be able to tell what was built during the hackathon from the video a
   - *Before kickoff (vision-test-bench, 2026-10-21 to 10-26):* database tables, video upload and ingest, and the core of the deterministic verifier.
   - *Built during the hackathon:* the Muse Wonder guided analysis, SAM 3.1 object views, DINOv2 appearance references, the never-seen check, the second look, reviewer observations, procedure review, the product API, and the whole UI.
 - **Caption each screen** with "Built during the hackathon". Every screen in the script qualifies, because the whole frontend is new.
-- **At the verdict, say where it comes from.** For example: "The verdict engine came from my earlier project. What's new is the evidence it reads, from Meta, SAM and DINOv2, the checks I added to it, and everything you see here." If the report labels the FAIL in step 7 as "not seen", it came from the never-seen check added during the hackathon (`596663a`), and you can say so.
+- **At the verdict, say where it comes from.** For example: "The verdict engine came from my earlier project. What's new is the evidence it reads, from Meta, SAM and DINOv2, the checks I added to it, and everything you see here." If a step is marked "not seen anywhere", it came from the never-seen check added during the hackathon (`596663a`, made stricter in `39444b8`), and you can say so. That check now leaves the step CANNOT VERIFY rather than FAIL.
 - Do not describe role mapping, action alignment, or condition judging as new work. The changes made to them are listed in [ARCHITECTURE.md](ARCHITECTURE.md#changed-during-the-hackathon).
 
 ## Recordings
@@ -22,7 +22,7 @@ The tested pair is a head-mounted Lego motorcycle build:
 | File | Attempt | Expected result |
 | --- | --- | --- |
 | A, demonstration | `lego-motorcyle-head-mounted-pov.MOV`, 39.6 seconds, all 5 steps | Procedure with 5 steps, 6 parts followed by SAM |
-| B, incorrect | `lego-motorcyle-head-mounted-pov-missing-small-clear-disc.mov`, 20.6 seconds, clear stud left out | FAIL on "Attach clear stud", missing component |
+| B, incorrect | `lego-motorcyle-head-mounted-pov-missing-small-clear-disc.mov`, 20.6 seconds, clear stud left out | "Attach clear stud" is CANNOT VERIFY, marked "not seen anywhere", unless the second look reports the stud absent, which makes it FAIL. The live run before `39444b8` reported FAIL. |
 
 A correct attempt, ideally by a different route, makes a good third clip. Keep each recording under 60 seconds and hold the final state in view for about 3 seconds.
 

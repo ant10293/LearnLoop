@@ -48,7 +48,7 @@ Every flow below ran against the live Meta API with real recordings, made by the
 - Fixed-camera tabletop recordings and head-mounted recordings, where the camera moves with the person.
 - Lego motorcycle builds of 5 steps and a small hardware assembly.
 
-One case, end to end. The demonstration is a 39.6-second head-mounted recording of a Lego motorcycle build. LearnLoop learned 5 steps, and SAM followed all 6 parts. The attempt is a 20.6-second recording that leaves out the small clear stud. The report is **FAIL** on "Attach clear stud", as a missing component that never appears in the attempt. The second look resolved one more step to PASS.
+One case, end to end. The demonstration is a 39.6-second head-mounted recording of a Lego motorcycle build. LearnLoop learned 5 steps, and SAM followed all 6 parts. The attempt is a 20.6-second recording that leaves out the small clear stud. On the build tested live, the report was **FAIL** on "Attach clear stud", as a missing component that never appears in the attempt, and the second look resolved one more step to PASS. The rule has since been made stricter (`39444b8`): a part that is never seen anywhere is no longer proof that it is missing, so the current build reports that step **CANNOT VERIFY** and sends it to the second look and the reviewer checkpoint. It becomes FAIL only when Meta or a reviewer directly reports the stud absent where it belongs.
 
 Results vary from run to run on the same recording. The same attempt has come back with its middle steps as PASS on one run and CANNOT VERIFY on another. When the evidence is weak, LearnLoop reports CANNOT VERIFY instead of guessing.
 
@@ -122,6 +122,7 @@ Built during the hackathon:
 - The product API, procedure review and versioning, and human observations as audited evidence
 - The whole frontend
 - Verifier fixes described in [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- The Reliability Lab, a developer tool at `/lab` that repeats independent runs on one recording and compares the results
 
 ## Tests
 
