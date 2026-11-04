@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 from app.schemas.analysis import AnalysisDocument
 from app.verification import learn_template, verify_execution
-from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.reinspect import apply_finding, plan_reinspections
 from app.verification.roles import map_roles
 from app.verification.schema import LearnedTemplate, ObjectRole
@@ -207,19 +206,6 @@ def test_k_unsupported_model_claim_cannot_become_a_pass():
     assert _steps(still)["step_washer"]["verdict"] == "CANNOT_VERIFY"
     _template, vlm = _run(execution, proposals=claimed, strategy="vlm_only")
     assert _steps(vlm)["step_washer"]["verdict"] == "PASS"
-    truth = {
-        "steps": [
-            {"step_id": "step_washer", "verdict": "CANNOT_VERIFY", "observable": False},
-            {"step_id": "step_position", "verdict": "PASS", "observable": True},
-            {"step_id": "step_insert", "verdict": "PASS", "observable": True},
-            {"step_id": "step_nut", "verdict": "PASS", "observable": True},
-        ]
-    }
-    template = learn_template(assembly_demo(), promote_supported=True, accept=True)
-    compared = compare_strategies(template, execution, truth, proposals=claimed)
-    assert compared["strategies"]["hybrid"]["metrics"]["incorrect_pass"] == 0
-    assert compared["strategies"]["vlm_only"]["metrics"]["incorrect_pass"] >= 1
-    assert compared["model_agreement_is_accuracy"] is False
 
 
 def test_action_label_alone_cannot_pass():
@@ -296,31 +282,6 @@ def test_reinspection_preserves_history_and_can_stay_unverifiable():
         },
     )
     assert _steps(ignored)["step_washer"]["verdict"] == "CANNOT_VERIFY"
-
-
-def test_metrics_count_errors_against_human_labels():
-    _template, report = _run(assembly_execution(include_washer=False))
-    truth = {
-        "steps": [
-            {
-                "step_id": "step_washer",
-                "verdict": "FAIL",
-                "error_type": "MISSING_COMPONENT",
-                "timestamp": 45,
-                "observable": True,
-            },
-            {"step_id": "step_position", "verdict": "PASS", "observable": True},
-            {"step_id": "step_insert", "verdict": "PASS", "observable": True},
-            {"step_id": "step_nut", "verdict": "PASS", "observable": True},
-        ]
-    }
-    metrics = evaluate_report(report, truth)
-    assert metrics["error_detection"]["tp"] == 1
-    assert metrics["error_detection"]["fp"] == 0
-    assert metrics["incorrect_pass"] == 0
-    assert metrics["timestamp_mean_abs_error"] == 0
-    assert metrics["error_confusion"]["MISSING_COMPONENT"]["MISSING_COMPONENT"] == 1
-    assert metrics["is_accuracy"] is True
 
 
 def test_verifier_source_has_no_task_specific_rules():
@@ -406,44 +367,62 @@ def _install(project_id: str, filename: str, document: AnalysisDocument) -> str:
         session.close()
 
 
-def test_same_day_project_can_learn_a_workflow(client):
-    created = client.post("/api/projects", json={"name": "Same day"})
-    assert created.status_code == 200, created.text
-    assert created.json()["is_task"] is False
-    project_id = created.json()["id"]
-    demo_run = _install(project_id, "same-day-demo.mp4", assembly_demo())
-    learned = client.post(
-        f"/api/tasks/{project_id}/workflow-templates",
-        json={"run_id": demo_run, "name": "Same day procedure"},
+def _new_project(name: str) -> str:
+    from app.db import SessionLocal
+    from app.models.media import Project
+
+    session = SessionLocal()
+    try:
+        project = Project(name=name, description="learnloop_procedure")
+        session.add(project)
+        session.commit()
+        return project.id
+    finally:
+        session.close()
+
+
+def _store(action):
+    from app.db import SessionLocal
+    from app.services import verification_store as store
+
+    session = SessionLocal()
+    try:
+        return action(store, session)
+    finally:
+        session.close()
+
+
+def _learn(project_id: str, run_id: str, **options) -> dict:
+    return _store(lambda store, session: store.create_template(session, project_id, run_id, **options))
+
+
+def _verify(template_id: str, run_id: str) -> dict:
+    return _store(
+        lambda store, session: store.start_verification(
+            session, template_id, {"execution_run_id": run_id, "strategy": "hybrid"}
+        )
     )
-    assert learned.status_code == 200, learned.text
-    listed = client.get(f"/api/tasks/{project_id}/workflow-templates")
-    assert listed.status_code == 200
-    assert [row["id"] for row in listed.json()] == [learned.json()["id"]]
-    verifications = client.get(f"/api/tasks/{project_id}/verifications")
-    assert verifications.status_code == 200
-    assert verifications.json() == []
-    missing = client.get("/api/tasks/missing-project/workflow-templates")
-    assert missing.status_code == 404
+
+
+def test_a_procedure_can_be_learned_and_listed(client):
+    project_id = _new_project("Same day")
+    demo_run = _install(project_id, "same-day-demo.mp4", assembly_demo())
+    learned = _learn(project_id, demo_run, name="Same day procedure")
+    listed = _store(lambda store, session: store.list_templates(session, project_id))
+    assert [row["id"] for row in listed] == [learned["id"]]
+    assert _store(lambda store, session: store.list_verifications(session, project_id)) == []
+    with pytest.raises(LookupError):
+        _store(lambda store, session: store.list_templates(session, "missing-project"))
 
 
 def test_l_past_verification_keeps_the_template_revision_it_used(client):
-    project_id = client.post("/api/tasks", json={"name": "Verify", "description": ""}).json()["project"]["id"]
+    project_id = _new_project("Verify")
     demo_run = _install(project_id, "demo.mp4", assembly_demo())
     execution_run = _install(project_id, "execution.mp4", assembly_execution(include_washer=False))
-    created = client.post(
-        f"/api/tasks/{project_id}/workflow-templates",
-        json={"run_id": demo_run, "promote_supported": True, "accept": True, "name": "Joined plates"},
-    )
-    assert created.status_code == 200, created.text
-    template_id = created.json()["id"]
-    assert created.json()["version"] == 1
-    started = client.post(
-        f"/api/workflow-templates/{template_id}/verifications",
-        json={"execution_run_id": execution_run, "strategy": "hybrid"},
-    )
-    assert started.status_code == 200, started.text
-    body = started.json()
+    created = _learn(project_id, demo_run, promote_supported=True, accept=True, name="Joined plates")
+    template_id = created["id"]
+    assert created["version"] == 1
+    body = _verify(template_id, execution_run)
     assert body["template_id"] == template_id
     assert body["overall"] == "FAIL", body["report"]["steps"]
     washer = next(step for step in body["report"]["steps"] if step["step_id"] == "step_washer")
@@ -451,6 +430,7 @@ def test_l_past_verification_keeps_the_template_revision_it_used(client):
     exported = client.get(f"/api/verifications/{body['id']}/export")
     assert exported.status_code == 200
     assert "stored_path" not in exported.text
+    assert exported.json()["evidence"]
     revised = client.patch(
         f"/api/workflow-templates/{template_id}",
         json={"name": "Joined plates revised", "steps": [{"step_id": "step_washer", "requirement_status": "optional"}]},
@@ -465,9 +445,6 @@ def test_l_past_verification_keeps_the_template_revision_it_used(client):
     saved = client.get(f"/api/verifications/{body['id']}")
     assert saved.json()["template_id"] == template_id
     assert saved.json()["template_version"] == 1
-    evidence = client.get(f"/api/verifications/{body['id']}/evidence")
-    assert evidence.status_code == 200
-    assert evidence.json()
 
 
 def _pin_and_cap_demo(category: str) -> AnalysisDocument:
@@ -508,24 +485,14 @@ def _cap_first_execution() -> AnalysisDocument:
 
 
 def _order_template(client, category: str) -> tuple[str, str]:
-    project_id = client.post("/api/tasks", json={"name": "Order", "description": ""}).json()["project"]["id"]
+    project_id = _new_project("Order")
     demo_run = _install(project_id, "demo.mp4", _pin_and_cap_demo(category))
     execution_run = _install(project_id, "execution.mp4", _cap_first_execution())
-    created = client.post(
-        f"/api/tasks/{project_id}/workflow-templates",
-        json={"run_id": demo_run, "promote_supported": True, "accept": True},
-    )
-    assert created.status_code == 200, created.text
-    return created.json()["id"], execution_run
+    return _learn(project_id, demo_run, promote_supported=True, accept=True)["id"], execution_run
 
 
 def _lock_result(client, template_id: str, execution_run: str) -> dict:
-    started = client.post(
-        f"/api/workflow-templates/{template_id}/verifications",
-        json={"execution_run_id": execution_run, "strategy": "hybrid"},
-    )
-    assert started.status_code == 200, started.text
-    return _steps(started.json()["report"])["step_lock"]
+    return _steps(_verify(template_id, execution_run)["report"])["step_lock"]
 
 
 def test_reviewer_can_require_an_order_the_model_did_not(client):

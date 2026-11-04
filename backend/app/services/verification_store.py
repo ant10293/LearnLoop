@@ -25,9 +25,8 @@ from app.models.verification import (
 from app.perception import appearance as app_
 from app.services.appearance import ensure_gallery, gallery_status
 from app.verification.engine import verify_execution
-from app.verification.evaluate import compare_strategies, evaluate_report
 from app.verification.learn import learn_template
-from app.verification.reinspect import apply_finding, plan_reinspections
+from app.verification.reinspect import plan_reinspections
 from app.verification.schema import CompletionPredicate, LearnedTemplate, TemplateDependency
 
 
@@ -413,145 +412,6 @@ def export_verification(session: Session, verification_id: str) -> dict:
     }
 
 
-def request_reinspection(session: Session, verification_id: str, payload: dict) -> dict:
-    row = _verification(session, verification_id)
-    report = dict(row.report_json or {})
-    report["reinspections"] = [
-        {"step_id": item.step_id, "status": item.status}
-        for item in session.scalars(
-            select(VerificationReinspection).where(VerificationReinspection.verification_id == row.id)
-        )
-    ]
-    plans = plan_reinspections(
-        report,
-        max_steps=int((row.config_json or {}).get("max_reinspections") or 4),
-        step_id=payload.get("step_id") or "",
-    )
-    for plan in plans:
-        if plan.get("status") == "budget_exhausted":
-            continue
-        session.add(
-            VerificationReinspection(
-                verification_id=row.id,
-                step_id=plan.get("step_id") or "",
-                question=plan.get("question") or "",
-                frame_timestamps=plan.get("frame_timestamps") or [],
-                status=plan.get("status") or "not_sent",
-                output_json={"reason": plan.get("reason") or "", "modality": plan.get("modality") or ""},
-                previous_verdict=plan.get("previous_verdict") or "",
-            )
-        )
-    session.commit()
-    return {"reinspections": plans, "provider_invoked": False}
-
-
-def submit_finding(session: Session, verification_id: str, finding: dict) -> dict:
-    row = _verification(session, verification_id)
-    report = apply_finding(dict(row.report_json or {}), finding)
-    report["verification_id"] = row.id
-    report["template_id"] = row.template_id
-    report["template_version"] = row.template_version
-    row.report_json = report
-    row.overall_result = report.get("overall") or row.overall_result
-    _replace_details(session, row, report)
-    session.add(
-        VerificationReinspection(
-            verification_id=row.id,
-            step_id=finding.get("step_id") or "",
-            question=finding.get("question") or "",
-            frame_timestamps=list(finding.get("timestamps") or []),
-            status="recorded",
-            output_json={
-                "visibility": finding.get("visibility"),
-                "relation_supported": finding.get("relation_supported"),
-                "evidence_class": finding.get("evidence_class"),
-                "note": finding.get("note") or "",
-            },
-            previous_verdict=(report.get("reinspections") or [{}])[-1].get("previous_verdict") or "",
-        )
-    )
-    session.commit()
-    return verification_payload(session, row)
-
-
-def correct_step(session: Session, verification_id: str, step_id: str, verdict: str, note: str) -> dict:
-    if verdict not in {"PASS", "FAIL", "CANNOT_VERIFY", "NOT_APPLICABLE"}:
-        raise ValueError("unsupported verdict")
-    row = _verification(session, verification_id)
-    report = dict(row.report_json or {})
-    found = False
-    steps = []
-    for step in report.get("steps") or []:
-        item = dict(step)
-        if item.get("step_id") == step_id:
-            found = True
-            history = list(item.get("history") or [])
-            history.append(
-                {
-                    "verdict": item.get("verdict"),
-                    "error_category": item.get("error_category"),
-                    "provenance": "DETERMINISTIC",
-                    "note": "Verdict before human correction.",
-                }
-            )
-            item["history"] = history
-            item["verdict"] = verdict
-            item["explanation"] = note or item.get("explanation") or ""
-            item["error_category"] = "" if verdict != "FAIL" else (item.get("error_category") or "INCORRECT_PHYSICAL_STATE")
-            item["review_required"] = False
-            item["basis"] = "human_override"
-        steps.append(item)
-    if not found:
-        raise LookupError("step not found")
-    from app.verification.reinspect import _overall, _score
-
-    report["steps"] = steps
-    report["overall"] = _overall(steps)
-    report["score"] = _score(steps)
-    row.report_json = report
-    row.overall_result = report["overall"]
-    _replace_details(session, row, report)
-    session.commit()
-    return verification_payload(session, row)
-
-
-def correct_role(session: Session, verification_id: str, role_id: str, object_local_id: str) -> dict:
-    row = _verification(session, verification_id)
-    run = session.get(AnalysisRun, row.execution_run_id)
-    revision = session.get(AnalysisRevision, row.execution_revision_id)
-    template = _template(session, row.template_id)
-    if run is None or revision is None:
-        raise LookupError("execution analysis not found")
-    config = dict(row.config_json or {})
-    overrides = dict(config.get("role_overrides") or {})
-    overrides[role_id] = object_local_id
-    config["role_overrides"] = overrides
-    previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
-    report = _run_engine(template, revision, run, config, _observations(session, row.id), _findings(session, row.id), _seen_when_made(row))
-    for step in report["steps"]:
-        old = previous.get(step["step_id"])
-        if not old:
-            continue
-        step["history"] = list(old.get("history") or []) + [
-            {
-                "verdict": old.get("verdict"),
-                "error_category": old.get("error_category"),
-                "provenance": "DETERMINISTIC",
-                "note": "Verdict before a human role correction.",
-            }
-        ]
-    report["verification_id"] = row.id
-    report["template_id"] = template.id
-    report["template_version"] = template.version
-    _carry_checks(row.report_json or {}, report)
-    row.config_json = config
-    row.report_json = report
-    row.overall_result = report["overall"]
-    _replace_details(session, row, report)
-    session.commit()
-    return verification_payload(session, row)
-
-
 ANSWERS = {"installed", "not_installed", "cannot_determine"}
 
 
@@ -638,45 +498,6 @@ def _observations(session: Session, verification_id: str) -> list[dict]:
         }
         for row in rows
     ]
-
-
-def save_ground_truth(session: Session, verification_id: str, payload: dict) -> dict:
-    row = _verification(session, verification_id)
-    truth = VerificationGroundTruth(
-        project_id=row.project_id,
-        verification_id=row.id,
-        name=payload.get("name") or "Verification labels",
-        document_json={"steps": payload.get("steps") or []},
-    )
-    session.add(truth)
-    session.commit()
-    return {"id": truth.id, "name": truth.name, "document": truth.document_json}
-
-
-def evaluate_verification(session: Session, verification_id: str, ground_truth_id: str, strategies: bool) -> dict:
-    row = _verification(session, verification_id)
-    truth = session.get(VerificationGroundTruth, ground_truth_id)
-    if truth is None or truth.verification_id not in {"", row.id}:
-        raise LookupError("ground truth not found")
-    metrics = evaluate_report(row.report_json or {}, truth.document_json or {})
-    compared = None
-    if strategies:
-        template = _template(session, row.template_id)
-        revision = session.get(AnalysisRevision, row.execution_revision_id)
-        if revision is None:
-            raise LookupError("execution revision not found")
-        config = row.config_json or {}
-        compared = compare_strategies(
-            template.document_json,
-            revision.document_json,
-            truth.document_json or {},
-            proposals=config.get("proposals") or {},
-            role_overrides=config.get("role_overrides") or {},
-            execution_video_id=row.execution_video_id,
-            demonstration_video_id=template.source_video_id,
-            appearance_seen=_seen_when_made(row),
-        )
-    return {"metrics": metrics, "strategies": compared}
 
 
 def template_payload(row: LearnedWorkflowTemplate, video: VideoAsset | None = None, session: Session | None = None) -> dict:

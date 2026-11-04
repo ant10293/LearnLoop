@@ -1,8 +1,7 @@
 """Provider capability routing refuses unsupported modes instead of substituting them."""
 
-import pytest
 from app.providers.catalog import lookup
-from app.providers.types import GenerationRequest, UnsupportedMode, estimate_cost
+from app.providers.types import GenerationRequest, estimate_cost
 
 
 def test_muse_rejects_temperature_capability():
@@ -37,7 +36,6 @@ def _meta_generate(monkeypatch, response):
     from types import SimpleNamespace
 
     from app.providers.meta_provider import MetaProvider
-    from app.providers.types import GenerationRequest
 
     sent = {}
 

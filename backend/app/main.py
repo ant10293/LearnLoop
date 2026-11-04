@@ -14,11 +14,9 @@ from app.api.product import router as product_router
 from app.api.routes import router
 from app.api.verification import router as verification_router
 from app.config import settings
-from app.demo.seed import seed_if_empty
 from app.jobs.worker import worker_loop
 from app.services.experiments import seed_prompts
 from app.services.ingest import repair_preview_paths, resume_processing
-from app.services.recovery import recover_interrupted
 from app.services.storage import ensure_data_dirs
 
 log = logging.getLogger("learnloop")
@@ -36,10 +34,7 @@ def init_database() -> None:
     ensure_task_columns(db.engine)
     session = db.SessionLocal()
     try:
-        recover_interrupted(session)
         seed_prompts(session)
-        if settings.auto_seed:
-            seed_if_empty(session)
     finally:
         session.close()
 
@@ -80,14 +75,6 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(verification_router)
     app.include_router(product_router)
-    if settings.research_routes:
-        from app.api.audio import router as audio_router
-        from app.api.recovery import router as recovery_router
-        from app.api.tasks import router as task_router
-
-        app.include_router(task_router)
-        app.include_router(audio_router)
-        app.include_router(recovery_router)
     return app
 
 

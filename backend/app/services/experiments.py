@@ -8,12 +8,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app import __version__
-from app.audio.engine import WHISPER_MODELS
 from app.config import REPO_ROOT
 from app.models.media import VideoAsset
 from app.models.runs import AnalysisRun, Job, PipelineStageRun, PromptVersion
 from app.models.util import new_id
-from app.perception.presets import preset
 from app.pipeline.prompts import TEMPLATES, compose
 from app.providers.model_list import capabilities_for, resolve_model_id, use_video_file, warm
 from app.providers.registry import provider_ids
@@ -73,13 +71,7 @@ def create_run(session: Session, payload: dict, enqueue: bool = True) -> Analysi
         raise UnsupportedMode("Local transcription is disabled in this build. Whisper is not a Meta model.")
     if use_transcript and not transcribe:
         raise ValueError("Transcript-assisted analysis requires local transcription.")
-    whisper_model = payload.get("whisper_model") or "base"
-    if whisper_model not in WHISPER_MODELS:
-        raise ValueError(f"Unknown Whisper model {whisper_model}.")
     prompt = _latest_prompt(session, payload.get("prompt_key") or "scene")
-    perception_name = payload.get("perception_preset") or "B_temporal"
-    perception = preset(perception_name).to_dict()
-    perception["preset"] = perception_name
     viewpoint, constraint = MODE_AXES[mode]
     config = {
         "research_mode": mode,
@@ -112,25 +104,11 @@ def create_run(session: Session, payload: dict, enqueue: bool = True) -> Analysi
         "prompt_snapshot": compose(prompt.key if prompt else "scene", mode),
         "transcribe": transcribe,
         "use_transcript": use_transcript,
-        "whisper_model": whisper_model,
-        "whisper_language": (payload.get("whisper_language") or "").strip(),
-        "whisper_vad": payload.get("whisper_vad", True) is not False,
-        "word_timestamps": bool(payload.get("word_timestamps")),
-        "align_window_sec": float(payload.get("align_window_sec") or 4),
         "transcript_text_may_be_sent": use_transcript and provider_id not in {"fixture", "deterministic", "manual_json"},
         "capabilities": caps.as_dict(),
         "app_version": __version__,
         "git_revision": _git(),
-        "perception": perception,
     }
-    if provider_id == "fixture":
-        from app.pipeline.infer import has_fixture
-
-        if not has_fixture(video):
-            raise UnsupportedMode(
-                f"The fixture provider has no authored analysis for {video.original_filename}. "
-                "Choose a model provider for this video."
-            )
     run = AnalysisRun(
         id=new_id(),
         project_id=video.project_id,
@@ -265,9 +243,10 @@ def _semantic_mode(payload: dict) -> str:
     return mode
 
 
-def _prompt_strategy(payload: dict) -> str:
-    from app.perception.spatial_prompts import PROMPT_STRATEGIES
+PROMPT_STRATEGIES = ("concept", "trusted_spatial", "hybrid")
 
+
+def _prompt_strategy(payload: dict) -> str:
     strategy = payload.get("sam_prompt_strategy") or "concept"
     if strategy not in PROMPT_STRATEGIES:
         raise ValueError(f"Unknown SAM prompt strategy {strategy}. Use {', '.join(PROMPT_STRATEGIES)}.")

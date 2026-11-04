@@ -32,8 +32,6 @@ class Settings(BaseSettings):
     guided_max_output_tokens: int = 65_536
     # SAM thumbnails and timelines on demonstrations. Bills per frame, separately from the guided call.
     object_views: bool = True
-    # Research endpoints from the source lab. The product does not use them.
-    research_routes: bool = False
 
     # Appearance references from DINOv2 ViT-S/14 (Meta, frozen weights). A cosine between two
     # embeddings is a similarity, not a probability, so these thresholds are tuning values.

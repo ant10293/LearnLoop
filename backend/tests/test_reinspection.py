@@ -224,7 +224,6 @@ def test_a_report_with_nothing_unresolved_queues_no_second_look(lab):  # noqa: F
     assert report["report"]["reinspection"]["status"] == "not_needed"
 
 
-
 def test_frames_follow_the_conditions_parts_even_when_steps_were_done_out_of_order(monkeypatch):
     # Seen live: steps were matched to actions by order, so a step about one part got frames of another.
     from types import SimpleNamespace

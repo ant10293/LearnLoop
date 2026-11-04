@@ -16,7 +16,6 @@ from typing import Any
 
 from pydantic import BaseModel, ValidationError
 
-from app.pipeline.parsing import ParseFailure
 from app.providers.types import UnsupportedMode
 from app.schemas.analysis import AnalysisDocument
 from app.schemas.generation import (
@@ -65,6 +64,12 @@ _DROPPED_KEYWORDS = {"title", "default", "minimum", "maximum", "exclusiveMinimum
 
 class SchemaContractError(UnsupportedMode):
     """A schema cannot be sent as a strict contract. It stops the run without a retry."""
+
+
+class ParseFailure(Exception):
+    def __init__(self, message: str, raw_text: str = ""):
+        super().__init__(message)
+        self.raw_text = raw_text
 
 
 class StructuredOutputError(ParseFailure):

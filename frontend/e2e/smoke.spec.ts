@@ -23,9 +23,9 @@ test("teach, review, accept, verify, inspect evidence, confirm, export", async (
   await page.screenshot({ path: "test-results/0-teach.png", fullPage: true });
   await page.locator('input[type="file"]').setInputFiles(clip("demo", "gray"));
   await page.getByRole("button", { name: "Learn the procedure" }).click({ timeout: 60_000 });
-  await expect(page.getByRole("dialog", { name: "Approve Meta request" })).toContainText("At most 1, with no automatic retry");
+  await expect(page.getByRole("dialog", { name: "Approve Meta request" })).toContainText("No automatic retry");
   await page.screenshot({ path: "test-results/1-approve.png", fullPage: true });
-  await page.getByRole("button", { name: "Send one request" }).click();
+  await page.getByRole("button", { name: "Send requests" }).click();
 
   await expect(page.getByRole("heading", { name: "Learned procedure" })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByText("AI-generated draft")).toBeVisible();
@@ -40,12 +40,11 @@ test("teach, review, accept, verify, inspect evidence, confirm, export", async (
   await page.screenshot({ path: "test-results/0-verify.png", fullPage: true });
   await page.locator('input[type="file"]').setInputFiles(clip("omitted", "blue"));
   await page.getByRole("button", { name: "Analyze and verify" }).click({ timeout: 60_000 });
-  await page.getByRole("button", { name: "Send one request" }).click();
+  await page.getByRole("button", { name: "Send requests" }).click();
   await expect(page.locator(".overall")).toContainText("FAIL", { timeout: 60_000 });
   const detail = page.getByRole("region", { name: /Details for/ });
   await expect(detail).toContainText("Missing component");
-  await expect(detail).toContainText("Evidence-backed from Meta analysis");
-  await expect(detail.locator(".frames img").first()).toBeVisible();
+  await expect(detail).toContainText("Not seen anywhere in this recording");
   await page.screenshot({ path: "test-results/3-fail.png", fullPage: true });
 
   const seeks = page.locator("video");
@@ -54,10 +53,9 @@ test("teach, review, accept, verify, inspect evidence, confirm, export", async (
 
   await page.locator('input[type="file"]').setInputFiles(clip("hidden", "green"));
   await page.getByRole("button", { name: "Analyze and verify" }).click({ timeout: 60_000 });
-  await page.getByRole("button", { name: "Send one request" }).click();
+  await page.getByRole("button", { name: "Send requests" }).click();
   await expect(page.locator(".overall")).toContainText("INCONCLUSIVE", { timeout: 60_000 });
   await page.getByRole("button", { name: /Place green cube/ }).click();
-  await page.getByLabel("Reviewer name").fill("A. Reviewer");
   await page.screenshot({ path: "test-results/4-checkpoint.png", fullPage: true });
   await page.getByRole("button", { name: "Installed", exact: true }).click();
   await expect(page.locator(".overall")).toContainText("PASS");

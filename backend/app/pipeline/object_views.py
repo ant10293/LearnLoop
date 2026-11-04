@@ -484,7 +484,6 @@ async def _follow(
 
 
 async def _call(session, run, media: Path, prompt: str, secret: str, model_id: str, direction: str) -> tuple[str | None, str]:
-    from app.pipeline.sam_stage import _finish
     from app.services.costs import fail_provider_call, open_provider_call
 
     call = open_provider_call(
@@ -507,6 +506,32 @@ async def _call(session, run, media: Path, prompt: str, secret: str, model_id: s
     _finish(session, run, call, result, model_id)
     session.commit()
     return result.text, ""
+
+
+def _finish(session, run, call, result, model_id: str) -> None:
+    from app.providers.catalog import lookup
+    from app.providers.types import ProviderResponse, Usage, estimate_cost
+    from app.services.costs import finish_provider_call
+
+    cost, known = estimate_cost(lookup("meta", model_id), result.input_tokens, result.output_tokens)
+    finish_provider_call(
+        session,
+        run,
+        call,
+        ProviderResponse(
+            text=result.text,
+            raw={
+                "id": result.request_id,
+                "model": model_id,
+                "file_id": result.file_id,
+                "usage": {"input_tokens": result.input_tokens, "output_tokens": result.output_tokens},
+            },
+            usage=Usage(result.input_tokens, result.output_tokens, cost, known),
+            request_id=result.request_id,
+            latency_ms=result.latency_ms,
+            model_id=model_id,
+        ),
+    )
 
 
 def _assign(records: list[SamRecord], seeds: list[Seed], start: int = 0) -> dict[str, list[Sighting]]:

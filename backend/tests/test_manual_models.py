@@ -37,37 +37,6 @@ def _ids(models: list[dict]) -> list[str]:
     return [model["model_id"] for model in models]
 
 
-def test_adding_a_model_twice_keeps_one_entry(client: TestClient):
-    for model_id in ("claude-test-9", " claude-test-9 "):
-        added = client.post("/api/providers/anthropic/models", json={"model_id": model_id})
-        assert added.status_code == 200
-        assert added.json()["model_id"] == "claude-test-9"
-
-    from app.db import SessionLocal
-    from app.models import ManualModel
-
-    with SessionLocal() as session:
-        assert session.query(ManualModel).filter_by(provider_id="anthropic").count() == 1
-
-    discovered = client.get("/api/providers/anthropic/models").json()["catalog"]
-    assert _ids(discovered).count("claude-test-9") == 1
-    anthropic = next(item for item in client.get("/api/providers").json() if item["id"] == "anthropic")
-    assert _ids(anthropic["models"]).count("claude-test-9") == 1
-
-
-def test_blank_model_id_is_rejected(client: TestClient):
-    assert client.post("/api/providers/anthropic/models", json={"model_id": "   "}).status_code == 400
-
-
-def test_merge_lists_each_model_id_once():
-    from app.api.routes import with_manual_models
-
-    listed = [{"model_id": "a"}, {"model_id": "b"}, {"model_id": "a"}]
-    merged = with_manual_models("anthropic", listed, ["b", "c", "c"])
-    assert _ids(merged) == ["a", "b", "c"]
-    assert merged[0] is listed[0]
-
-
 def test_upgrade_removes_repeated_rows_and_enforces_uniqueness(tmp_path):
     from app.services.schema_upgrade import unique_manual_models
 

@@ -1,9 +1,6 @@
 """Sampling, prompts, schema checks, and SAM grammar that do not need a database."""
 
-import re
 
-from app.demo.scenarios import SCENARIOS, build_document
-from app.pipeline.infer import _merge_instruction, _window_note, _windows
 from app.pipeline.prompts import ACTIONS, FOUNDATIONAL, SCENE, TEMPLATES, WORKFLOW
 from app.pipeline.validate import validate_document
 from app.providers.sam import parse_sam_output
@@ -89,20 +86,6 @@ def test_prompts_do_not_name_the_hardware_task():
         assert word not in blob
 
 
-def test_fixture_documents_validate_for_every_mode():
-    for key, factory in SCENARIOS.items():
-        scenario = factory()
-        document = build_document(scenario)
-        issues = validate_document(document, scenario.duration)
-        errors = [issue for issue in issues if issue.severity == "error"]
-        assert errors == [], (key, errors)
-        assert document.fixture is True
-        assert document.camera is not None
-        assert document.camera.world_coordinates_supported is False
-        assert document.coverage is not None
-        assert document.coverage.modality == "sampled_frames"
-
-
 def test_sam_box_grammar():
     line = (
         "<0f>0<|box;x1=211;y1=228;x2=270;y2=254;w=320;h=334;c=0.5|>"
@@ -127,55 +110,6 @@ def _evidence() -> dict:
         "provenance": "AI_PREDICTION",
         "frame_timestamps": [0.0],
     }
-
-
-def test_windows_repeat_two_boundary_frames():
-    frames = [_Frame(float(index)) for index in range(23)]
-    windows = _windows(frames, 20)
-    assert [len(window) for window in windows] == [20, 5]
-    assert [frame.timestamp for frame in windows[1][:2]] == [18.0, 19.0]
-    assert windows[0][-2:] == windows[1][:2]
-    assert windows[-1][-1].timestamp == 22.0
-
-
-def test_detailed_sampling_still_overlaps_every_boundary():
-    frames = [_Frame(index / 2) for index in range(45)]
-    windows = _windows(frames, 20)
-    assert len(windows) == 3
-    assert windows[0][-2:] == windows[1][:2]
-    assert windows[1][-2:] == windows[2][:2]
-    assert windows[-1][-1].timestamp == 22.0
-
-
-def test_short_sequence_stays_one_window():
-    frames = [_Frame(float(index)) for index in range(20)]
-    assert _windows(frames, 20) == [frames]
-
-
-def test_window_note_names_the_shared_timestamps():
-    frames = [_Frame(float(index)) for index in range(23)]
-    windows = _windows(frames, 20)
-    opening = _window_note(1, windows)
-    assert "The opening frames at 18 s and 19 s repeat" in opening
-    assert "fewer pieces" in opening
-    assert "The supplied frames are at 18 s, 19 s, 20 s, 21 s, and 22 s." in opening
-    assert "tight box around that object alone" in opening
-    assert "color cast" in SCENE
-    assert "hands, fingers, and arms" in SCENE
-    assert "Never list the workspace as an object" in SCENE
-    assert "a hand picks it up or moves it" in SCENE
-    # Localization rules are generic. No object shape is named in the prompts.
-    for text in (opening, SCENE):
-        lowered = text.lower()
-        assert not re.search(r"\brings?\b", lowered)
-        assert "facet" not in lowered
-        assert "head or top" not in lowered
-    merge = _merge_instruction(windows)
-    assert "18 s and 19 s" in merge
-    assert "keep the earlier ids" in merge
-    assert "Do not duplicate actions" in merge
-    assert "Keep every observation" in merge
-    assert "one box per object" in merge
 
 
 def test_unknown_action_is_in_the_vocabulary_and_approach_is_offered():
@@ -314,8 +248,3 @@ def test_prompt_family_stays_visible_and_secrets_stay_hidden():
     assert "credentials" not in public
 
 
-def test_attempted_outcome_is_distinct_in_fixture():
-    document = build_document(SCENARIOS["fixed_camera"]())
-    outcomes = {action.local_id: action.outcome.value for action in document.actions}
-    assert "attempted" in outcomes.values()
-    assert "completed" in outcomes.values()

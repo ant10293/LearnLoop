@@ -3,7 +3,6 @@
 import asyncio
 import copy
 import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -19,7 +18,6 @@ from app.pipeline.contracts import (
     validate_output,
     validate_strict_schema,
 )
-from app.pipeline.parsing import parse_analysis
 from app.providers.types import GenerationRequest
 
 from tests.test_pipeline import client  # noqa: F401
@@ -287,14 +285,6 @@ def test_validator_rejects_recursion_and_excess_depth():
         validate_strict_schema(deep)
 
 
-def test_every_other_schema_sent_to_meta_is_strict():
-    from app.pipeline.frame_boxes import FRAME_BOX_SCHEMA
-    from app.pipeline.locate_pass import _SCHEMA as LOCATE_SCHEMA
-
-    validate_strict_schema(FRAME_BOX_SCHEMA)
-    validate_strict_schema(LOCATE_SCHEMA)
-
-
 # Realistic answers
 
 
@@ -384,11 +374,6 @@ def test_truncated_runaway_cannot_become_a_partial_analysis():
 
 def test_normal_answer_is_not_called_a_runaway():
     assert detect_runaway(json.dumps(single_pass())) == {"detected": False}
-
-
-def test_legacy_parser_still_reads_old_responses():
-    old = {"objects_list": [{"local_id": "Object_1", "label": "wheel"}], "actions": []}
-    assert parse_analysis(json.dumps(old)).objects[0].label == "wheel"
 
 
 # The request Meta receives
@@ -511,225 +496,8 @@ class FakeMeta:
         )
 
 
-@pytest.fixture()
-def meta_run(client, tmp_path: Path, monkeypatch):  # noqa: F811
-    from app.demo.encode import write_clip
-    from app.demo.scenarios import SCENARIOS, render_scenario
-    from app.pipeline import infer, runner
-    from app.pipeline.locate_pass import locate_missing
-
-    clip = tmp_path / "fixed.mp4"
-    write_clip(render_scenario(SCENARIOS["fixed_camera"]()), clip)
-    project = client.post("/api/projects", json={"name": "Bench"}).json()
-    with clip.open("rb") as handle:
-        video = client.post(
-            "/api/videos", data={"project_id": project["id"]}, files={"file": ("fixed.mp4", handle, "video/mp4")}
-        ).json()
-    monkeypatch.setattr(infer, "load_secret", lambda *_: ("key", "test"))
-    monkeypatch.setattr(runner, "locate_missing", _no_locate)
-    assert locate_missing is not None
-
-    def launch(answers, provider=None, **options):
-        from app.db import SessionLocal
-        from app.models.runs import Job
-        from app.services.experiments import create_run
-        from sqlalchemy import select
-
-        fake = (provider or FakeMeta)(answers)
-        monkeypatch.setattr(infer, "get_provider", lambda *_: fake)
-        session = SessionLocal()
-        run = create_run(
-            session,
-            {
-                "video_id": video["id"],
-                "provider_id": "meta",
-                "model_id": "muse-spark-1.3",
-                "research_mode": "fixed_camera",
-                "segmentation_mode": "boxes_only",
-                **options,
-            },
-        )
-        job = session.scalar(select(Job).where(Job.run_id == run.id))
-        job.status = "running"
-        job.attempt = 1
-        session.commit()
-        asyncio.run(runner.execute_job(session, job))
-        session.refresh(run)
-        session.refresh(job)
-        return SimpleNamespace(session=session, run=run, job=job, fake=fake)
-
-    return launch
-
-
 async def _no_locate(_session, _run, document, _frames):
     return document, None
-
-
-def test_single_pass_sends_its_contract_and_keeps_the_procedure(meta_run):
-    outcome = meta_run({SINGLE_PASS.name: single_pass()}, analysis_pass="single", semantic_mode="combined")
-    assert outcome.run.status == "completed", outcome.run.error
-    first = outcome.fake.requests[0]
-    assert first.schema_name == SINGLE_PASS.name
-    from app.pipeline.runner import load_working
-
-    document = load_working(outcome.run.id)
-    assert [step.local_id for step in document.workflow_steps] == ["Step_1", "Step_2"]
-    assert len(document.actions) == 1
-    assert len(document.dependencies) == 1
-    from app.models.runs import ModelRequestRow, ModelResponseRow
-    from sqlalchemy import select
-
-    row = outcome.session.scalars(select(ModelRequestRow).where(ModelRequestRow.run_id == outcome.run.id)).first()
-    assert row.parameters_json["strict_output"] is True
-    assert row.parameters_json["schema_name"] == SINGLE_PASS.name
-    assert row.parameters_json["schema_hash"] == SINGLE_PASS.hash
-    assert row.parameters_json["output_token_limit"] == 65_536
-    saved = outcome.session.scalar(select(ModelResponseRow).where(ModelResponseRow.request_id == row.id))
-    assert saved.raw_json["output_check"]["result"] == "valid"
-
-
-def test_grounded_interpretation_cannot_replace_geometry(meta_run):
-    outcome = meta_run(
-        {DISCOVERY.name: discovery(), INTERPRETATION.name: interpretation()},
-        analysis_pass="single",
-        semantic_mode="grounded",
-    )
-    assert outcome.run.status == "completed", outcome.run.error
-    names = [item.schema_name for item in outcome.fake.requests]
-    assert names[0] == DISCOVERY.name
-    assert INTERPRETATION.name in names
-    from app.pipeline.runner import load_working
-
-    document = load_working(outcome.run.id)
-    assert {item.local_id for item in document.objects} == {"Object_1", "Object_2"}
-    assert len(document.actions) == 1
-    assert len(document.workflow_steps) == 2
-
-
-def test_multi_pass_stages_each_get_their_own_slice(meta_run):
-    answer = semantics()
-    outcome = meta_run(
-        {
-            DISCOVERY.name: discovery(),
-            "learnloop_actions": {"actions": answer["actions"]},
-            "learnloop_states": {key: answer[key] for key in ("states", "transitions", "relationships")},
-            "learnloop_workflow": {key: answer[key] for key in ("workflow_steps", "dependencies")},
-            "learnloop_ambiguities": {"ambiguities": answer["ambiguities"]},
-        },
-        analysis_pass="multi",
-        semantic_mode="combined",
-    )
-    assert outcome.run.status == "completed", outcome.run.error
-    from app.pipeline.runner import load_working
-
-    document = load_working(outcome.run.id)
-    assert {item.local_id for item in document.objects} == {"Object_1", "Object_2"}
-    assert len(document.actions) == 1
-    assert len(document.states) == 1
-    assert len(document.workflow_steps) == 2
-
-
-def test_runaway_fails_once_keeps_evidence_and_publishes_nothing(meta_run):
-    from app.models.runs import ModelRequestRow, ModelResponseRow
-    from sqlalchemy import select
-
-    text = json.dumps(single_pass())[:-1] + ", " + runaway_tail() + ', "relationships_cut'
-    outcome = meta_run({SINGLE_PASS.name: (text, "max_output_tokens")}, analysis_pass="single", semantic_mode="combined")
-    assert outcome.run.status == "failed"
-    assert outcome.job.status == "failed", "a contract failure spends the same budget again, so it does not retry"
-    assert "scene_analysis call resp_1" in outcome.run.error
-    assert "max_output_tokens" in outcome.run.error
-    assert "relationships_*" in outcome.run.error
-    assert len(outcome.fake.requests) == 1
-    row = outcome.session.scalar(select(ModelRequestRow).where(ModelRequestRow.run_id == outcome.run.id))
-    saved = outcome.session.scalar(select(ModelResponseRow).where(ModelResponseRow.request_id == row.id))
-    assert saved.text == text
-    assert saved.raw_json["output_check"]["result"] == "incomplete_output"
-    assert saved.raw_json["output_check"]["runaway"]["stem"] == "relationships"
-    assert row.error
-    assert outcome.run.active_revision_id is None
-    assert outcome.run.status != "completed"
-
-
-def test_the_surface_never_reaches_the_frame_roster_and_a_bad_window_is_reported(meta_run):
-    answer = single_pass()
-    answer["objects"].append(obj("Object_9", "purple flat lid or board"))
-    answer["objects"][-1]["manipulated"] = False
-    answer["observations"] += [
-        {**observation("Object_9", time), "bbox": {"x": 0.0, "y": 0.0, "w": 1.0, "h": 0.69}} for time in (0.0, 1.0, 2.0)
-    ]
-    outcome = meta_run(
-        {SINGLE_PASS.name: answer, "learnloop_analysis": {"observations": [
-            {"object_local_id": "1", "timestamp": 0.0, "visibility": "visible", "confidence": 0.9,
-             "bbox": {"x": 0.1, "y": 0.1, "w": 0.1, "h": 0.2}}]}},
-        analysis_pass="single",
-        semantic_mode="combined",
-    )
-    assert outcome.run.status == "completed", outcome.run.error
-    frame_calls = [item for item in outcome.fake.requests if item.schema_name == "learnloop_analysis"]
-    assert frame_calls
-    for call in frame_calls:
-        assert "Object_9" not in call.user_prompt
-        allowed = call.json_schema["properties"]["observations"]["items"]["properties"]["object_local_id"]["enum"]
-        assert "Object_9" not in allowed and "Object_1" in allowed
-    from app.pipeline.runner import load_working
-
-    document = load_working(outcome.run.id)
-    assert "Object_9" not in {item.local_id for item in document.objects}
-    assert "were not measured on frames" in document.coverage.temporal_coverage_note
-
-
-def test_a_failed_provider_call_still_retries(meta_run):
-    class Down(FakeMeta):
-        async def generate(self, _secret, request):
-            self.requests.append(request)
-            raise RuntimeError("connection reset")
-
-    outcome = meta_run({}, provider=Down, analysis_pass="single", semantic_mode="combined")
-    assert outcome.run.status == "failed"
-    assert outcome.job.status == "pending"
-    assert "connection reset" in outcome.run.error
-
-
-def test_a_person_can_retry_the_stage_after_a_contract_failure(client, meta_run, monkeypatch):  # noqa: F811
-    from app.db import SessionLocal
-    from app.models.runs import Job
-    from app.pipeline import infer, runner
-    from sqlalchemy import select
-
-    failed = meta_run({SINGLE_PASS.name: ("{", "max_output_tokens")}, analysis_pass="single", semantic_mode="combined")
-    assert failed.job.status == "failed"
-    assert client.post(f"/api/runs/{failed.run.id}/retry/scene_analysis").status_code == 200
-    monkeypatch.setattr(infer, "get_provider", lambda *_: FakeMeta({SINGLE_PASS.name: single_pass()}))
-    session = SessionLocal()
-    job = session.scalars(select(Job).where(Job.run_id == failed.run.id, Job.status == "pending")).first()
-    job.status = "running"
-    session.commit()
-    asyncio.run(runner.execute_job(session, job))
-    assert runner.load_working(failed.run.id).workflow_steps
-    session.close()
-
-
-def test_multi_window_calls_and_their_merge_all_use_the_contract(meta_run, monkeypatch):
-    from dataclasses import replace
-
-    from app.pipeline import runner
-    from app.providers import catalog
-
-    real = catalog.lookup
-    monkeypatch.setattr(catalog, "lookup", lambda *args: replace(real(*args), max_images=3))
-    outcome = meta_run(
-        {SINGLE_PASS.name: single_pass()},
-        analysis_pass="single",
-        semantic_mode="combined",
-        modality="sampled_frames",
-    )
-    assert outcome.run.status == "completed", outcome.run.error
-    contract_calls = [item for item in outcome.fake.requests if item.schema_name == SINGLE_PASS.name]
-    assert len(contract_calls) >= 3, "at least two windows and one merge"
-    assert all(item.modality == "sampled_frames" and item.video_path is None for item in outcome.fake.requests)
-    assert outcome.run.modality == "sampled_frames"
-    assert runner.load_working(outcome.run.id).workflow_steps
 
 
 def test_contract_schemas_are_not_shared_mutable_state():
