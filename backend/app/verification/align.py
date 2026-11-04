@@ -37,24 +37,39 @@ def align_steps(
 
 
 def _candidates(step, execution: AnalysisDocument, by_role: dict[str, RoleAssignment]) -> list[dict]:
-    objects = set()
-    for role_id in step.object_roles:
-        assignment = by_role.get(role_id)
-        if assignment is None:
-            continue
-        objects.update(assignment.object_local_ids)
+    """Actions that handled this step's parts, scored by which parts. The part a step moves (the subject of its
+    completion conditions) decides: an action on only the base it goes onto is a weak match, since several steps
+    share a base. Without that, ties went to whichever action came first, and steps done in another order than the
+    demonstration got each other's actions."""
+    def objects_of(role_ids) -> set[str]:
+        found: set[str] = set()
+        for role_id in role_ids:
+            assignment = by_role.get(role_id)
+            if assignment is not None:
+                found.update(assignment.object_local_ids)
+        return found
+
+    objects = objects_of(step.object_roles)
+    subjects = objects_of({item.subject_role for item in step.completion_conditions if item.subject_role})
+    targets = objects_of({item.target_role for item in step.completion_conditions if item.target_role}) - subjects
     found = []
     for action in execution.actions:
-        if not objects.intersection(action.object_local_ids):
+        handled = set(action.object_local_ids)
+        if not objects.intersection(handled):
             continue
         action_type = enum_value(action.action_type)
-        score = 1.0 if step.expected_action_type and action_type == step.expected_action_type else 0.45
+        score = 0.45 if step.expected_action_type and action_type == step.expected_action_type else 0.0
+        if subjects:
+            score += 0.4 if subjects & handled else 0.0
+            score += 0.2 if subjects & handled and targets & handled else 0.0
+        union = objects | handled
+        score += 0.15 * len(objects & handled) / len(union) if union else 0.0
         found.append(
             {
                 "id": action.local_id,
                 "time": action.start,
                 "end": action.end,
-                "score": score,
+                "score": round(0.2 + score, 4),
                 "outcome": enum_value(action.outcome),
             }
         )

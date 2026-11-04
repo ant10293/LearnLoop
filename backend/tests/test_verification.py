@@ -237,3 +237,31 @@ def test_a_reversed_directional_arrangement_is_a_misplacement_and_an_inverse_kin
     assert verify_execution(template, swapped)["steps"][0]["error_category"] == "INCORRECT_PLACEMENT"
     inverse = document(objects=objects, observations=seen, relationships=[rel("b", "a", "below", 3, 9)], actions=acts)
     assert verify_execution(template, inverse)["steps"][0]["verdict"] == "PASS"
+
+
+def test_steps_done_in_another_order_are_matched_to_the_action_that_moved_their_part():
+    # Seen on a real attempt: every action touching the shared base tied, so each step got another step's action.
+    demo = document(
+        objects=[obj("D_disc", "clear disc", "small clear disc", "clear"), obj("D_pin", "white pin", "short white pin", "white"), obj("D_body", "body", "white body", "white")],
+        observations=[obs("D_disc", 10), obs("D_pin", 10), obs("D_body", 10)],
+        relationships=[rel("D_disc", "D_body", "attached", 2, 20), rel("D_pin", "D_body", "attached", 6, 20)],
+        actions=[action("A_disc", "place", 0, 2, ["D_disc", "D_body"]), action("A_pin", "place", 4, 6, ["D_pin", "D_body"])],
+        steps=[
+            step("step_disc", "Attach disc", ["D_disc", "D_body"], ["A_disc"], 0, 2, "disc attached to body"),
+            step("step_pin", "Attach pin", ["D_pin", "D_body"], ["A_pin"], 4, 6, "pin attached to body"),
+        ],
+    )
+    execution = document(
+        objects=[obj("E_disc", "clear disc", "small clear disc", "clear"), obj("E_pin", "white pin", "short white pin", "white"), obj("E_body", "body", "white body", "white")],
+        observations=[obs("E_disc", 12), obs("E_pin", 12), obs("E_body", 12)],
+        relationships=[rel("E_pin", "E_body", "attached", 5, 20), rel("E_disc", "E_body", "attached", 9, 20)],
+        actions=[
+            action("X_body", "place", 0, 2, ["E_body"]),
+            action("X_pin", "place", 3, 5, ["E_pin", "E_body"]),
+            action("X_disc", "place", 7, 9, ["E_disc", "E_body"]),
+        ],
+    )
+    template = learn_template(demo, promote_supported=True, accept=True)
+    steps = _steps(verify_execution(template, execution))
+    assert steps["step_disc"]["matched_action_ids"] == ["X_disc"]
+    assert steps["step_pin"]["matched_action_ids"] == ["X_pin"]
