@@ -6,13 +6,14 @@ Browser (React, 4 screens)
 FastAPI ── SQLite ── local media files
   │
   ├─ Worker: one job per analysis, one attempt
-  │    metadata → sample frames → guided call → validation → artifacts
-  │    (tracking, fusion, reinspection and audio stages are recorded as skipped;
-  │     demonstrations also get SAM object views, which never feed a verdict)
+  │    metadata → sample frames → guided call → object views → validation → artifacts
+  │    (the other stage names are recorded as skipped, with the reason)
   │
   ├─ guided.py: stored answer for the exact inputs, or one approved Meta call
+  ├─ object_views.py: first-frame locate (Muse Wonder) → SAM 3.1 tracks → DINOv2 appearance checks
   ├─ verification/learn.py: analysis → versioned procedure template
-  └─ verification/engine.py + predicates.py: template + analysis + reviewer observations → report
+  ├─ verification/engine.py + predicates.py: template + analysis + reviewer observations → report
+  └─ services/reinspection.py: one narrow Meta question per unresolved required step → revised report
 ```
 
 ## Analysis: `hackathon_guided`
@@ -45,6 +46,9 @@ Changes made for this submission to the reused verifier:
 - A part mapped to another step no longer counts as a wrong component on a shared base.
 - `above`, `below`, `left_of`, and `right_of` respect direction. A reversed arrangement is a wrong placement, and an inverse statement of the same arrangement counts as support.
 - Removed steps are excluded and listed in the report.
+- A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, fails its condition as a missing component. A recording that shows none of the parts stays unresolved.
+- A reviewer can require, lift, or add an order between steps, and impossible orders are refused.
+- A missing size measurement no longer lowers a role score.
 
 ## Human input
 
@@ -55,6 +59,18 @@ Changes made for this submission to the reused verifier:
 
 Original model responses and analysis revisions are never edited.
 
-## Research code left in place
+## Object views and appearance
 
-Tracking, SAM, reacquisition, and evaluation modules remain in the backend because other modules import them. Their audio, recovery, and task API routes are not mounted unless `LEARNLOOP_RESEARCH_ROUTES=1`, and the product UI does not use them. The general lab routes in `api/routes.py` stay mounted because the product uses their media endpoints. SAM refuses to run unless live calls are enabled.
+`pipeline/object_views.py` asks Muse Wonder for a box around each object on the first frame, and on a few later stills when an object is missing or lost. SAM 3.1 follows those boxes at 12 frames per second, in one request and a second only for objects found later. The tracks become the thumbnails and per-object timelines in the UI.
+
+On a demonstration, DINOv2 ViT-S/14 embeds crops from the SAM tracks into an appearance gallery per object. On an attempt, a SAM box that matches an object's gallery counts as a sighting of that object. Sightings can only keep a part from being called never seen. Appearance never passes or fails a step on its own.
+
+SAM runs only when live calls are enabled and approved, and a failure here never costs the analysis.
+
+## Second look
+
+When a required step ends CANNOT VERIFY and no reviewer has decided it, `services/reinspection.py` sends Muse Wonder a few frames from that step with one question about its unresolved condition. The answer is stored as a finding and the verifier runs again. The first report stays unchanged next to the revision, and a step decided this way has basis `model_reinspection`. It sends at most three requests per verification, only when the attempt's analysis was approved for live calls or a stored answer exists.
+
+## What is not here
+
+The research code reused from vision-test-bench that the product does not run, including frame tracking, recovery experiments, evaluation, audio, and the lab API, was removed in `449e931`. See [PROVENANCE.md](PROVENANCE.md).
