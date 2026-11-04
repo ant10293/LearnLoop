@@ -14,6 +14,9 @@ export function Logo() {
   );
 }
 
+/** The Reliability Lab is a developer tool: linked in development builds, reachable at /lab in any build. */
+const SHOW_LAB = import.meta.env.DEV || import.meta.env.VITE_RELIABILITY_LAB === "1";
+
 export function Layout({ children, procedureId, title, titleLoading }: { children: ReactNode; procedureId?: string; title?: string; titleLoading?: boolean }) {
   return (
     <div className="app">
@@ -27,6 +30,7 @@ export function Layout({ children, procedureId, title, titleLoading }: { childre
             <NavLink to={`/procedures/${procedureId}/verify`}>Verify</NavLink>
           </nav>
         )}
+        {SHOW_LAB && <Link to="/lab" className="lab-link">Reliability Lab</Link>}
       </header>
       <main className="page">{children}</main>
     </div>

@@ -5,7 +5,9 @@ from __future__ import annotations
 import bisect
 import hashlib
 import json
+import os
 import subprocess
+import threading
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -213,7 +215,10 @@ def presentation_timestamps(path: Path, cache: Path | None = None) -> list[float
     times = _packet_times(path) or _decoded_times(path)
     if cache:
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(times))
+        # Moved into place whole, since analyses of one file can run side by side.
+        tmp = cache.with_name(f".{cache.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(times))
+        tmp.replace(cache)
     return times
 
 

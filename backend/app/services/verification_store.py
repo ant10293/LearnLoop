@@ -6,11 +6,12 @@ They do not replace either document.
 
 from __future__ import annotations
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, exists, select
 from sqlalchemy.orm import Session
 
 from app.models.media import Project, VideoAsset
 from app.models.product import HumanObservation, ProcedureRecording
+from app.models.reliability import ReliabilityRun
 from app.models.runs import AnalysisRevision, AnalysisRun
 from app.models.util import utcnow
 from app.models.verification import (
@@ -377,9 +378,13 @@ def settle_waiting(session: Session, run_id: str) -> int:
 
 def list_verifications(session: Session, project_id: str) -> list[dict]:
     _project(session, project_id)
+    # Reliability Lab reports are kept with their experiment and never listed as the procedure's own attempts.
     rows = session.scalars(
         select(VerificationRunRow)
-        .where(VerificationRunRow.project_id == project_id)
+        .where(
+            VerificationRunRow.project_id == project_id,
+            ~exists().where(ReliabilityRun.analysis_run_id == VerificationRunRow.execution_run_id),
+        )
         .order_by(VerificationRunRow.created_at.desc())
     ).all()
     return [verification_payload(session, row, brief=True) for row in rows]

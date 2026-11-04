@@ -31,7 +31,13 @@ No non-Meta model runs in the application. Responses are stored against the exac
 
 ## Originality
 
-LearnLoop builds on the author's earlier research code, vision-test-bench, started on 2026-10-21. About 4,800 lines of the backend existed before kickoff, mainly the database models, media ingest, and the core of the deterministic verifier. The guided Meta flow, SAM object views, appearance references, the second look, the product API, and the whole frontend were built during the hackathon. [PROVENANCE.md](PROVENANCE.md) has the dates and line counts.
+LearnLoop builds on the author's earlier research code, vision-test-bench, started on 2026-10-21. About 4,800 lines of the backend existed before kickoff, mainly the database models, media ingest, and the core of the deterministic verifier. The guided Meta flow, SAM object views, appearance references, the never-seen check, the second look, reviewer observations, the product API, and the whole frontend were built during the hackathon. [PROVENANCE.md](PROVENANCE.md) has the dates and line counts, and [ARCHITECTURE.md](ARCHITECTURE.md#changed-during-the-hackathon) lists each change made to the reused verifier with its commit.
+
+| Built before kickoff (vision-test-bench) | Built during the hackathon |
+| --- | --- |
+| Database tables, video upload and ingest, run serialization, the pipeline runner, the Meta API adapter, and the core of the deterministic verifier | Muse Wonder guided analysis, SAM 3.1 object views, DINOv2 appearance references, the never-seen check, the second look, reviewer observations, procedure review and versioning, the product API, the whole UI, and the listed verifier changes |
+
+To see exactly what was added since the code was brought in, compare the import commit with the latest one: [`2babd11...main`](https://github.com/ant10293/LearnLoop/compare/2babd11...main).
 
 ## Limitations
 

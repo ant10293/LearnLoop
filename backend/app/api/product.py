@@ -7,7 +7,7 @@ import re
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import exists, select
 from sqlalchemy.orm import Session
 
 from app.api.serialize import video_dict
@@ -15,6 +15,7 @@ from app.config import settings
 from app.db import get_session
 from app.models.media import Project, VideoAsset
 from app.models.product import ProcedureRecording
+from app.models.reliability import ReliabilityRun
 from app.models.runs import AnalysisRun, Job, ModelRequestRow, PipelineStageRun
 from app.models.util import new_id
 from app.models.verification import LearnedWorkflowTemplate, VerificationRunRow
@@ -461,9 +462,14 @@ def _recordings(session: Session, project_id: str) -> list[ProcedureRecording]:
     )
 
 
+def _ordinary(run_id_column):
+    """Not a Reliability Lab repetition. Those runs and their reports are shown only in the Lab."""
+    return ~exists().where(ReliabilityRun.analysis_run_id == run_id_column)
+
+
 def _latest_run(session: Session, video_id: str) -> AnalysisRun | None:
     return session.scalar(
-        select(AnalysisRun).where(AnalysisRun.video_id == video_id).order_by(AnalysisRun.created_at.desc())
+        select(AnalysisRun).where(AnalysisRun.video_id == video_id, _ordinary(AnalysisRun.id)).order_by(AnalysisRun.created_at.desc())
     )
 
 
@@ -485,7 +491,7 @@ def _analyzed_before(session: Session, video: VideoAsset | None) -> bool:
     return session.scalar(
         select(AnalysisRun.id)
         .join(VideoAsset, VideoAsset.id == AnalysisRun.video_id)
-        .where(VideoAsset.checksum_sha256 == video.checksum_sha256, AnalysisRun.status == "completed")
+        .where(VideoAsset.checksum_sha256 == video.checksum_sha256, AnalysisRun.status == "completed", _ordinary(AnalysisRun.id))
         .limit(1)
     ) is not None
 
@@ -534,7 +540,7 @@ def _summary(session: Session, project: Project) -> dict:
     )
     latest = session.scalar(
         select(VerificationRunRow)
-        .where(VerificationRunRow.project_id == project.id)
+        .where(VerificationRunRow.project_id == project.id, _ordinary(VerificationRunRow.execution_run_id))
         .order_by(VerificationRunRow.created_at.desc())
     )
     steps = [step for step in (template.document_json.get("steps") or []) if not step.get("removed")] if template else []

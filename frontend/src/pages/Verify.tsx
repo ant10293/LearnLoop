@@ -97,14 +97,16 @@ function AttemptTab({ recording, procedure, active, onClick }: { recording: Reco
   );
 }
 
-function Report({ verificationId, procedure, recording }: { verificationId: string; procedure: Procedure; recording: Recording }) {
+/** One report with its evidence. The Reliability Lab shows a repetition's report read-only, opened at a chosen step. */
+export function Report({ verificationId, procedure, recording, readOnly = false, initialStepId = "", onStepChange }: { verificationId: string; procedure: Procedure; recording: Recording; readOnly?: boolean; initialStepId?: string; onStepChange?: (stepId: string) => void }) {
   const client = useQueryClient();
   const query = useQuery({
     queryKey: ["verification", verificationId],
     queryFn: () => api.verification(verificationId),
     refetchInterval: (state) => (state.state.data?.report.reinspection?.status === "pending" ? 1500 : false),
   });
-  const [stepId, setStepId] = useState("");
+  const [stepId, setStepId] = useState(initialStepId);
+  useEffect(() => setStepId(initialStepId), [initialStepId]);
   const [tick, setTick] = useState(0);
   const report = query.data?.report;
   const step = report?.steps.find((item) => item.step_id === stepId) ?? report?.steps.find((item) => item.verdict === "FAIL") ?? report?.steps[0];
@@ -146,19 +148,19 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
       attempt={
         <>
           <Film src={recording.video.playback_url} time={evidenceTime} seek={tick} label="This attempt" caption={evidenceTime == null ? "No timestamp was tied to this step." : "Evidence moment for this step"} tracks={objectTracks(attemptViews.data)} />
-          {attemptRun && <ObjectViewsNotice runId={attemptRun} views={attemptViews.data} onStarted={() => void client.invalidateQueries({ queryKey: ["object-views", attemptRun] })} />}
+          {attemptRun && !readOnly && <ObjectViewsNotice runId={attemptRun} views={attemptViews.data} onStarted={() => void client.invalidateQueries({ queryKey: ["object-views", attemptRun] })} />}
         </>
       }
       results={report.steps.map((item) => (
         <li key={item.step_id}>
-          <button className={`result ${item.step_id === step.step_id ? "active" : ""}`} onClick={() => { setStepId(item.step_id); setTick((value) => value + 1); }}>
+          <button className={`result ${item.step_id === step.step_id ? "active" : ""}`} onClick={() => { setStepId(item.step_id); onStepChange?.(item.step_id); setTick((value) => value + 1); }}>
             <VerdictTag verdict={item.verdict} />
             <span className="grow">{item.name}</span>
             {!item.required && <span className="muted small">Not required</span>}
           </button>
         </li>
       ))}
-      detail={<StepDetail step={step} verification={verification} video={recording.video} onChange={() => client.invalidateQueries({ queryKey: ["verification", verificationId] })} onSeek={() => setTick((value) => value + 1)} />}
+      detail={<StepDetail step={step} verification={verification} video={recording.video} readOnly={readOnly} onChange={() => client.invalidateQueries({ queryKey: ["verification", verificationId] })} onSeek={() => setTick((value) => value + 1)} />}
       diagnostics={
         <dl>
           <dt>Model</dt><dd>{verification.config.provider_id} / {humanizeModel(verification.config.model_id)}, {verification.config.modality}</dd>
@@ -298,7 +300,7 @@ function FrameFigure({ video, src, alt, caption, onClick }: { video?: VideoInfo;
   );
 }
 
-function StepDetail({ step, verification, video, onChange, onSeek }: { step: StepResult; verification: Verification; video: VideoInfo; onChange: () => Promise<void>; onSeek: () => void }) {
+function StepDetail({ step, verification, video, onChange, onSeek, readOnly = false }: { step: StepResult; verification: Verification; video: VideoInfo; onChange: () => Promise<void>; onSeek: () => void; readOnly?: boolean }) {
   const moments = step.evidence.filter((item) => item.timestamp != null);
   const observations = verification.human_observations.filter((item) => item.step_id === step.step_id);
   return (
@@ -330,7 +332,7 @@ function StepDetail({ step, verification, video, onChange, onSeek }: { step: Ste
       {observations.map((item) => (
         <p key={item.id} className="edited">{item.reviewer || "Reviewer"} recorded “{item.answer.replaceAll("_", " ")}” at {clock(item.timestamp)}{item.note ? `: ${item.note}` : ""}</p>
       ))}
-      {(step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed" || step.basis === "not_observed") && <Checkpoint step={step} verification={verification} video={video} onChange={onChange} />}
+      {!readOnly && (step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed" || step.basis === "not_observed") && <Checkpoint step={step} verification={verification} video={video} onChange={onChange} />}
     </StepDetailFrame>
   );
 }

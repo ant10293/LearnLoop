@@ -57,6 +57,11 @@ class Settings(BaseSettings):
     recovery_max_sam_requests: int = 1
     reinspect_max_calls: int = 3
     reinspect_max_frames: int = 6
+    # Reliability Lab. Repetitions run on their own job lane, beside the ordinary worker, never above this
+    # many at once across every batch. Each one can hold a Meta call, ffmpeg, and SAM work in flight.
+    reliability_max_concurrency: int = 4
+    reliability_max_repetitions: int = 50
+    reliability_poll_seconds: float = 0.5
 
     @property
     def resolved_data_dir(self) -> Path:

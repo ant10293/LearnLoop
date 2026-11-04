@@ -6,9 +6,10 @@ import asyncio
 import logging
 from uuid import uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import exists, select, update
 
 from app.config import settings
+from app.models.reliability import ReliabilityRun
 from app.models.runs import AnalysisRun, Job, PipelineStageRun
 from app.models.util import utcnow
 from app.pipeline.runner import execute_job
@@ -54,10 +55,21 @@ def recover_incomplete() -> int:
     return recovered
 
 
-def claim_next(worker_id: str) -> str | None:
+# Jobs of Reliability Lab runs go to their own bounded lane (app.reliability.executor), so experiments
+# never wait behind, or hold up, ordinary analyses, and the ordinary worker stays one job at a time.
+MAIN_LANE = "main"
+RELIABILITY_LANE = "reliability"
+
+
+def _in_lane(lane: str):
+    experimental = exists().where(ReliabilityRun.analysis_run_id == Job.run_id)
+    return experimental if lane == RELIABILITY_LANE else ~experimental
+
+
+def claim_next(worker_id: str, lane: str = MAIN_LANE) -> str | None:
     session = _session()
     try:
-        pending = session.scalar(select(Job).where(Job.status == "pending").order_by(Job.created_at))
+        pending = session.scalar(select(Job).where(Job.status == "pending", _in_lane(lane)).order_by(Job.created_at))
         if pending is None:
             return None
         result = session.execute(
@@ -98,11 +110,13 @@ def run_claimed_job(job_id: str) -> None:
         session.close()
 
 
-async def worker_loop(stop: asyncio.Event) -> None:
+async def worker_loop(stop: asyncio.Event, recover: bool = True) -> None:
+    """recover=False when the caller already requeued interrupted jobs, before any lane could claim one."""
     worker_id = uuid4().hex[:12]
-    recovered = await asyncio.to_thread(recover_incomplete)
-    if recovered:
-        log.info("recovered %s interrupted jobs", recovered)
+    if recover:
+        recovered = await asyncio.to_thread(recover_incomplete)
+        if recovered:
+            log.info("recovered %s interrupted jobs", recovered)
     while not stop.is_set():
         job_id = await asyncio.to_thread(claim_next, worker_id)
         if job_id is None:

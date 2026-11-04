@@ -41,14 +41,27 @@ An attempt's analysis is told the reference object labels and the pairs to repor
 
 The engine maps roles functionally, aligns actions, judges each condition, and combines the results. The final state counts, so a continuous track is not required. Reports reference the template version, execution run, and execution revision. The first machine report is kept unchanged next to any later version.
 
-Changes made for this submission to the reused verifier:
+### What predates the hackathon
 
-- A part mapped to another step no longer counts as a wrong component on a shared base.
-- `above`, `below`, `left_of`, and `right_of` respect direction. A reversed arrangement is a wrong placement, and an inverse statement of the same arrangement counts as support.
-- Removed steps are excluded and listed in the report.
-- A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, leaves its condition CANNOT VERIFY, marked "not seen anywhere", and goes to the second look and the reviewer checkpoint. It is not called missing without a direct observation of absence.
-- A reviewer can require, lift, or add an order between steps, and impossible orders are refused.
-- A missing size measurement no longer lowers a role score.
+The core of the verifier, `backend/app/verification/` (role mapping, action alignment, condition judging, and the template schema), was written in vision-test-bench before kickoff. Its first commit was on 2026-10-26 at 01:54 CDT. Since the import (`2babd11`), these files have changed by 578 added and 204 removed lines (`git diff --stat 2babd11 HEAD -- backend/app/verification`).
+
+### Changed during the hackathon
+
+| Change | Commits |
+| --- | --- |
+| A part mapped to another step no longer counts as a wrong component on a shared base. | `6ae49d5` |
+| `above`, `below`, `left_of`, and `right_of` respect direction. A reversed arrangement is a wrong placement, and an inverse statement of the same arrangement counts as support. | `6ae49d5` |
+| Removed steps are excluded and listed in the report. | `6ae49d5` |
+| Reviewer observations are read as evidence, and the step's basis says so (`apply_human`). | `6ae49d5` |
+| Second-look findings are read as evidence (`apply_reinspection`). | `29cc5ca` |
+| Learning keeps the arrangement a step produced, assigns each relation to the step that made it, and gives similar parts distinct labels. | `6ae49d5`, `0e79cc1` |
+| Part identity is checked without relying on relations, which catches swapped part types. | `ce1fe1a` |
+| A missing size measurement no longer lowers a role score. | `72c6161` |
+| A reviewer can require, lift, or add an order between steps, and impossible orders are refused. | `d95903b` |
+| A partial view supports a part that ends up inside another. | `e9018a5` |
+| Steps are matched to the action that moved their part. | `e7eaeca` |
+| DINOv2 appearance matches count as sightings of a part. | `29cc5ca`, `19dd462`, `049ed06` |
+| A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, leaves its condition CANNOT VERIFY, marked "not seen anywhere", and goes to the second look and the reviewer checkpoint. It is not called missing without a direct observation of absence. | `596663a`, `31f82f5`, `a86697f`, `3adbb17`, `39444b8` |
 
 ## Human input
 

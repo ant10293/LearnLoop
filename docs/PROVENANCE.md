@@ -53,7 +53,7 @@ Everything below was written after kickoff, in vision-test-bench between 2026-10
 - Product API: `api/product.py`
 - Procedure review: step and condition editing, step ordering, soft removal, review log, and review states
 - Human observations as audited evidence: `models/product.py`, `apply_human`, and step `basis`
-- Verifier fixes described in [ARCHITECTURE.md](ARCHITECTURE.md)
+- Changes to the reused verifier, listed with their commits in [ARCHITECTURE.md](ARCHITECTURE.md#changed-during-the-hackathon)
 - The whole frontend: `frontend/src/pages`, `components`, and `lib/learnloop.ts`
 - Tests: `test_learnloop_flow.py`, `test_reinspection.py`, `test_appearance.py`, `learnloop.test.tsx`, `e2e/smoke.spec.ts`
 - All documentation in this repository

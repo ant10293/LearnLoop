@@ -165,7 +165,11 @@ def create_guided_run(
     model_id: str = DEFAULT_MODEL,
     segmentation_model_id: str = "",
     fresh: bool = False,
+    enqueue: bool = True,
+    extra_config: dict | None = None,
 ) -> AnalysisRun:
+    """enqueue=False leaves the job to the caller, which adds it in the same commit as its own bookkeeping.
+    extra_config is merged into the run's config, as the Reliability Lab marks its runs."""
     from app.services.experiments import create_run
 
     if float(video.duration_sec or 0) > MAX_CLIP_SECONDS:
@@ -211,8 +215,10 @@ def create_guided_run(
         "inference_source": "pending",
         "object_views": follows_objects(segmentation_model_id, template),
         "segmentation_model_id": segmentation_model_id if follows_objects(segmentation_model_id, template) else "",
+        **(extra_config or {}),
     }
-    session.add(Job(run_id=run.id, max_attempts=1))
+    if enqueue:
+        session.add(Job(run_id=run.id, max_attempts=1))
     session.commit()
     session.refresh(run)
     return run
@@ -226,6 +232,15 @@ def follows_objects(segmentation_model_id: str, template: dict | None) -> bool:
     return not template or settings.appearance_enabled
 
 
+# A run with this cache policy reads no stored answer and stores none, so it can neither be served another
+# run's answer nor change what ordinary runs replay. The Reliability Lab sets it; ordinary runs never do.
+ISOLATED = "isolated"
+
+
+def shares_cache(config: dict | None) -> bool:
+    return (config or {}).get("cache_policy") != ISOLATED
+
+
 def is_guided(run: AnalysisRun) -> bool:
     return (run.config_json or {}).get("analysis_profile") == PROFILE
 
@@ -234,7 +249,7 @@ async def run_guided_call(session: Session, run: AnalysisRun, video: VideoAsset)
     """The one semantic call, or its stored answer. Validation is the same for both."""
     config = dict(run.config_json or {})
     key = config["cache_key"]
-    stored = None if config.get("fresh") else find_cached(key)
+    stored = None if config.get("fresh") or not shares_cache(config) else find_cached(key)
     if stored is not None:
         document = _check(stored["text"], "", "cached", config)
         run.config_json = {
@@ -315,19 +330,20 @@ async def _live(session, run, video, config, key) -> AnalysisDocument:
         session.commit()
         raise
     saved.raw_json = {**(saved.raw_json or {}), "output_check": {"result": "valid", "raw_output_chars": len(response.text)}}
-    store_cached(
-        key,
-        {
-            "text": response.text,
-            "request_id": response.request_id,
-            "model_id": run.model_id,
-            "modality": MODALITY,
-            "video_checksum": video.checksum_sha256,
-            "schema_hash": GUIDED_TASK.hash,
-            "usage": {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens},
-            "created_at": utcnow().isoformat(),
-        },
-    )
+    if shares_cache(config):
+        store_cached(
+            key,
+            {
+                "text": response.text,
+                "request_id": response.request_id,
+                "model_id": run.model_id,
+                "modality": MODALITY,
+                "video_checksum": video.checksum_sha256,
+                "schema_hash": GUIDED_TASK.hash,
+                "usage": {"input_tokens": response.usage.input_tokens, "output_tokens": response.usage.output_tokens},
+                "created_at": utcnow().isoformat(),
+            },
+        )
     run.config_json = {**config, "inference_source": "live", "request_id": response.request_id}
     session.commit()
     return _with_coverage(document, run, video)
