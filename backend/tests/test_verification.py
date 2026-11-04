@@ -296,3 +296,28 @@ def test_a_part_seen_nowhere_fails_unless_its_appearance_matched_or_the_work_was
     execution.actions = []
     execution.observations = [item for item in execution.observations if item.object_local_id != "E_body"]
     assert _steps(verify_execution(template, execution))["step_stud"]["verdict"] == "CANNOT_VERIFY"
+
+
+def test_a_seen_part_cannot_end_up_against_a_part_seen_nowhere():
+    # Seen live: the lock washer was never in the attempt, yet "nut touching lock washer" was left undecided and a
+    # second Meta look reported a lock washer beside the nut.
+    demo = document(
+        objects=[obj("D_nut", "hex nut", "grey hex nut", "grey"), obj("D_lock", "split lock washer", "dark split lock washer ring", "dark")],
+        observations=[obs("D_nut", 10), obs("D_lock", 10)],
+        relationships=[rel("D_nut", "D_lock", "touching", 2, 20)],
+        actions=[action("A_nut", "place", 0, 2, ["D_nut", "D_lock"])],
+        steps=[step("step_nut", "Tighten nut", ["D_nut", "D_lock"], ["A_nut"], 0, 2, "nut touching lock washer")],
+    )
+    template = learn_template(demo, promote_supported=True, accept=True)
+    execution = document(
+        objects=[obj("E_nut", "hex nut", "grey hex nut", "grey"), obj("E_lock", "split lock washer", "dark split lock washer ring", "dark")],
+        observations=[obs("E_nut", 12), obs("E_lock", 12, visibility="occluded")],
+        relationships=[],
+        actions=[action("X_nut", "place", 0, 2, ["E_nut"])],
+    )
+    result = _steps(verify_execution(template, execution))["step_nut"]
+    assert result["verdict"] == "FAIL" and result["error_category"] == "MISSING_COMPONENT" and result["basis"] == "not_observed"
+    failed = next(item for item in result["predicates"] if item["status"] == "fail")
+    assert "was not seen at any point" in failed["note"] and failed["evidence"][0]["object_local_ids"] == ["E_lock"]
+    # A box that matched the lock washer's learned appearance means it was there.
+    assert _steps(verify_execution(template, execution, appearance_seen={"E_lock"}))["step_nut"]["verdict"] != "FAIL"

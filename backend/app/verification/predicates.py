@@ -503,18 +503,27 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
     Nowhere means: no visible or partial observation at any time, no action, state change, or relation that
     involves it, and no box that matched its learned appearance. The part it goes on must have been seen, so a
     recording that does not show the work at all stays unresolved. A part seen once and hidden later is not this.
+    The same holds the other way round: a seen part cannot end up on, or touching, a part that appears nowhere.
     """
     subject_ids = set(subject.object_local_ids if subject else [])
-    if not subject_ids or subject_ids & appearance_seen:
-        return None
-    if any(_involved(execution, object_id) for object_id in subject_ids):
-        return None
     target_ids = set(target.object_local_ids if target else [])
-    if target_ids and not any(_involved(execution, object_id) for object_id in target_ids):
+    if not subject_ids:
         return None
-    if not target_ids and not execution.observations:
+
+    def seen(ids: set[str]) -> bool:
+        return bool(ids & appearance_seen) or any(_involved(execution, object_id) for object_id in ids)
+
+    if not seen(subject_ids):
+        if target_ids and not seen(target_ids):
+            return None
+        if not target_ids and not execution.observations:
+            return None
+        missing, note = subject_ids, "This part was not seen at any point in the recording, so it is treated as missing."
+    elif target_ids and not seen(target_ids):
+        label = target.label or "part it goes with"
+        missing, note = target_ids, f"The {label} was not seen at any point in the recording, so it is treated as missing and this condition cannot hold."
+    else:
         return None
-    note = "This part was not seen at any point in the recording, so it is treated as missing."
     return PredicateJudgement(
         predicate_id=predicate.id,
         status="fail",
@@ -527,7 +536,7 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
                 observation=note,
                 evidence_class="NOT_OBSERVED",
                 provenance="DETERMINISTIC",
-                object_local_ids=sorted(subject_ids),
+                object_local_ids=sorted(missing),
             )
         ],
     )

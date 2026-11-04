@@ -204,9 +204,11 @@ def _step_result(
 def _basis(judgements: list[PredicateJudgement], verdict: str) -> str:
     if any(item.human for item in judgements):
         return "human_confirmed"
-    if verdict in {"PASS", "FAIL"} and any(item.reinspected and item.status != "cannot" for item in judgements):
+    # A failure is decided by its failing conditions, not by a second look that passed another one.
+    deciding = [item for item in judgements if item.status == "fail"] if verdict == "FAIL" else judgements
+    if verdict in {"PASS", "FAIL"} and any(item.reinspected and item.status != "cannot" for item in deciding):
         return "model_reinspection"
-    if verdict == "FAIL" and any(evidence.evidence_class == "NOT_OBSERVED" for item in judgements if item.status == "fail" for evidence in item.evidence):
+    if verdict == "FAIL" and any(evidence.evidence_class == "NOT_OBSERVED" for item in deciding for evidence in item.evidence):
         return "not_observed"
     return "model_evidence" if verdict in {"PASS", "FAIL"} else "none"
 
