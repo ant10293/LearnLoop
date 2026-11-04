@@ -27,7 +27,7 @@ No non-Meta model runs in the application. Responses are stored against the exac
 ## Demonstrated capabilities
 
 - Tested live with real recordings: 7 procedures, 20 analysis runs, 16 verifications, and 75 Meta requests, on fixed-camera and head-mounted footage. On a head-mounted Lego build, an attempt missing one small part is reported FAIL on that step as a missing component.
-- Tested with authored responses and a stubbed Meta client: the teach, review, verify, evidence, second look, human-confirmation, replay, and export flow, in 240 backend tests, 44 frontend tests, and a browser end-to-end test.
+- Tested with authored responses and a stubbed Meta client: the teach, review, verify, evidence, second look, human-confirmation, replay, and export flow, in 241 backend tests, 45 frontend tests, and a browser end-to-end test.
 
 ## Originality
 

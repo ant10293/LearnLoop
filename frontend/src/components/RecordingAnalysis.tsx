@@ -28,6 +28,8 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   const [plan, setPlan] = useState<CallPlan | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Replay is the default. Only the explicit "Reanalyze with a new request" action skips stored responses.
+  const [fresh, setFresh] = useState(false);
   const finished = useRef("");
   const live = useQuery({
     queryKey: ["recording", videoId],
@@ -46,7 +48,6 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   // Null keeps the server's default until the person picks.
   const [inference, setInference] = useState<string | null>(null);
   const [segmentation, setSegmentation] = useState<string | null>(null);
-  // Skips stored answers for this video. The requests it sends still wait for approval.
   // Attempts are followed with SAM too, so their boxes can be checked against the procedure's references and seen.
   const segments = true;
 
@@ -58,11 +59,12 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
     }
   }, [run.data, onDone]);
 
-  async function start(allowLive: boolean) {
+  async function start(allowLive: boolean, skipStored: boolean = fresh) {
     setError("");
     setBusy(true);
+    setFresh(skipStored);
     try {
-      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "", fresh: Boolean(live.data?.analyzed_before) });
+      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "", fresh: skipStored });
       setPlan(null);
       setRunId(created.id);
     } catch (exc) {
@@ -106,12 +108,20 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
               </label>
             )}
           </div>
-          <button className="btn primary" disabled={busy} onClick={() => void start(false)}>
-            {status === "failed" ? "Analyze again" : action}
-          </button>
+          {live.data?.analyzed_before && (
+            <p className="small muted">This exact video was analyzed before. A stored Meta response for the same model and prompt is replayed, and no request is sent.</p>
+          )}
+          <div className="row">
+            <button className="btn primary" disabled={busy} onClick={() => void start(false, false)}>
+              {status === "failed" ? "Analyze again" : action}
+            </button>
+            {live.data?.analyzed_before && (
+              <button className="btn" disabled={busy} onClick={() => void start(false, true)}>Reanalyze with a new request</button>
+            )}
+          </div>
         </>
       )}
-      {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => setPlan(null)} />}
+      {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => { setPlan(null); setFresh(false); }} />}
       {(run.data || runLoading) && (
         <AnalysisStages run={run.data} />
       )}
@@ -124,7 +134,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
       )}
       {status === "completed" && run.data && (
         <p className="status-line" role="status">
-          Analysis complete with {humanizeModel(run.data.model_id)}. {run.data.source === "cached" ? "Replayed from a stored Meta response for this exact video. No request was sent." : "Live Meta response, stored for replay."}
+          Analysis complete with {humanizeModel(run.data.model_id)}. {run.data.source === "cached" ? <><strong>Replayed</strong> from a stored Meta response for this exact video, model, and prompt. No request was sent.</> : "Live Meta response, stored for replay."}
         </p>
       )}
       <ErrorNote message={error} />

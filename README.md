@@ -23,7 +23,7 @@ Each step reports **PASS**, **FAIL**, **CANNOT VERIFY**, or **NOT APPLICABLE**, 
 
 ### Evidence rules
 
-- An object that was not detected is not automatically absent. A missing part needs the place it belongs in view and a direct report that it is not there, or it must never appear anywhere in the attempt. Otherwise the step is CANNOT VERIFY.
+- An object that was not detected is not automatically absent. A missing part needs the place it belongs in view and a direct report that it is not there. A part that never appears anywhere in the attempt is CANNOT VERIFY, because it may be hidden, out of frame, or missed by the model.
 - An attempted action is not a completed one.
 - Object IDs do not need to match between recordings. Objects are matched by role, and appearance references from the demonstration help tell similar parts apart. Appearance never passes or fails a step on its own.
 - A reviewer's answer is stored as a named, timestamped observation and read as evidence. It must cite the final interval of the recording. The report marks the result as human-confirmed and keeps the automatic reading beside it.

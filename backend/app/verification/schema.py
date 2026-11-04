@@ -179,5 +179,5 @@ class StepResult(BaseModel):
     machine_verdict: str = ""
     # model_evidence: the verifier read model-reported evidence. human_confirmed: a reviewer's
     # observation decided it. human_override: a reviewer set the verdict. none: nothing decided it.
-    # not_observed: the step's part was not seen anywhere in the attempt, so it is treated as missing.
+    # not_observed: the step's part was not seen anywhere in the attempt. That is unresolved, not missing.
     basis: Literal["model_evidence", "model_reinspection", "not_observed", "human_confirmed", "human_override", "none"] = "none"

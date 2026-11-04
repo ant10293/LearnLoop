@@ -286,10 +286,11 @@ def _never_seen_case():
     return template, execution
 
 
-def test_a_part_seen_nowhere_fails_unless_its_appearance_matched_or_the_work_was_not_shown():
+def test_a_part_seen_nowhere_is_unresolved_not_missing():
     template, execution = _never_seen_case()
     step_result = _steps(verify_execution(template, execution))["step_stud"]
-    assert step_result["verdict"] == "FAIL" and step_result["error_category"] == "MISSING_COMPONENT"
+    assert step_result["verdict"] == "CANNOT_VERIFY" and step_result["error_category"] != "MISSING_COMPONENT"
+    assert step_result["basis"] == "not_observed"
     # A box that matched the stud's learned appearance means it was there.
     assert _steps(verify_execution(template, execution, appearance_seen={"E_stud"}))["step_stud"]["verdict"] == "CANNOT_VERIFY"
     # If the part it goes on was never seen either, the recording did not show the work.
@@ -298,7 +299,7 @@ def test_a_part_seen_nowhere_fails_unless_its_appearance_matched_or_the_work_was
     assert _steps(verify_execution(template, execution))["step_stud"]["verdict"] == "CANNOT_VERIFY"
 
 
-def test_both_parts_seen_nowhere_fail_as_missing_when_the_rest_of_the_attempt_was_shown():
+def test_both_parts_seen_nowhere_stay_unresolved_when_the_rest_of_the_attempt_was_shown():
     # Seen live: a figure's legs, torso, and head were never in the attempt, only a motorcycle, and every
     # "attached to" condition stayed undecided for lack of evidence.
     template, _ = _never_seen_case()
@@ -309,12 +310,12 @@ def test_both_parts_seen_nowhere_fail_as_missing_when_the_rest_of_the_attempt_wa
         actions=[action("X_bike", "place", 0, 2, ["E_bike"])],
     )
     result = _steps(verify_execution(template, execution))["step_stud"]
-    assert result["verdict"] == "FAIL" and result["error_category"] == "MISSING_COMPONENT" and result["basis"] == "not_observed"
-    failed = next(item for item in result["predicates"] if item["status"] == "fail")
-    assert "Neither the" in failed["note"] and failed["evidence"][0]["object_local_ids"] == ["E_body", "E_stud"]
+    assert result["verdict"] == "CANNOT_VERIFY" and result["error_category"] != "MISSING_COMPONENT" and result["basis"] == "not_observed"
+    undecided = next(item for item in result["predicates"] if item["status"] == "cannot")
+    assert "Neither the" in undecided["note"] and undecided["evidence"][0]["object_local_ids"] == ["E_body", "E_stud"]
 
 
-def test_a_seen_part_cannot_end_up_against_a_part_seen_nowhere():
+def test_a_seen_part_against_a_part_seen_nowhere_is_unresolved():
     # Seen live: the lock washer was never in the attempt, yet "nut touching lock washer" was left undecided and a
     # second Meta look reported a lock washer beside the nut.
     demo = document(
@@ -332,14 +333,14 @@ def test_a_seen_part_cannot_end_up_against_a_part_seen_nowhere():
         actions=[action("X_nut", "place", 0, 2, ["E_nut"])],
     )
     result = _steps(verify_execution(template, execution))["step_nut"]
-    assert result["verdict"] == "FAIL" and result["error_category"] == "MISSING_COMPONENT" and result["basis"] == "not_observed"
-    failed = next(item for item in result["predicates"] if item["status"] == "fail")
-    assert "was not seen at any point" in failed["note"] and failed["evidence"][0]["object_local_ids"] == ["E_lock"]
+    assert result["verdict"] == "CANNOT_VERIFY" and result["error_category"] != "MISSING_COMPONENT" and result["basis"] == "not_observed"
+    undecided = next(item for item in result["predicates"] if item["status"] == "cannot")
+    assert "was not seen at any point" in undecided["note"] and undecided["evidence"][0]["object_local_ids"] == ["E_lock"]
     # A box that matched the lock washer's learned appearance means it was there.
     assert _steps(verify_execution(template, execution, appearance_seen={"E_lock"}))["step_nut"]["verdict"] != "FAIL"
 
 
-def test_a_single_part_seen_nowhere_fails_only_when_another_part_was_seen():
+def test_a_single_part_seen_nowhere_is_flagged_only_when_another_part_was_seen():
     from types import SimpleNamespace
 
     from app.verification.predicates import _never_seen
@@ -351,10 +352,30 @@ def test_a_single_part_seen_nowhere_fails_only_when_another_part_was_seen():
     dark = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded"), obs("E_body", 12, visibility="absent")], relationships=[], actions=[])
     assert _never_seen(predicate, dark, stud, None, set(), "v") is None
     shown = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded"), obs("E_body", 12)], relationships=[], actions=[])
-    assert _never_seen(predicate, shown, stud, None, set(), "v").status == "fail"
+    assert _never_seen(predicate, shown, stud, None, set(), "v").status == "cannot"
     # A part that was only handled, with no observation of its own, still shows the work was recorded.
     handled = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded")], relationships=[], actions=[action("X_body", "place", 0, 2, ["E_body"])])
-    assert _never_seen(predicate, handled, stud, None, set(), "v").status == "fail"
+    assert _never_seen(predicate, handled, stud, None, set(), "v").status == "cannot"
+
+
+def test_a_required_part_hidden_for_the_whole_video_is_not_failed_as_missing():
+    # Regression: the stud is fully occluded in every frame while the body and the hands stay in view.
+    # Never observing it is not evidence that it was left out.
+    template, _ = _never_seen_case()
+    execution = document(
+        objects=[obj("E_stud", "clear stud", "small clear stud", "clear"), obj("E_body", "body", "white body", "white")],
+        observations=[
+            *[obs("E_stud", stamp, visibility="occluded") for stamp in (1, 4, 8, 12)],
+            *[obs("E_body", stamp) for stamp in (1, 4, 8, 12)],
+        ],
+        relationships=[],
+        actions=[action("X_body", "place", 0, 2, ["E_body"]), action("X_body2", "adjust", 6, 9, ["E_body"])],
+    )
+    report = verify_execution(template, execution)
+    step_result = _steps(report)["step_stud"]
+    assert step_result["verdict"] == "CANNOT_VERIFY"
+    assert step_result["error_category"] != "MISSING_COMPONENT"
+    assert all(item["status"] != "fail" for item in step_result["predicates"])
 
 
 def test_a_report_reads_the_appearance_matches_it_was_made_with(monkeypatch):

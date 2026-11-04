@@ -46,7 +46,7 @@ Changes made for this submission to the reused verifier:
 - A part mapped to another step no longer counts as a wrong component on a shared base.
 - `above`, `below`, `left_of`, and `right_of` respect direction. A reversed arrangement is a wrong placement, and an inverse statement of the same arrangement counts as support.
 - Removed steps are excluded and listed in the report.
-- A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, fails its condition as a missing component. A recording that shows none of the parts stays unresolved.
+- A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, leaves its condition CANNOT VERIFY, marked "not seen anywhere", and goes to the second look and the reviewer checkpoint. It is not called missing without a direct observation of absence.
 - A reviewer can require, lift, or add an order between steps, and impossible orders are refused.
 - A missing size measurement no longer lowers a role score.
 

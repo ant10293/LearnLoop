@@ -2,6 +2,7 @@
 
 A model proposal is not an input here. Absence is a failure only when the
 anchor is visibly observed and the learned context of that view is present.
+A part that is never seen at all is not, by that alone, missing.
 """
 
 from __future__ import annotations
@@ -35,12 +36,15 @@ def judge_predicate(
     target = roles.get(predicate.target_role) if predicate.target_role else None
     if _ambiguous(subject) or _ambiguous(target):
         return _cannot(predicate, "A role has competing instances, so the condition was not decided.")
-    missing = _never_seen(predicate, execution, subject, target, appearance_seen or set(), video_id)
-    if missing is not None:
-        return missing
+    unseen = _never_seen(predicate, execution, subject, target, appearance_seen or set(), video_id)
     if predicate.type == "physical_relationship":
-        return _relation(predicate, execution, subject, target, roles, video_id)
-    return _state(predicate, execution, subject, video_id, attempted)
+        judgement = _relation(predicate, execution, subject, target, roles, video_id)
+    else:
+        judgement = _state(predicate, execution, subject, video_id, attempted)
+    # Directly observed absence or misplacement still decides. Otherwise say why it stayed open.
+    if unseen is not None and judgement.status != "fail":
+        return unseen
+    return judgement
 
 
 def _relation(predicate, execution, subject, target, roles, video_id: str) -> PredicateJudgement:
@@ -498,13 +502,15 @@ def _is_visible(observation, object_ids: set[str], window: tuple[float, float], 
 
 
 def _never_seen(predicate, execution: AnalysisDocument, subject, target, appearance_seen: set[str], video_id: str):
-    """A part that appears nowhere in the attempt is treated as missing, by product decision.
+    """A part that appears nowhere in the attempt is unresolved, not missing.
 
     Nowhere means: no visible or partial observation at any time, no action, state change, or relation that
-    involves it, and no box that matched its learned appearance. Something in the attempt must have been seen, so
-    a recording that does not show the work at all stays unresolved. A part seen once and hidden later is not this.
-    The same holds the other way round: a seen part cannot end up on, or touching, a part that appears nowhere.
-    When neither part appears anywhere but other parts of the attempt do, both are missing.
+    involves it, and no box that matched its learned appearance. Not being seen is not evidence of absence: the
+    part may have been fully occluded, outside the frame, or missed by the analysis model. So this never fails a
+    condition on its own. It marks the condition CANNOT VERIFY with a NOT_OBSERVED note, which sends the step to
+    the second look and the reviewer checkpoint. A FAIL needs a direct observation: the place the part belongs in
+    view with an explicit report that it is absent, a positively observed wrong placement, or a reviewer's answer.
+    A recording that does not show any of the work returns None here and is judged as usual.
     """
     subject_ids = set(subject.object_local_ids if subject else [])
     target_ids = set(target.object_local_ids if target else [])
@@ -523,19 +529,26 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
             target_label = target.label or "part it goes with"
             missing, note = subject_ids | target_ids, (
                 f"Neither the {subject_label} nor the {target_label} was seen at any point in the recording, "
-                "while other parts of the attempt were, so both are treated as missing."
+                "while other parts of the attempt were. Not being seen is not proof they are missing: "
+                "they may be hidden, out of frame, or missed by the analysis."
             )
         else:
-            missing, note = subject_ids, "This part was not seen at any point in the recording, so it is treated as missing."
+            missing, note = subject_ids, (
+                "This part was not seen at any point in the recording. Not being seen is not proof it is missing: "
+                "it may be hidden, out of frame, or missed by the analysis."
+            )
     elif target_ids and not seen(target_ids):
         label = target.label or "part it goes with"
-        missing, note = target_ids, f"The {label} was not seen at any point in the recording, so it is treated as missing and this condition cannot hold."
+        missing, note = target_ids, (
+            f"The {label} was not seen at any point in the recording, so this condition was not decided. "
+            "Not being seen is not proof it is missing."
+        )
     else:
         return None
     return PredicateJudgement(
         predicate_id=predicate.id,
-        status="fail",
-        error_category="MISSING_COMPONENT",
+        status="cannot",
+        error_category="UNVERIFIABLE_OPERATION",
         note=note,
         evidence=[
             EvidenceRef(
