@@ -50,15 +50,18 @@ export function TeachPage() {
           />
         </section>
         <section className="panel">
-          <h2>Recordings that work</h2>
+          <h2>Tips for good recordings</h2>
           <ul className="guide">
-            <li>Camera fixed in one place</li>
             <li>Up to {status.isPending ? <Bone width="2ch" /> : status.data?.max_clip_seconds ?? 60} seconds</li>
-            <li>Good lighting, whole workspace in view</li>
-            <li>A few large, distinct objects</li>
-            <li>Finished result visible at the end of the recording</li>
+            <li>Good lighting, with the workspace in view</li>
+            <li>A steady, high resolution camera (1080p - 2160p)</li>
           </ul>
-          <p className="muted small">Moving or head-mounted cameras and small parts are not supported in this version.</p>
+          <p className="muted small">These make learning easier, but aren't required:</p>
+          <ul className="guide">
+            <li>A few large, distinct objects</li>
+            <li>All parts visible in the first frame</li>
+            <li>Controlled, deliberate movements</li>
+          </ul>
           {demo ? (
             <RecordingAnalysis key={demo.video.id} recording={demo} onDone={learned} action="Learn the procedure" />
           ) : procedure.data && (

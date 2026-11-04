@@ -47,7 +47,6 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   const [inference, setInference] = useState<string | null>(null);
   const [segmentation, setSegmentation] = useState<string | null>(null);
   // Skips stored answers for this video. The requests it sends still wait for approval.
-  const [fresh, setFresh] = useState(false);
   // Attempts are followed with SAM too, so their boxes can be checked against the procedure's references and seen.
   const segments = true;
 
@@ -63,7 +62,7 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
     setError("");
     setBusy(true);
     try {
-      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "", fresh });
+      const created = await api.analyze(videoId, allowLive, { model_id: inference ?? "", segmentation_model_id: segments ? segmentation : "", fresh: Boolean(live.data?.analyzed_before) });
       setPlan(null);
       setRunId(created.id);
     } catch (exc) {
@@ -107,12 +106,6 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
               </label>
             )}
           </div>
-          {live.data?.analyzed_before && (
-            <label className="check fresh-check">
-              <input type="checkbox" checked={fresh} onChange={(event) => setFresh(event.target.checked)} />
-              <span>Analyze from scratch. Stored answers for this video are not replayed, so new Meta requests are sent.</span>
-            </label>
-          )}
           <button className="btn primary" disabled={busy} onClick={() => void start(false)}>
             {status === "failed" ? "Analyze again" : action}
           </button>

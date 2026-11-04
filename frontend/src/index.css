@@ -185,8 +185,6 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .field.title { font-weight: 600; font-size: 1rem; }
 .step footer { justify-content: space-between; margin-top: 0.5rem; }
 .check { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.88rem; }
-.fresh-check { display: flex; align-items: flex-start; margin-bottom: 0.75rem; }
-.fresh-check input { margin: 0.2em 0 0; flex: none; }
 .condition { background: var(--bg); padding: 0.35rem 0.55rem; border-radius: 6px; display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; margin: 0.15rem 0; }
 .origin { color: var(--muted); font-size: 0.75rem; }
 .check-row .condition-edit { flex: none; }

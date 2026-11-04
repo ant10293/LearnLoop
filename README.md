@@ -75,18 +75,23 @@ Live calls are off by default. A live analysis needs all three of these, and cac
 
 Each analysis sends one analysis request, with no automatic retry. A demonstration also sends one Meta request that finds each object on the first frame, then one SAM request at 8 frames per second that follows them. A valid answer is stored against the exact video checksum, model, prompts, schema, and output limit, then replayed and labeled as cached. An invalid answer is reported, kept for audit, and never stored for replay.
 
-## Supported recordings
+## Recording tips
 
-- Fixed camera, up to 60 seconds, good lighting, whole workspace in view
-- A few large, visually distinct objects
-- Finished result visible at the end of the recording
+- Up to 60 seconds, with good lighting and the workspace in view
+- A steady, high resolution camera (1080p - 2160p)
+
+These make learning easier, but aren't required:
+
+- A few large, distinct objects
+- All parts visible in the first frame
+- Controlled, deliberate movements
 
 ## Known limitations
 
 - **Real-model accuracy is unproven.** The `hackathon_guided` flow has not yet been run against a live Meta model. Automated tests use authored responses, which show the application logic works and say nothing about what a model infers from footage.
 - Relations are coarse. Two positions on the same object can both read as "attached", so a misplacement may need a distinct relation, such as beside instead of on, to be caught.
-- Earlier stored Meta analyses of small parts assembled in the hand produced no false failures, and every required step came back unresolved. That footage is outside the supported conditions.
-- Unconstrained or head-mounted video, small parts, and long procedures are not supported.
+- Earlier stored Meta analyses of small parts assembled in the hand produced no false failures, and every required step came back unresolved.
+- Recordings longer than 60 seconds are not supported.
 - Single-user local app with no authentication. The reviewer name is typed in, not verified.
 
 ## Tests

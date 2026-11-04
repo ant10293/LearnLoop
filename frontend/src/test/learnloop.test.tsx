@@ -366,8 +366,6 @@ describe("Teach", () => {
     });
     show("/procedures/p1/teach");
     fireEvent.click(await screen.findByRole("button", { name: "Learn the procedure" }));
-    // Never analyzed, so there is nothing stored to skip.
-    expect(screen.queryByRole("checkbox", { name: /Analyze from scratch/ })).toBeNull();
     expect(await screen.findByRole("dialog")).toHaveTextContent("At most 1, with no automatic retry");
     expect(screen.getByRole("dialog")).toHaveTextContent("Unknown");
     const analyzes = calls.filter((call) => call.url.endsWith("/analyze"));
@@ -397,7 +395,7 @@ describe("Teach", () => {
     expect(body).toMatchObject({ model_id: "muse-spark-1.3", segmentation_model_id: "" });
   });
 
-  it("analyzes from scratch only after the person approves new requests", async () => {
+  it("analyzes an analyzed video again from scratch, only after the person approves new requests", async () => {
     const calls = mockApi((url, init) => {
       if (url.endsWith("/analyze")) {
         const body = JSON.parse(String(init?.body));
@@ -410,8 +408,7 @@ describe("Teach", () => {
       return base(url);
     });
     show("/procedures/p1/teach");
-    fireEvent.click(await screen.findByRole("checkbox", { name: /Analyze from scratch/ }));
-    fireEvent.click(screen.getByRole("button", { name: "Learn the procedure" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Learn the procedure" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent("Stored responses for this video are skipped.");
     fireEvent.click(screen.getByRole("button", { name: "Send one request" }));
     await screen.findByRole("alert");
