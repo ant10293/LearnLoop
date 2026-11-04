@@ -223,6 +223,10 @@ def test_frames_follow_the_conditions_parts_even_when_steps_were_done_out_of_ord
     step = {"matched_action_ids": ["a1"], "execution_time": 2.0}
     times = R.choose_frames(step, execution, video, {"subjects": {"green"}, "targets": {"base"}})
     assert times[-1] == 10.0
+    # Every time sent, the last frame included, goes through extraction.
+    seen = []
+    monkeypatch.setattr(R, "_sharpest", lambda video, moments, duration: seen.extend(moments) or moments)
+    assert set(R.choose_frames(step, execution, video, {"subjects": {"green"}, "targets": {"base"}})) <= set(seen)
     assert all(value >= 7.0 for value in times), times
     assert any(7.0 <= value <= 8.0 for value in times)
     history = R.timeline(execution, {"subjects": {"green"}, "targets": {"base"}})

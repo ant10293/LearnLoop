@@ -316,7 +316,8 @@ def choose_frames(step: dict, execution: dict, video: VideoAsset, parts: dict | 
     kept: list[float] = []
     # In ranked order, so the moments of the most relevant episode survive the limit.
     # The last frame is always one of them: it is the result if nothing undid it later.
-    reserved = [round(duration, 3)]
+    # Extracted like the others, so the still exists when the request is built.
+    reserved = _sharpest(video, [round(duration, 3)], duration)[-1:] or [round(duration, 3)]
     for moment in (min(max(float(value), 0.0), duration) for value in moments):
         if len(kept) < limit - 1 and all(abs(moment - other) >= _MERGE_SEC for other in kept + reserved):
             kept.append(round(moment, 3))
