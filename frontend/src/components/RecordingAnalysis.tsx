@@ -28,8 +28,8 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   const [plan, setPlan] = useState<CallPlan | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  // Replay is the default. Only the explicit "Reanalyze with a new request" action skips stored responses.
-  const [fresh, setFresh] = useState(false);
+  // Starting from scratch is the default. Only the explicit "Replay stored response" action reuses a stored answer.
+  const [fresh, setFresh] = useState(true);
   const finished = useRef("");
   const live = useQuery({
     queryKey: ["recording", videoId],
@@ -109,19 +109,19 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
             )}
           </div>
           {live.data?.analyzed_before && (
-            <p className="small muted">This exact video was analyzed before. A stored Meta response for the same model and prompt is replayed, and no request is sent.</p>
+            <p className="small muted">This exact video was analyzed before. Analyzing starts from scratch with new Meta requests. To reuse the stored response for the same model and prompt instead, replay it; no request is sent.</p>
           )}
           <div className="row">
-            <button className="btn primary" disabled={busy} onClick={() => void start(false, false)}>
+            <button className="btn primary" disabled={busy} onClick={() => void start(false, true)}>
               {status === "failed" ? "Analyze again" : action}
             </button>
             {live.data?.analyzed_before && (
-              <button className="btn" disabled={busy} onClick={() => void start(false, true)}>Reanalyze with a new request</button>
+              <button className="btn" disabled={busy} onClick={() => void start(false, false)}>Replay stored response</button>
             )}
           </div>
         </>
       )}
-      {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => { setPlan(null); setFresh(false); }} />}
+      {plan && <PlanCard plan={plan} busy={busy} onApprove={() => void start(true)} onCancel={() => { setPlan(null); setFresh(true); }} />}
       {(run.data || runLoading) && (
         <AnalysisStages run={run.data} />
       )}

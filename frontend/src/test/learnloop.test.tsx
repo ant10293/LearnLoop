@@ -395,7 +395,7 @@ describe("Teach", () => {
     expect(body).toMatchObject({ model_id: "muse-spark-1.3", segmentation_model_id: "" });
   });
 
-  it("replays an analyzed video by default instead of sending a new request", async () => {
+  it("replays an analyzed video only when the person picks replay", async () => {
     const calls = mockApi((url) => {
       if (url.endsWith("/analyze")) return { status: 500, body: { detail: "stop here" } };
       const seen = { role: "demonstration", video, run: null, analyzed_before: true };
@@ -404,14 +404,14 @@ describe("Teach", () => {
       return base(url);
     });
     show("/procedures/p1/teach");
-    expect(await screen.findByText(/stored Meta response for the same model and prompt is replayed/)).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Learn the procedure" }));
+    expect(await screen.findByText(/Analyzing starts from scratch/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Replay stored response" }));
     await screen.findByRole("alert");
     const bodies = calls.filter((call) => call.url.endsWith("/analyze")).map((call) => JSON.parse(String(call.init?.body)));
     expect(bodies.map((body) => [body.allow_live, body.fresh])).toEqual([[false, false]]);
   });
 
-  it("analyzes an analyzed video again from scratch, only after the person approves new requests", async () => {
+  it("analyzes an analyzed video from scratch by default, only after the person approves new requests", async () => {
     const calls = mockApi((url, init) => {
       if (url.endsWith("/analyze")) {
         const body = JSON.parse(String(init?.body));
@@ -424,7 +424,7 @@ describe("Teach", () => {
       return base(url);
     });
     show("/procedures/p1/teach");
-    fireEvent.click(await screen.findByRole("button", { name: "Reanalyze with a new request" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Learn the procedure" }));
     expect(await screen.findByRole("dialog")).toHaveTextContent("Stored responses for this video are skipped.");
     fireEvent.click(screen.getByRole("button", { name: "Send one request" }));
     await screen.findByRole("alert");
