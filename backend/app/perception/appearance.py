@@ -479,10 +479,12 @@ def validate_samples(
     labels: dict[str, str],
     anchored: dict[str, set[int]],
     options: Settings,
+    look_alike: frozenset[frozenset[str]] = frozenset(),
 ) -> dict[str, list[dict]]:
     """Status for each sample. Rejection needs positive evidence: two neighbouring samples that look like another
     object, or a box that grew far past the object's validated size while not matching it. A crop too small to
-    judge, or one that is merely unfamiliar (a hand over it, a new angle), stays provisional: shown, not validated."""
+    judge, or one that is merely unfamiliar (a hand over it, a new angle), stays provisional: shown, not validated.
+    Looking like an object of a look-alike pair is ambiguous, never a swap."""
     out: dict[str, list[dict]] = {}
     for local_id, items in samples.items():
         own_refs = galleries.get(local_id)
@@ -503,6 +505,9 @@ def validate_samples(
             if reading == "other" and overlaps:
                 # The crop shows the parts it overlaps too, so looking like one of them is expected, not a swap.
                 reading = "weak"
+            paired = reading == "other" and frozenset((local_id, rival_id)) in look_alike
+            if paired:
+                reading = "ambiguous"
             rows.append(
                 {
                     "time": round(item.timestamp, 3),
@@ -515,12 +520,59 @@ def validate_samples(
                     "reading": reading,
                     "checkable": usable,
                     "overlaps": overlaps,
+                    "look_alike": paired,
                     "has_reference": own_refs is not None and len(own_refs) > 0,
                 }
             )
         _smooth(rows)
         out[local_id] = rows
     return out
+
+
+# Frames in which an object looked like another while that other was confirmed elsewhere before the pair is
+# called look-alike. On the bolt demonstration the flat washer and nut did so 6 and 10 times beside the lock
+# washer threaded on the bolt; on the car demonstration no pair did more than once.
+LOOK_ALIKE_MIN_FRAMES = 3
+# Samples of two objects this close in time show one moment.
+_SAME_MOMENT_SEC = 0.2
+
+
+def look_alike_pairs(samples: dict[str, list[Sample]], rows: dict[str, list[dict]]) -> list[dict]:
+    """Pairs of objects where one repeatedly looked like the other while the other was validated somewhere else in
+    the same frame. Its box was not on the other object, so this is evidence the two look alike where they sit
+    together (references of a washer threaded on a bolt show the bolt too), not that SAM swapped them."""
+    boxes = {(item.local_id, item.frame_index): item.box for items in samples.values() for item in items}
+    found: dict[tuple[str, str], int] = {}
+    for local_id, items in rows.items():
+        for row in items:
+            rival = row.get("rival")
+            if row["reading"] != "other" or not rival:
+                continue
+            box = boxes.get((local_id, row["frame_index"]))
+            elsewhere = any(
+                other["reading"] == "match"
+                and abs(other["time"] - row["time"]) <= _SAME_MOMENT_SEC
+                and box is not None
+                and (rival, other["frame_index"]) in boxes
+                and not overlapping(box, boxes[(rival, other["frame_index"])])
+                for other in rows.get(rival, [])
+            )
+            if elsewhere:
+                found[(local_id, rival)] = found.get((local_id, rival), 0) + 1
+    return [
+        {
+            "objects": [local_id, rival],
+            "kind": "look_alike_together",
+            "frames": count,
+            "note": "Looked like the other object while that object was confirmed elsewhere in the frame, so a match between them is not treated as a swap.",
+        }
+        for (local_id, rival), count in sorted(found.items())
+        if count >= LOOK_ALIKE_MIN_FRAMES
+    ]
+
+
+def pair_set(warnings: list[dict]) -> frozenset[frozenset[str]]:
+    return frozenset(frozenset(item["objects"]) for item in warnings if item.get("kind") == "look_alike_together")
 
 
 def _smooth(rows: list[dict]) -> None:
@@ -560,12 +612,13 @@ def reject_never_matched(rows: dict[str, list[dict]], options: Settings) -> None
 
     Seen on a real attempt: a locate box put on a fingertip was followed onto the pin and then the whole assembly
     as "clear stud", while the stud never appeared. Only for attempts: a demonstration's references come from its
-    own tracks. A same-kind tie counts as matching, so identical parts are not rejected for looking alike."""
+    own tracks. A same-kind tie counts as matching, so identical parts are not rejected for looking alike, and
+    neither is a part that looks like its look-alike partner."""
     for items in rows.values():
         judged = [row for row in items if row.get("own") is not None]
         if len(judged) < NEVER_MATCHED_MIN_SAMPLES:
             continue
-        if any(row["own"] >= options.accept or row["reading"] == "match" for row in judged):
+        if any(row["own"] >= options.accept or row["reading"] == "match" or row.get("look_alike") for row in judged):
             continue
         for row in items:
             row["status"], row["reason"] = "rejected", NEVER_MATCHED

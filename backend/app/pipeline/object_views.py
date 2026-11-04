@@ -549,31 +549,45 @@ def _check_appearance(session, run: AnalysisRun, video: VideoAsset, document: An
 
 
 def execution_reference(session, template_id: str, document: AnalysisDocument):
-    """The learned procedure's references, keyed by the objects of this recording that its roles map to.
-    A role with no mapped object stays in as a rival under its role id. Nothing here is written back."""
+    """The learned procedure's references, keyed by the objects of this recording that its roles map to, and the
+    demonstration's look-alike pairs under the same keys. A role with no mapped object stays in as a rival under its
+    role id. Nothing here is written back."""
     from app.models.verification import LearnedWorkflowTemplate
     from app.verification.roles import map_roles
     from app.verification.schema import LearnedTemplate
 
     template = session.get(LearnedWorkflowTemplate, template_id)
     if template is None:
-        return None, {}, {}
+        return None, {}, {}, frozenset()
     manifest, by_role = app_.role_galleries(template.document_json or {}, template.source_run_id)
     if manifest is None or not by_role:
-        return manifest, {}, {}
+        return manifest, {}, {}, frozenset()
     spec = LearnedTemplate.model_validate(template.document_json)
     galleries: dict = {}
     labels: dict[str, str] = {}
+    keys: dict[str, str] = {}
     for assignment in map_roles(spec, document):
         refs = by_role.get(assignment.role_id)
         if refs is None:
             continue
         if assignment.status in {"assigned", "human"} and len(assignment.object_local_ids) == 1:
-            galleries[assignment.object_local_ids[0]] = refs
+            keys[assignment.role_id] = assignment.object_local_ids[0]
         else:
-            galleries[assignment.role_id] = refs
+            keys[assignment.role_id] = assignment.role_id
             labels[assignment.role_id] = assignment.label
-    return manifest, galleries, labels
+        galleries[keys[assignment.role_id]] = refs
+    by_source = {
+        source: keys[role["role_id"]]
+        for role in (template.document_json or {}).get("roles") or []
+        if role.get("role_id") in keys
+        for source in role.get("source_object_ids") or []
+    }
+    pairs = frozenset(
+        frozenset(by_source[local_id] for local_id in pair)
+        for pair in app_.pair_set(manifest.get("warnings") or [])
+        if all(local_id in by_source for local_id in pair) and len({by_source[local_id] for local_id in pair}) == 2
+    )
+    return manifest, galleries, labels, pairs
 
 
 def _apply_statuses(tracked: dict[str, list[Sighting]], checked) -> None:
@@ -614,7 +628,7 @@ async def _recover(session, run, video, media: Path, tracked, checked, next_id: 
     # A recovery is accepted only if the boxes SAM followed from the new seed look like the object.
     again = check_tracks(
         run_id=run.id, media=media, tracked=followed, seeds=seeds, labels=checked.labels, fps=SAM_FPS, mode="execution",
-        reference=(None, checked.galleries, {}),
+        reference=(None, checked.galleries, {}, checked.look_alike),
     )
     for item in chosen:
         local_id = item["local_id"]

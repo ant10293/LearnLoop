@@ -149,6 +149,51 @@ def test_a_crop_overlapping_another_object_is_not_called_a_swap():
     assert {row["status"] for row in rows} == {"provisional"} and rows[0]["reason"] == "overlaps_other_object"
 
 
+def _beside(a_vectors, b_box):
+    """a's box beside b's at each moment, b matching its references; a's crops as given."""
+    a = [_sample("a", index * 0.33, vector) for index, vector in enumerate(a_vectors)]
+    b = [_sample("b", index * 0.33, BLUE, box=b_box) for index in range(len(a_vectors))]
+    labels = {"a": "flat washer", "b": "lock washer"}
+    return {"a": a, "b": b}, labels
+
+
+def test_a_part_that_looks_like_another_beside_it_is_ambiguous_not_hidden():
+    # Seen on the bolt demonstration: the lock washer's references show it threaded on the bolt, so the correct
+    # flat washer boxes next to it scored as the lock washer while the lock washer was validated beside them.
+    galleries = {"a": np.stack([RED]), "b": np.stack([BLUE])}
+    samples, labels = _beside([RED, BLUE, BLUE, BLUE, BLUE], {"x": 0.52, "y": 0.4, "w": 0.1, "h": 0.1})
+    rows = A.validate_samples(samples, galleries, labels, {"a": {0}, "b": {0}}, OPTIONS)
+    assert [row["status"] for row in rows["a"]][1:] == ["rejected"] * 4
+    found = A.look_alike_pairs(samples, rows)
+    assert [(item["objects"], item["frames"]) for item in found] == [(["a", "b"], 4)]
+    again = A.validate_samples(samples, galleries, labels, {"a": {0}, "b": {0}}, OPTIONS, A.pair_set(found))
+    assert [row["status"] for row in again["a"]] == ["validated"] + ["ambiguous"] * 4
+    assert all(row["status"] == "validated" for row in again["b"])
+
+
+def test_looking_like_another_part_where_that_part_is_is_still_a_swap():
+    # a's box sits on b itself: that is SAM following the wrong part, not two parts that look alike.
+    galleries = {"a": np.stack([RED]), "b": np.stack([BLUE])}
+    samples, labels = _beside([RED, BLUE, BLUE, BLUE, BLUE], {"x": 0.4, "y": 0.4, "w": 0.1, "h": 0.1})
+    rows = A.validate_samples(samples, galleries, labels, {"a": {0}, "b": {0}}, OPTIONS)
+    assert A.look_alike_pairs(samples, rows) == []
+
+
+def test_a_few_coincidences_do_not_make_a_pair():
+    galleries = {"a": np.stack([RED]), "b": np.stack([BLUE])}
+    samples, labels = _beside([RED, BLUE, BLUE, RED, RED], {"x": 0.52, "y": 0.4, "w": 0.1, "h": 0.1})
+    rows = A.validate_samples(samples, galleries, labels, {"a": {0}, "b": {0}}, OPTIONS)
+    assert A.look_alike_pairs(samples, rows) == []
+
+
+def test_an_attempt_track_that_looks_like_its_look_alike_partner_is_not_rejected_whole():
+    galleries = {"a": np.stack([RED]), "b": np.stack([BLUE])}
+    items = [_sample("a", index * 0.33, BLUE) for index in range(4)]
+    rows = A.validate_samples({"a": items}, galleries, {"a": "flat washer", "b": "lock washer"}, {"a": {0}}, OPTIONS, frozenset({frozenset({"a", "b"})}))
+    A.reject_never_matched(rows, OPTIONS)
+    assert {row["status"] for row in rows["a"]} == {"ambiguous"}
+
+
 def test_no_reference_means_provisional_for_every_box():
     rows = _rows([RED, BLUE], {"b": np.stack([BLUE])})
     assert {row["status"] for row in rows} == {"provisional"}

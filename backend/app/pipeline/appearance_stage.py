@@ -52,6 +52,7 @@ class AppearanceResult:
     rows: dict[str, list[dict]] = field(default_factory=dict)
     gallery: dict | None = None
     diagnostics: dict = field(default_factory=dict)
+    look_alike: frozenset = frozenset()
 
 
 def check_tracks(
@@ -64,12 +65,13 @@ def check_tracks(
     fps: float,
     mode: str,
     source: dict | None = None,
-    reference: tuple[dict | None, dict[str, np.ndarray], dict[str, str]] | None = None,
+    reference: tuple[dict | None, dict[str, np.ndarray], dict[str, str], frozenset] | None = None,
     encoder=None,
 ) -> AppearanceResult:
     """mode is "demonstration" (learn references from these tracks) or "execution" (use reference).
 
-    reference, for an execution: (gallery manifest, vectors keyed by this run's object ids, labels of those keys).
+    reference, for an execution: (gallery manifest, vectors keyed by this run's object ids, labels of those keys,
+    look-alike pairs of those keys).
     A failure returns a result with used False and the reason; the caller draws raw SAM boxes as provisional.
     """
     from app.config import settings
@@ -127,17 +129,24 @@ def check_tracks(
     for sample, vector in zip(encodable, vectors, strict=True):
         sample.vector = vector
     anchored = {local_id: app_.anchored_segments_of(items, seed_times.get(local_id, [])) for local_id, items in samples.items()}
+    known: frozenset = frozenset()
     if mode == "demonstration":
         selection = app_.select_references(samples, seed_times, labels, options)
         galleries = {
             local_id: np.stack([sample.vector for sample in entry["references"]]) for local_id, entry in selection.items() if entry["references"]
         }
-        result.gallery = _save_gallery(run_id, selection, galleries, labels, source or {}, encoder, time.perf_counter() - started)
     else:
-        manifest, galleries, reference_labels = reference or (None, {}, {})
+        manifest, galleries, reference_labels, known = reference or (None, {}, {}, frozenset())
         result.labels.update(reference_labels)
         result.gallery = app_.gallery_summary(manifest) if manifest else None
-    rows = app_.validate_samples(samples, galleries, result.labels, anchored, options)
+    rows = app_.validate_samples(samples, galleries, result.labels, anchored, options, known)
+    # Checked once more with the pairs this recording showed to look alike, so neither is hidden as the other.
+    found = app_.look_alike_pairs(samples, rows)
+    result.look_alike = known | app_.pair_set(found)
+    if result.look_alike != known:
+        rows = app_.validate_samples(samples, galleries, result.labels, anchored, options, result.look_alike)
+    if mode == "demonstration":
+        result.gallery = _save_gallery(run_id, selection, galleries, labels, source or {}, encoder, time.perf_counter() - started, found)
     if mode == "execution":
         app_.reject_never_matched(rows, options)
     reach = step / fps + 1e-6
@@ -208,7 +217,7 @@ def _frame_size(media: Path) -> tuple[int, int]:
         capture.release()
 
 
-def _save_gallery(run_id: str, selection: dict, galleries: dict, labels: dict, source: dict, encoder, runtime: float) -> dict:
+def _save_gallery(run_id: str, selection: dict, galleries: dict, labels: dict, source: dict, encoder, runtime: float, look_alike: list[dict]) -> dict:
     objects = {}
     crops = {}
     for local_id, entry in selection.items():
@@ -258,7 +267,7 @@ def _save_gallery(run_id: str, selection: dict, galleries: dict, labels: dict, s
         "runtime_sec": round(runtime, 2),
         "created_at": utcnow().isoformat(),
         "objects": objects,
-        "warnings": app_.distinguishability(galleries, labels, app_.Settings.from_config().margin),
+        "warnings": app_.distinguishability(galleries, labels, app_.Settings.from_config().margin) + look_alike,
         "note": "Embeddings of frozen DINOv2 ViT-S/14. No weights were trained. A cosine is a similarity, not a probability.",
     }
     if status == "unavailable":
@@ -298,6 +307,7 @@ def _diagnostics(result: AppearanceResult, ordered: dict, segments: dict, encode
         "segments": {local_id: (max(values) + 1 if values else 0) for local_id, values in segments.items()},
         "rejected_intervals": intervals,
         "objects_with_references": sorted(local_id for local_id, refs in result.galleries.items() if len(refs)),
+        "look_alike": sorted(sorted(pair) for pair in result.look_alike),
     }
 
 
