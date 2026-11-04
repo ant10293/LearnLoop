@@ -49,7 +49,7 @@ export function ProjectsPage() {
         <h1>Learn a task. Verify the next attempt.</h1>
         <p>Record a physical task once. LearnLoop proposes the procedure, you review it, and each new recording is checked against what was accepted, with the evidence shown.</p>
         {adding ? (
-          <form className="row" onSubmit={(event) => void create(event)}>
+          <form className="row create-row" onSubmit={(event) => void create(event)}>
             <input className="field grow" autoFocus aria-label="Procedure name" placeholder="Name this procedure" value={name} onChange={(event) => setName(event.target.value)} />
             <button className="btn primary" disabled={!name.trim()}>Create</button>
             <button className="btn" type="button" onClick={() => setAdding(false)}>Cancel</button>

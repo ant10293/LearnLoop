@@ -91,6 +91,8 @@ select:not(.bone) {
 .hero { padding: 2.5rem 0 2rem; max-width: 760px; }
 .hero h1 { font-size: 2.8rem; line-height: 1.08; margin-bottom: 0.8rem; }
 .hero p { font-size: 1.1rem; color: var(--muted); margin-bottom: 1.2rem; }
+/* Tall as the "Create procedure" button it replaces (same font, so 1lh is its line box), so the page below does not shift. */
+.create-row { min-height: calc(1.5rem + 2px + 1lh); font-size: 1rem; align-content: flex-start; }
 .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); grid-auto-rows: 1fr; gap: 1rem; }
 .cards > li { display: flex; flex-direction: column; }
 .cards > li > .card, .card-item, .card-item > .card { flex: 1; }
