@@ -188,3 +188,26 @@ def test_a_report_with_nothing_unresolved_queues_no_second_look(lab):  # noqa: F
     report = _check(lab, procedure, template, CORRECT, "blue")
     assert report["report"]["reinspection"]["status"] == "not_needed"
 
+
+
+def test_frames_follow_the_conditions_parts_even_when_steps_were_done_out_of_order(monkeypatch):
+    # Seen live: steps were matched to actions by order, so a step about one part got frames of another.
+    from types import SimpleNamespace
+
+    from app.services import reinspection as R
+
+    from tests.test_learnloop_flow import CORRECT
+
+    monkeypatch.setattr(R, "_sharpest", lambda video, moments, duration: moments)
+    from app.pipeline.contracts import GUIDED_TASK, validate_output
+
+    # red placed 2-3s, blue 4-5s, green 7-8s, all on the base
+    execution = validate_output(GUIDED_TASK, CORRECT).model_dump(mode="json")
+    video = SimpleNamespace(id="v", duration_sec=10.1)
+    step = {"matched_action_ids": ["a1"], "execution_time": 2.0}
+    times = R.choose_frames(step, execution, video, {"subjects": {"green"}, "targets": {"base"}})
+    assert times[-1] == 10.0
+    assert all(value >= 7.0 for value in times), times
+    assert any(7.0 <= value <= 8.0 for value in times)
+    history = R.timeline(execution, {"subjects": {"green"}, "targets": {"base"}})
+    assert "7-8s" in history and "2-3s" not in history

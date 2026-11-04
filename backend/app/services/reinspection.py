@@ -39,6 +39,7 @@ SYSTEM = """
 You are checking whether specific physical conditions hold in still frames from one recording of a person assembling parts. Each image follows a line with its timestamp.
 For each listed condition, return one finding with its step_id and predicate_id copied exactly.
 outcome: supported only when the frames directly show the condition holding. contradicted only when the frames directly show it not holding, for example the part is visibly somewhere else, visibly absent from where it should be, or visibly the wrong part. Otherwise inconclusive.
+A condition holds from the moment it is achieved until a frame shows it undone, such as the part taken back off or out. A hand or another part covering it later does not undo it, and neither does the condition being out of view at the end. A part pressed into or under another may be visible only while it goes in: judge it from those frames.
 Do not assume the expected condition is true. Several parts can look alike: decide only about the part that fits the listed description. A part that cannot be seen is not missing: if a hand, another part, or the frame edge hides where it would be, the outcome is inconclusive and visibility is occluded or out_of_frame.
 visibility describes the place the condition is about in the clearest frame: visible, partial, occluded, or out_of_frame.
 evidence_timestamps lists only timestamps of supplied images that show what you report, copied exactly. Leave it empty for inconclusive.
@@ -139,8 +140,7 @@ async def _inspect(session: Session, row: VerificationRunRow, target: dict) -> d
     template = session.get(LearnedWorkflowTemplate, row.template_id)
     if run is None or video is None or revision is None or template is None:
         return {"step_id": target["step_id"], "status": "failed", "reason": "The attempt or its procedure is missing."}
-    times = choose_frames(target["step"], revision.document_json, video)
-    question = _question(target, template.document_json, times)
+    times, question = plan_question(session, row, target)
     key = _key(session, row, target, times, question)
     stored = _cached(key)
     request_id, source = "", "cached"
@@ -232,37 +232,84 @@ def validate_findings(answer: ReinspectOutput, target: dict, times: list[float])
 # ---------------------------------------------------------------- frames and prompt
 
 
-def choose_frames(step: dict, execution: dict, video: VideoAsset) -> list[float]:
-    """A few sharp moments from this attempt: around the matched work, after it, and the end state.
-    Demonstration timestamps are not used: the attempt has its own timing."""
-    from app.verification.predicates import _final_window
+def condition_parts(target: dict, template: dict, report: dict) -> dict:
+    """The attempt's objects for each condition's subject and target, from the report's role mapping."""
+    by_role = {role.get("role_id"): role.get("object_local_ids") or [] for role in report.get("roles") or []}
+    conditions = {}
+    for step in template.get("steps") or []:
+        if step.get("step_id") == target["step_id"]:
+            conditions = {item["id"]: item for item in step.get("completion_conditions") or []}
+    subjects: set[str] = set()
+    targets: set[str] = set()
+    for item in target["predicates"]:
+        condition = conditions.get(item["predicate_id"]) or {}
+        subjects.update(by_role.get(condition.get("subject_role"), []))
+        targets.update(by_role.get(condition.get("target_role"), []))
+    return {"subjects": subjects, "targets": targets}
 
+
+def episodes(execution: dict, parts: dict) -> list[dict]:
+    """When the analysis says this condition's parts were handled or changed, from its actions, transitions,
+    and relations. Both parts together rank first. Step order is not used: an attempt can do steps in any order."""
+    document = as_document(execution)
+    subjects, targets = parts["subjects"], parts["targets"]
+    found: list[dict] = []
+    for action in document.actions:
+        ids = set(action.object_local_ids)
+        if ids & subjects:
+            found.append({"start": action.start, "end": action.end, "both": bool(ids & targets), "kind": "handled"})
+    for transition in document.transitions:
+        if transition.object_local_id in subjects:
+            found.append({"start": transition.timestamp, "end": transition.timestamp, "both": False, "kind": "changed"})
+    for relation in document.relationships:
+        pair = {relation.subject_local_id, relation.other_local_id}
+        if pair & subjects and relation.time_start is not None:
+            found.append({"start": relation.time_start, "end": relation.time_start, "both": bool(pair & targets), "kind": "joined"})
+    return sorted(found, key=lambda item: (not item["both"], item["start"]))
+
+
+def choose_frames(step: dict, execution: dict, video: VideoAsset, parts: dict | None = None) -> list[float]:
+    """A few sharp moments that can show this condition: while its parts are put together, just after, a
+    moment later when hands usually move, and the last frame. A condition reached mid-video and hidden later
+    is judged from the middle. Without parts, the step's matched work is used."""
     document = as_document(execution)
     duration = max(float(video.duration_sec or 0) - 0.1, 0.0)
     moments: list[float] = []
-    actions = {action.local_id: action for action in document.actions}
-    for action_id in step.get("matched_action_ids") or []:
-        action = actions.get(action_id)
-        if action is not None:
-            moments += [action.start, (action.start + action.end) / 2, action.end, action.end + 1.0]
-    for evidence in step.get("evidence") or []:
-        if evidence.get("timestamp") is not None:
-            moments.append(float(evidence["timestamp"]))
-    if step.get("execution_time") is not None:
-        moments.append(float(step["execution_time"]))
-    start, end = _final_window(document)
-    # The end state, after the hands have usually moved away.
-    moments += [start, (start + duration) / 2, duration]
-    kept: list[float] = []
-    for moment in sorted(min(max(float(value), 0.0), duration) for value in moments):
-        if all(abs(moment - other) >= _MERGE_SEC for other in kept):
-            kept.append(round(moment, 3))
+    for item in episodes(execution, parts or {"subjects": set(), "targets": set()})[:3]:
+        moments += [(item["start"] + item["end"]) / 2, item["end"], item["end"] + 0.6, item["end"] + 1.5]
+    if not moments:
+        actions = {action.local_id: action for action in document.actions}
+        for action_id in step.get("matched_action_ids") or []:
+            action = actions.get(action_id)
+            if action is not None:
+                moments += [(action.start + action.end) / 2, action.end, action.end + 1.0]
+        if step.get("execution_time") is not None:
+            moments.append(float(step["execution_time"]))
+    if not moments:
+        # Nothing ties this condition to a moment: spread the look over the recording, not only its end.
+        moments = [duration * share for share in (0.35, 0.55, 0.7, 0.85)]
     limit = max(settings.reinspect_max_frames, 2)
-    if len(kept) > limit:
-        # Keep the last frame, and spread the rest.
-        step_size = (len(kept) - 1) / (limit - 1)
-        kept = [kept[round(index * step_size)] for index in range(limit - 1)] + [kept[-1]]
-    return _sharpest(video, list(dict.fromkeys(kept)), duration)
+    kept: list[float] = []
+    # In ranked order, so the moments of the most relevant episode survive the limit.
+    # The last frame is always one of them: it is the result if nothing undid it later.
+    reserved = [round(duration, 3)]
+    for moment in (min(max(float(value), 0.0), duration) for value in moments):
+        if len(kept) < limit - 1 and all(abs(moment - other) >= _MERGE_SEC for other in kept + reserved):
+            kept.append(round(moment, 3))
+    sharp = _sharpest(video, sorted(kept), duration)
+    distinct: list[float] = []
+    for moment in sharp:
+        if all(abs(moment - other) >= _MERGE_SEC for other in distinct + reserved):
+            distinct.append(moment)
+    return sorted(distinct + reserved)
+
+
+def timeline(execution: dict, parts: dict) -> str:
+    lines = []
+    for item in sorted(episodes(execution, parts)[:4], key=lambda value: value["start"]):
+        span = f"{item['start']:g}s" if item["start"] == item["end"] else f"{item['start']:g}-{item['end']:g}s"
+        lines.append(f"- {span}: the listed part was {item['kind']}{' together with the other listed part' if item['both'] else ''}")
+    return "\n".join(lines)
 
 
 def _sharpest(video: VideoAsset, moments: list[float], duration: float) -> list[float]:
@@ -292,7 +339,20 @@ def _still(video: VideoAsset, moment: float):
     return data_path("reinspect_frames", video.id, f"{moment:.3f}.jpg")
 
 
-def _question(target: dict, template: dict, times: list[float]) -> str:
+def plan_question(session: Session, row: VerificationRunRow, target: dict) -> tuple[list[float], str] | None:
+    """Frames and question for one step, the same every time for the same report, so a stored answer replays."""
+    video = session.get(VideoAsset, row.execution_video_id)
+    revision = session.get(AnalysisRevision, row.execution_revision_id)
+    template = session.get(LearnedWorkflowTemplate, row.template_id)
+    if video is None or revision is None or template is None:
+        return None
+    parts = condition_parts(target, template.document_json, row.report_json or {})
+    times = choose_frames(target["step"], revision.document_json, video, parts)
+    question = _question(target, template.document_json, times, timeline(revision.document_json, parts))
+    return times, question
+
+
+def _question(target: dict, template: dict, times: list[float], history: str = "") -> str:
     roles = {role["role_id"]: role for role in template.get("roles") or []}
     conditions = {}
     for step in template.get("steps") or []:
@@ -318,6 +378,7 @@ def _question(target: dict, template: dict, times: list[float]) -> str:
     return (
         "Required conditions, each with the exact step_id and predicate_id to copy:\n"
         + "\n".join(lines)
+        + (f"\n\nAccording to the analysis of this recording:\n{history}\nThe images come from those moments, so the condition may be visible in the middle of the recording rather than at the end." if history else "")
         + f"\n\nThe images were taken at these timestamps, in seconds: {stamps}. "
         "A supported or contradicted finding must list in evidence_timestamps the ones that show it. "
         "Decide each from the images only."
@@ -397,13 +458,10 @@ async def _call(session, run: AnalysisRun, video: VideoAsset, times: list[float]
 
 def _key(session: Session, row: VerificationRunRow, target: dict, times: list[float] | None = None, question: str | None = None) -> str:
     if times is None or question is None:
-        video = session.get(VideoAsset, row.execution_video_id)
-        revision = session.get(AnalysisRevision, row.execution_revision_id)
-        template = session.get(LearnedWorkflowTemplate, row.template_id)
-        if video is None or revision is None or template is None:
+        planned = plan_question(session, row, target)
+        if planned is None:
             return ""
-        times = choose_frames(target["step"], revision.document_json, video)
-        question = _question(target, template.document_json, times)
+        times, question = planned
     video = session.get(VideoAsset, row.execution_video_id)
     run = session.get(AnalysisRun, row.execution_run_id)
     parts = {
