@@ -37,6 +37,19 @@ def test_a_direct_visible_finding_is_kept():
     assert kept[0]["outcome"] == "supported" and kept[0]["evidence_timestamps"] == [9.5] and not problems
 
 
+def test_a_garbled_step_id_on_an_asked_condition_is_read_as_the_asked_step():
+    # Seen live: the model wrote the predicate id into step_id.
+    kept, problems = _validated(_finding(step_id="rhel:0:attached"))
+    assert kept[0]["outcome"] == "supported" and kept[0]["step_id"] == "s3" and kept[0]["reported_step_id"] == "rhel:0:attached"
+    assert any("read as step s3" in item for item in problems)
+
+
+def test_supported_without_a_cited_frame_stays_inconclusive():
+    # Also seen live: "supported", visible, directly observed, and no timestamp.
+    kept, _ = _validated(_finding(evidence_timestamps=[]))
+    assert kept[0]["outcome"] == "inconclusive"
+
+
 def test_findings_for_conditions_not_asked_or_frames_not_sent_are_rejected():
     kept, problems = _validated(_finding(predicate_id="other"), _finding(evidence_timestamps=[3.0]))
     # The unknown predicate is dropped. The uncited frame leaves no evidence, so supported falls back to inconclusive.
@@ -48,6 +61,14 @@ def test_an_inferred_or_occluded_claim_cannot_support_or_contradict():
     for over in ({"evidence_class": "INFERRED"}, {"visibility": "occluded"}, {"outcome": "contradicted", "evidence_timestamps": []}):
         kept, _ = _validated(_finding(**over))
         assert kept[0]["outcome"] == "inconclusive"
+
+
+def test_a_contradiction_resting_on_one_frame_cannot_fail_a_step():
+    # Seen live: one final frame, the subject hidden by a hand, a similar part taken for it.
+    kept, _ = _validated(_finding(outcome="contradicted", evidence_timestamps=[9.5]))
+    assert kept[0]["outcome"] == "inconclusive"
+    kept, _ = _validated(_finding(outcome="contradicted", evidence_timestamps=[8.0, 9.5]))
+    assert kept[0]["outcome"] == "contradicted"
 
 
 def test_conflicting_outcomes_for_one_condition_count_as_none():
@@ -67,7 +88,7 @@ def _stub_reinspect(stub, outcome, visibility="visible", evidence_class="DIRECTL
         if request.schema_name == "learnloop_reinspect":
             sent.append(request)
             times = [frame.timestamp for frame in request.frames]
-            asked = predicate or request.user_prompt.split("predicate_id ")[1].split(": ")[0]
+            asked = predicate or json.loads("{" + request.user_prompt.split("{", 1)[1].split("}", 1)[0] + "}")["predicate_id"]
             return json.dumps(
                 {
                     "findings": [
@@ -76,7 +97,7 @@ def _stub_reinspect(stub, outcome, visibility="visible", evidence_class="DIRECTL
                             "predicate_id": asked,
                             "outcome": outcome,
                             "visibility": visibility,
-                            "evidence_timestamps": [times[-1]] if outcome != "inconclusive" else [],
+                            "evidence_timestamps": times[-2:] if outcome != "inconclusive" else [],
                             "reason": "authored",
                             "limitations": [],
                             "evidence_class": evidence_class,

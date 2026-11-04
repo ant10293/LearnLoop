@@ -39,14 +39,17 @@ SYSTEM = """
 You are checking whether specific physical conditions hold in still frames from one recording of a person assembling parts. Each image follows a line with its timestamp.
 For each listed condition, return one finding with its step_id and predicate_id copied exactly.
 outcome: supported only when the frames directly show the condition holding. contradicted only when the frames directly show it not holding, for example the part is visibly somewhere else, visibly absent from where it should be, or visibly the wrong part. Otherwise inconclusive.
-Do not assume the expected condition is true. A part that cannot be seen is not missing: if a hand, another part, or the frame edge hides where it would be, the outcome is inconclusive and visibility is occluded or out_of_frame.
+Do not assume the expected condition is true. Several parts can look alike: decide only about the part that fits the listed description. A part that cannot be seen is not missing: if a hand, another part, or the frame edge hides where it would be, the outcome is inconclusive and visibility is occluded or out_of_frame.
 visibility describes the place the condition is about in the clearest frame: visible, partial, occluded, or out_of_frame.
 evidence_timestamps lists only timestamps of supplied images that show what you report, copied exactly. Leave it empty for inconclusive.
 evidence_class is DIRECTLY_OBSERVED only when the deciding pixels are in a supplied image; INFERRED when you reasoned from context; UNKNOWN otherwise.
 reason is one short sentence naming what is seen. limitations lists anything that weakens the reading.
 Return JSON only.
 """.strip()
-_OUTPUT_TOKENS = 4_000
+# The analysis model reasons before it answers. 4,000 tokens ran out on a real attempt.
+_OUTPUT_TOKENS = 16_000
+# Frames a contradicted finding must cite. A false FAIL costs more than an unresolved step.
+MIN_CONTRADICTING_FRAMES = 2
 # A moment closer than this to one already chosen adds little.
 _MERGE_SEC = 0.4
 # The sharpest frame within this distance of a chosen moment is sent instead of it.
@@ -137,7 +140,7 @@ async def _inspect(session: Session, row: VerificationRunRow, target: dict) -> d
     if run is None or video is None or revision is None or template is None:
         return {"step_id": target["step_id"], "status": "failed", "reason": "The attempt or its procedure is missing."}
     times = choose_frames(target["step"], revision.document_json, video)
-    question = _question(target, template.document_json)
+    question = _question(target, template.document_json, times)
     key = _key(session, row, target, times, question)
     stored = _cached(key)
     request_id, source = "", "cached"
@@ -189,9 +192,12 @@ def validate_findings(answer: ReinspectOutput, target: dict, times: list[float])
     problems: list[str] = []
     conflicted: set[str] = set()
     for item in answer.findings:
-        if item.step_id != target["step_id"] or item.predicate_id not in asked:
+        if item.predicate_id not in asked:
             problems.append(f"ignored a finding for {item.step_id}/{item.predicate_id}, which was not asked")
             continue
+        if item.step_id != target["step_id"]:
+            # One call asks about one step, so the predicate id alone says which condition this answers.
+            problems.append(f"{item.predicate_id} came back under step_id {item.step_id!r}; read as step {target['step_id']}")
         stamps = []
         for value in item.evidence_timestamps:
             match = next((sent for sent in times if abs(sent - value) <= 0.05), None)
@@ -200,7 +206,14 @@ def validate_findings(answer: ReinspectOutput, target: dict, times: list[float])
             else:
                 stamps.append(match)
         finding = item.model_dump()
+        if item.step_id != target["step_id"]:
+            finding["reported_step_id"] = item.step_id
+            finding["step_id"] = target["step_id"]
         finding["evidence_timestamps"] = sorted(set(stamps))
+        if finding["outcome"] == "contradicted" and len(finding["evidence_timestamps"]) < MIN_CONTRADICTING_FRAMES:
+            # Seen live: a model took a similar part for the subject in one frame while a hand hid the real one.
+            finding["limitations"] = [*finding["limitations"], f"A contradiction needs at least {MIN_CONTRADICTING_FRAMES} frames that show it; one frame can hide a part behind a hand."]
+            finding["outcome"] = "inconclusive"
         if finding["outcome"] != "inconclusive" and not (
             finding["evidence_class"] == "DIRECTLY_OBSERVED" and finding["visibility"] == "visible" and finding["evidence_timestamps"]
         ):
@@ -279,17 +292,36 @@ def _still(video: VideoAsset, moment: float):
     return data_path("reinspect_frames", video.id, f"{moment:.3f}.jpg")
 
 
-def _question(target: dict, template: dict) -> str:
+def _question(target: dict, template: dict, times: list[float]) -> str:
     roles = {role["role_id"]: role for role in template.get("roles") or []}
     conditions = {}
     for step in template.get("steps") or []:
         if step.get("step_id") == target["step_id"]:
             conditions = {item["id"]: item for item in step.get("completion_conditions") or []}
-    lines = [f"Step {target['step_id']}: {target['step'].get('name') or ''}".strip()]
+    lines = [f"Step: {target['step'].get('name') or ''}".strip()]
     for item in target["predicates"]:
         condition = conditions.get(item["predicate_id"]) or {}
-        lines.append(f"- step_id {target['step_id']}, predicate_id {item['predicate_id']}: {_describe(condition, roles) or target['step'].get('expected') or 'the step result'}")
-    return "Required conditions:\n" + "\n".join(lines) + "\n\nDecide each from the images only."
+        ids = json.dumps({"step_id": target["step_id"], "predicate_id": item["predicate_id"]})
+        lines.append(f"- {ids}: {_describe(condition, roles) or target['step'].get('expected') or 'the step result'}")
+    stamps = ", ".join(f"{value:g}" for value in times)
+    asked_roles = {conditions.get(item["predicate_id"], {}).get(key) for item in target["predicates"] for key in ("subject_role", "target_role")}
+    others = [
+        f"- {role.get('label')}: {role.get('visual_characteristics') or role.get('description') or ''}".rstrip(": ")
+        for role_id, role in roles.items()
+        if role_id not in asked_roles
+    ]
+    if others:
+        lines.append(
+            "\nOther parts of this procedure, which may look similar. Identify the listed part by its description before deciding, "
+            "and do not report one of these as it:\n" + "\n".join(others)
+        )
+    return (
+        "Required conditions, each with the exact step_id and predicate_id to copy:\n"
+        + "\n".join(lines)
+        + f"\n\nThe images were taken at these timestamps, in seconds: {stamps}. "
+        "A supported or contradicted finding must list in evidence_timestamps the ones that show it. "
+        "Decide each from the images only."
+    )
 
 
 _RELATION_WORDS = {
@@ -371,7 +403,7 @@ def _key(session: Session, row: VerificationRunRow, target: dict, times: list[fl
         if video is None or revision is None or template is None:
             return ""
         times = choose_frames(target["step"], revision.document_json, video)
-        question = _question(target, template.document_json)
+        question = _question(target, template.document_json, times)
     video = session.get(VideoAsset, row.execution_video_id)
     run = session.get(AnalysisRun, row.execution_run_id)
     parts = {
