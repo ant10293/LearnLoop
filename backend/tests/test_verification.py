@@ -265,3 +265,34 @@ def test_steps_done_in_another_order_are_matched_to_the_action_that_moved_their_
     steps = _steps(verify_execution(template, execution))
     assert steps["step_disc"]["matched_action_ids"] == ["X_disc"]
     assert steps["step_pin"]["matched_action_ids"] == ["X_pin"]
+
+
+def _never_seen_case():
+    demo = document(
+        objects=[obj("D_stud", "clear stud", "small clear stud", "clear"), obj("D_body", "body", "white body", "white")],
+        observations=[obs("D_stud", 10), obs("D_body", 10)],
+        relationships=[rel("D_stud", "D_body", "attached", 2, 20)],
+        actions=[action("A_stud", "place", 0, 2, ["D_stud", "D_body"])],
+        steps=[step("step_stud", "Attach stud", ["D_stud", "D_body"], ["A_stud"], 0, 2, "stud attached to body")],
+    )
+    template = learn_template(demo, promote_supported=True, accept=True)
+    hidden = obs("E_stud", 12, visibility="occluded")
+    execution = document(
+        objects=[obj("E_stud", "clear stud", "small clear stud", "clear"), obj("E_body", "body", "white body", "white")],
+        observations=[hidden, obs("E_body", 12)],
+        relationships=[],
+        actions=[action("X_body", "place", 0, 2, ["E_body"])],
+    )
+    return template, execution
+
+
+def test_a_part_seen_nowhere_fails_unless_its_appearance_matched_or_the_work_was_not_shown():
+    template, execution = _never_seen_case()
+    step_result = _steps(verify_execution(template, execution))["step_stud"]
+    assert step_result["verdict"] == "FAIL" and step_result["error_category"] == "MISSING_COMPONENT"
+    # A box that matched the stud's learned appearance means it was there.
+    assert _steps(verify_execution(template, execution, appearance_seen={"E_stud"}))["step_stud"]["verdict"] == "CANNOT_VERIFY"
+    # If the part it goes on was never seen either, the recording did not show the work.
+    execution.actions = []
+    execution.observations = [item for item in execution.observations if item.object_local_id != "E_body"]
+    assert _steps(verify_execution(template, execution))["step_stud"]["verdict"] == "CANNOT_VERIFY"

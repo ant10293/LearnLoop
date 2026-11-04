@@ -134,10 +134,11 @@ MISPLACED = answer(
     relationships=[*_TWO, _rel("green", "base", "left_of", 7.5)],
     actions=[*_TWO_ACTIONS, _action("a3", ["green", "base"], 7.0, 8.0)],
 )
+# Green is seen at the start, then hidden at the end: not decidable, and not missing.
 HIDDEN = answer(
     relationships=_TWO,
     actions=_TWO_ACTIONS,
-    observations=[_observed("base", 9.5), _observed("red", 9.5), _observed("blue", 9.5), _observed("green", 9.5, "occluded", "UNKNOWN")],
+    observations=[_observed("green", 0.0), _observed("base", 9.5), _observed("red", 9.5), _observed("blue", 9.5), _observed("green", 9.5, "occluded", "UNKNOWN")],
 )
 
 
@@ -303,6 +304,24 @@ def test_hidden_component_cannot_be_verified_and_is_not_called_missing(lab):
     step = {item["step_id"]: item for item in report["report"]["steps"]}["s3"]
     assert step["verdict"] == "CANNOT_VERIFY"
     assert report["overall"] == "INCONCLUSIVE"
+
+
+# Green never appears anywhere in the attempt.
+NEVER_SEEN = answer(
+    relationships=_TWO,
+    actions=_TWO_ACTIONS,
+    observations=[_observed("base", 9.5), _observed("red", 9.5), _observed("blue", 9.5), _observed("green", 9.5, "occluded", "UNKNOWN")],
+)
+
+
+def test_a_part_never_seen_anywhere_fails_as_missing(lab):
+    # Product decision: a part that appears nowhere in the attempt is missing, not merely unverified.
+    procedure, template = _accepted(lab)
+    report = _check(lab, procedure, template, NEVER_SEEN, "white")
+    step = {item["step_id"]: item for item in report["report"]["steps"]}["s3"]
+    assert step["verdict"] == "FAIL" and step["error_category"] == "MISSING_COMPONENT"
+    assert step["evidence"][0]["evidence_class"] == "NOT_OBSERVED"
+    assert report["overall"] == "FAIL" and report["report"]["reinspection"]["status"] == "not_needed"
 
 
 def test_human_observation_is_evidence_with_provenance_and_keeps_the_machine_reading(lab):

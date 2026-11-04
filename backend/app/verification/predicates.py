@@ -23,6 +23,7 @@ def judge_predicate(
     *,
     video_id: str,
     attempted: bool,
+    appearance_seen: set[str] | None = None,
 ) -> PredicateJudgement:
     if predicate.evidence_requirement != "required":
         return PredicateJudgement(
@@ -34,6 +35,9 @@ def judge_predicate(
     target = roles.get(predicate.target_role) if predicate.target_role else None
     if _ambiguous(subject) or _ambiguous(target):
         return _cannot(predicate, "A role has competing instances, so the condition was not decided.")
+    missing = _never_seen(predicate, execution, subject, target, appearance_seen or set(), video_id)
+    if missing is not None:
+        return missing
     if predicate.type == "physical_relationship":
         return _relation(predicate, execution, subject, target, roles, video_id)
     return _state(predicate, execution, subject, video_id, attempted)
@@ -491,6 +495,53 @@ def _is_visible(observation, object_ids: set[str], window: tuple[float, float], 
     if enum_value(observation.visibility) not in kinds:
         return False
     return window[0] - 1e-6 <= observation.timestamp <= window[1] + 1e-6
+
+
+def _never_seen(predicate, execution: AnalysisDocument, subject, target, appearance_seen: set[str], video_id: str):
+    """A part that appears nowhere in the attempt is treated as missing, by product decision.
+
+    Nowhere means: no visible or partial observation at any time, no action, state change, or relation that
+    involves it, and no box that matched its learned appearance. The part it goes on must have been seen, so a
+    recording that does not show the work at all stays unresolved. A part seen once and hidden later is not this.
+    """
+    subject_ids = set(subject.object_local_ids if subject else [])
+    if not subject_ids or subject_ids & appearance_seen:
+        return None
+    if any(_involved(execution, object_id) for object_id in subject_ids):
+        return None
+    target_ids = set(target.object_local_ids if target else [])
+    if target_ids and not any(_involved(execution, object_id) for object_id in target_ids):
+        return None
+    if not target_ids and not execution.observations:
+        return None
+    note = "This part was not seen at any point in the recording, so it is treated as missing."
+    return PredicateJudgement(
+        predicate_id=predicate.id,
+        status="fail",
+        error_category="MISSING_COMPONENT",
+        note=note,
+        evidence=[
+            EvidenceRef(
+                video_id=video_id,
+                timestamp=None,
+                observation=note,
+                evidence_class="NOT_OBSERVED",
+                provenance="DETERMINISTIC",
+                object_local_ids=sorted(subject_ids),
+            )
+        ],
+    )
+
+
+def _involved(execution: AnalysisDocument, object_id: str) -> bool:
+    for observation in execution.observations:
+        if observation.object_local_id == object_id and enum_value(observation.visibility) in {"visible", "partial"}:
+            return True
+    if any(object_id in action.object_local_ids for action in execution.actions):
+        return True
+    if any(transition.object_local_id == object_id for transition in execution.transitions):
+        return True
+    return any(object_id in {relation.subject_local_id, relation.other_local_id} for relation in execution.relationships)
 
 
 def _subject_absent(execution, subject_ids: set[str], window) -> bool:

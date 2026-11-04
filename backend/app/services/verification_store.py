@@ -885,7 +885,18 @@ def _run_engine(
         analysis_complete=True,
         human_observations=human or [],
         reinspection_findings=findings or [],
+        appearance_seen=_appearance_seen(run.id),
     )
+
+
+def _appearance_seen(run_id: str) -> set[str]:
+    """Objects of an attempt with at least one box that matched the procedure's learned appearance."""
+    from app.pipeline.object_views import read_manifest
+
+    objects = (read_manifest(run_id) or {}).get("objects") or {}
+    return {
+        local_id for local_id, item in objects.items() if any(row.get("status") in {"validated", "recovered"} for row in item.get("track") or [])
+    }
 
 
 def _replace_details(session: Session, row: VerificationRunRow, report: dict) -> None:

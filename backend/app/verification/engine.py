@@ -50,6 +50,7 @@ def verify_execution(
     analysis_complete: bool = True,
     human_observations: list[dict] | None = None,
     reinspection_findings: list[dict] | None = None,
+    appearance_seen: set[str] | None = None,
 ) -> dict:
     spec = template if isinstance(template, LearnedTemplate) else LearnedTemplate.model_validate(template)
     removed = [step.step_id for step in spec.steps if step.removed]
@@ -60,7 +61,7 @@ def verify_execution(
     assignments = map_roles(spec, document, role_overrides)
     aligned = align_steps(spec, document, assignments)
     machine = {
-        step.step_id: _judge_step(step, document, assignments, aligned, execution_video_id)
+        step.step_id: _judge_step(step, document, assignments, aligned, execution_video_id, appearance_seen)
         for step in spec.steps
     }
     baseline = {step.step_id: _machine_verdict(step, machine) for step in spec.steps}
@@ -122,12 +123,12 @@ def _machine_verdict(step: TemplateStep, machine: dict[str, list[PredicateJudgem
     return _decide(step, required, _order(step, required, machine))[0]
 
 
-def _judge_step(step: TemplateStep, document, assignments, aligned, video_id: str) -> list[PredicateJudgement]:
+def _judge_step(step: TemplateStep, document, assignments, aligned, video_id: str, appearance_seen: set[str] | None = None) -> list[PredicateJudgement]:
     by_role = assignment_index(assignments)
     outcome = (aligned.get(step.step_id) or {}).get("outcome") or ""
     attempted = outcome in {"attempted", "failed"}
     return [
-        judge_predicate(predicate, document, by_role, video_id=video_id, attempted=attempted)
+        judge_predicate(predicate, document, by_role, video_id=video_id, attempted=attempted, appearance_seen=appearance_seen)
         for predicate in step.completion_conditions
     ]
 
