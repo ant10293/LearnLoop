@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { EllipsisVertical, Pencil, Trash2 } from "lucide-react";
+import { EllipsisVertical, EyeOff, Pencil, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
@@ -76,7 +76,7 @@ export function ProjectsPage() {
   );
 }
 
-/** A procedure's card, with a menu to rename or delete it. Renaming opens a dialog over the page. */
+/** A procedure's card, with a menu to rename, hide, or delete it. Renaming opens a dialog over the page. */
 function ProcedureCard({ item }: { item: ProcedureSummary }) {
   const client = useQueryClient();
   const menu = useRef<HTMLDivElement>(null);
@@ -97,6 +97,19 @@ function ProcedureCard({ item }: { item: ProcedureSummary }) {
       document.removeEventListener("keydown", close);
     };
   }, [open]);
+
+  async function hide() {
+    setOpen(false);
+    setBusy(true);
+    setError("");
+    try {
+      await api.hideProcedure(item.id);
+      await client.invalidateQueries({ queryKey: ["procedures"] });
+    } catch (exc) {
+      setError((exc as Error).message);
+      setBusy(false);
+    }
+  }
 
   async function remove() {
     setOpen(false);
@@ -126,6 +139,7 @@ function ProcedureCard({ item }: { item: ProcedureSummary }) {
           {open && (
             <div className="menu-list" role="menu">
               <button role="menuitem" className="accent" onClick={() => { setOpen(false); setRenaming(true); }}>Rename<Pencil size={15} aria-hidden="true" /></button>
+              <button role="menuitem" onClick={() => void hide()}>Hide<EyeOff size={15} aria-hidden="true" /></button>
               <button role="menuitem" className="danger" onClick={() => void remove()}>Delete<Trash2 size={15} aria-hidden="true" /></button>
             </div>
           )}

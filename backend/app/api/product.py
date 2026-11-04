@@ -46,6 +46,11 @@ class ProcedureBody(BaseModel):
     name: str
 
 
+class ProcedureUpdate(BaseModel):
+    name: str | None = None
+    hidden: bool | None = None
+
+
 class ReferenceBody(BaseModel):
     path: str
     role: str
@@ -97,8 +102,12 @@ def list_models(session: Session = Depends(db)) -> dict:
 
 
 @router.get("/procedures")
-def list_procedures(session: Session = Depends(db)) -> list[dict]:
-    rows = session.scalars(select(Project).order_by(Project.created_at.desc())).all()
+def list_procedures(include_hidden: bool = False, session: Session = Depends(db)) -> list[dict]:
+    """Procedures newest first; hidden ones only when `include_hidden` is set."""
+    query = select(Project).order_by(Project.created_at.desc())
+    if not include_hidden:
+        query = query.where(Project.hidden.is_(False))
+    rows = session.scalars(query).all()
     return [_summary(session, row) for row in rows if _is_procedure(session, row)]
 
 
@@ -129,12 +138,16 @@ def get_procedure(project_id: str, session: Session = Depends(db)) -> dict:
 
 
 @router.patch("/procedures/{project_id}")
-def rename_procedure(project_id: str, payload: ProcedureBody, session: Session = Depends(db)) -> dict:
+def update_procedure(project_id: str, payload: ProcedureUpdate, session: Session = Depends(db)) -> dict:
+    """Rename a procedure and/or hide it from (or return it to) the procedures list."""
     project = _project(session, project_id)
-    name = payload.name.strip()
-    if not name:
-        raise HTTPException(400, "Name the procedure.")
-    project.name = name[:200]
+    if payload.name is not None:
+        name = payload.name.strip()
+        if not name:
+            raise HTTPException(400, "Name the procedure.")
+        project.name = name[:200]
+    if payload.hidden is not None:
+        project.hidden = payload.hidden
     session.commit()
     return _summary(session, project)
 
@@ -547,6 +560,7 @@ def _summary(session: Session, project: Project) -> dict:
     return {
         "id": project.id,
         "name": project.name,
+        "hidden": project.hidden,
         "created_at": project.created_at.isoformat(),
         "thumbnail_url": f"/api/media/videos/{video.id}/thumbnail" if video and video.thumbnail_path else "",
         "step_count": len(steps),

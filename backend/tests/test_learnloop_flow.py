@@ -1031,6 +1031,19 @@ def test_procedure_can_be_renamed(lab):
     assert client.get(f"/api/learnloop/procedures/{procedure}").json()["name"] == "Cube assembly"
 
 
+def test_hidden_procedure_leaves_the_list_but_stays_reachable(lab):
+    client = lab[0]
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    listed = lambda **params: [item["id"] for item in client.get("/api/learnloop/procedures", params=params).json()]
+    hidden = client.patch(f"/api/learnloop/procedures/{procedure}", json={"hidden": True}).json()
+    assert hidden["hidden"] is True and hidden["name"] == "Cube"
+    assert procedure not in listed()
+    assert procedure in listed(include_hidden=True)
+    assert client.get(f"/api/learnloop/procedures/{procedure}").status_code == 200
+    client.patch(f"/api/learnloop/procedures/{procedure}", json={"hidden": False})
+    assert procedure in listed()
+
+
 def test_deleting_a_procedure_removes_its_recordings_versions_and_reports(lab):
     procedure, template = _accepted(lab)
     report = _check(lab, procedure, template, CORRECT, "blue")

@@ -34,6 +34,7 @@ export type Answer = "installed" | "not_installed" | "cannot_determine";
 export interface ProcedureSummary {
   id: string;
   name: string;
+  hidden: boolean;
   thumbnail_url: string;
   step_count: number;
   review_state: ReviewState;
@@ -410,6 +411,7 @@ export const api = {
   saveStorage: (mode: VideoStorage) => request<{ video_storage: VideoStorage }>("/api/settings", { method: "PUT", body: JSON.stringify({ video_storage: mode }) }),
   locate: (file: File) => post<{ path: string }>("/api/videos/locate", { name: file.name, size: file.size, mtime_ms: Math.round(file.lastModified) }),
   renameProcedure: (id: string, name: string) => request<ProcedureSummary>(`/api/learnloop/procedures/${id}`, { method: "PATCH", body: JSON.stringify({ name }) }),
+  hideProcedure: (id: string) => request<ProcedureSummary>(`/api/learnloop/procedures/${id}`, { method: "PATCH", body: JSON.stringify({ hidden: true }) }),
   removeProcedure: (id: string) => request<{ deleted: string }>(`/api/learnloop/procedures/${id}`, { method: "DELETE" }),
   reference: (id: string, role: Recording["role"], path: string) => post<Recording>(`/api/learnloop/procedures/${id}/recordings/reference`, { path, role }),
   removeRecording: (videoId: string) => request<{ deleted: string }>(`/api/learnloop/recordings/${videoId}`, { method: "DELETE" }),

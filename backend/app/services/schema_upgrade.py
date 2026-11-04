@@ -6,7 +6,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 COLUMN_UPGRADES = {
-    "projects": [("is_task", "BOOLEAN DEFAULT 0")],
+    "projects": [("is_task", "BOOLEAN DEFAULT 0"), ("hidden", "BOOLEAN NOT NULL DEFAULT 0")],
     "video_assets": [
         ("session_id", "VARCHAR(36)"),
         ("research_mode", "VARCHAR(64) DEFAULT ''"),
