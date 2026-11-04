@@ -514,19 +514,17 @@ def _never_seen(predicate, execution: AnalysisDocument, subject, target, appeara
     def seen(ids: set[str]) -> bool:
         return bool(ids & appearance_seen) or any(_involved(execution, object_id) for object_id in ids)
 
+    others = {item.object_local_id for item in execution.observations} - subject_ids - target_ids
     if not seen(subject_ids):
+        if not any(seen({object_id}) for object_id in others) and not (target_ids and seen(target_ids)):
+            return None
         if target_ids and not seen(target_ids):
-            others = {item.object_local_id for item in execution.observations} - subject_ids - target_ids
-            if not any(seen({object_id}) for object_id in others):
-                return None
             subject_label = subject.label or "part"
             target_label = target.label or "part it goes with"
             missing, note = subject_ids | target_ids, (
                 f"Neither the {subject_label} nor the {target_label} was seen at any point in the recording, "
                 "while other parts of the attempt were, so both are treated as missing."
             )
-        elif not target_ids and not execution.observations:
-            return None
         else:
             missing, note = subject_ids, "This part was not seen at any point in the recording, so it is treated as missing."
     elif target_ids and not seen(target_ids):

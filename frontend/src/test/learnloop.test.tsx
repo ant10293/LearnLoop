@@ -745,7 +745,7 @@ describe("Verify", () => {
     mockApi(handler({ ...stepResult, verdict: "PASS", basis: "human_confirmed", machine_verdict: "CANNOT_VERIFY", error_category: "" }, "PASS", true));
     show("/procedures/p1/verify");
     expect(await screen.findByText(/Includes human-confirmed observations/)).toBeTruthy();
-    expect(screen.getByText(/Human-confirmed\. Automatic reading: CANNOT VERIFY/)).toBeTruthy();
+    expect(screen.getByText(/Human-confirmed\. First automatic reading: CANNOT VERIFY/)).toBeTruthy();
   });
 
   it("requires an accepted procedure first", async () => {

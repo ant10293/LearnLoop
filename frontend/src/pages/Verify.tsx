@@ -1,11 +1,10 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router-dom";
-import { RecordingAnalysis } from "../components/RecordingAnalysis";
+import { ObjectViewsNotice, RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { Bone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag, VerdictTag } from "../components/ui";
-import { ObjectViewsNotice } from "../components/RecordingAnalysis";
 import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type FilmTrack, type ObjectViews, type Procedure, type Recording, type Role, type Run, type StepResult, type Verification, type VideoInfo } from "../lib/learnloop";
 
 const RESULT_PLACEHOLDERS = 3;
@@ -307,7 +306,7 @@ function StepDetail({ step, verification, video, onChange, onSeek }: { step: Ste
       label={`Details for ${step.name}`}
       title={step.name}
       verdict={<VerdictTag verdict={step.verdict} />}
-      basis={<>{basisLabels[step.basis]}{step.basis === "human_confirmed" && step.machine_verdict !== step.verdict ? `. Automatic reading: ${step.machine_verdict.replaceAll("_", " ")}` : ""}</>}
+      basis={<>{basisLabels[step.basis]}{step.basis === "human_confirmed" && step.machine_verdict !== step.verdict ? `. First automatic reading: ${step.machine_verdict.replaceAll("_", " ")}` : ""}</>}
       category={step.error_category && <p className="category">{errorLabels[step.error_category] ?? step.error_category}</p>}
       expected={step.expected}
       observed={step.observed}

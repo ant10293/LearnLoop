@@ -527,7 +527,7 @@ def correct_role(session: Session, verification_id: str, role_id: str, object_lo
     overrides[role_id] = object_local_id
     config["role_overrides"] = overrides
     previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
-    report = _run_engine(template, revision, run, config, _observations(session, row.id), _findings(session, row.id))
+    report = _run_engine(template, revision, run, config, _observations(session, row.id), _findings(session, row.id), _seen_when_made(row))
     for step in report["steps"]:
         old = previous.get(step["step_id"])
         if not old:
@@ -582,7 +582,7 @@ def record_observation(session: Session, verification_id: str, step_id: str, pay
     )
     session.flush()
     previous = {step["step_id"]: step for step in (row.report_json or {}).get("steps") or []}
-    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), _findings(session, row.id))
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), _findings(session, row.id), _seen_when_made(row))
     for step in report["steps"]:
         old = previous.get(step["step_id"]) or {}
         history = list(old.get("history") or [])
@@ -747,13 +747,14 @@ def _fill(session: Session, row: VerificationRunRow, run: AnalysisRun) -> None:
     row.execution_video_id = run.video_id
     row.status = "running"
     row.started_at = row.started_at or utcnow()
-    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id))
+    seen = _appearance_seen(run.id)
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), seen=seen)
     report["verification_id"] = row.id
     report["template_id"] = template.id
     report["template_version"] = template.version
     report["execution_run_id"] = run.id
     report["execution_revision_id"] = revision.id
-    report["appearance"] = _appearance_evidence(session, template, run)
+    report["appearance"] = {**_appearance_evidence(session, template, run), "seen": sorted(seen)}
     if (row.config_json or {}).get("reinspect"):
         plans = plan_reinspections(report, max_steps=int((row.config_json or {}).get("max_reinspections") or 4))
         report["reinspections"] = plans
@@ -802,7 +803,7 @@ def apply_reinspections(session: Session, row: VerificationRunRow, outcome: dict
         session.commit()
         return
     overridden = {step["step_id"]: step for step in previous.get("steps") or [] if step.get("basis") == "human_override"}
-    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), _findings(session, row.id))
+    report = _run_engine(template, revision, run, row.config_json or {}, _observations(session, row.id), _findings(session, row.id), _seen_when_made(row))
     old = {step["step_id"]: step for step in previous.get("steps") or []}
     changed = []
     steps = []
@@ -883,6 +884,7 @@ def _run_engine(
     config: dict,
     human: list[dict] | None = None,
     findings: list[dict] | None = None,
+    seen: set[str] | None = None,
 ) -> dict:
     return verify_execution(
         template.document_json,
@@ -895,8 +897,14 @@ def _run_engine(
         analysis_complete=True,
         human_observations=human or [],
         reinspection_findings=findings or [],
-        appearance_seen=_appearance_seen(run.id),
+        appearance_seen=seen or set(),
     )
+
+
+def _seen_when_made(row: VerificationRunRow) -> set[str]:
+    """The appearance matches the report was first made with. Views made again later do not change a verdict
+    when a reviewer acts; a report from before appearance checks had none."""
+    return set(((row.report_json or {}).get("appearance") or {}).get("seen") or [])
 
 
 def _appearance_seen(run_id: str) -> set[str]:

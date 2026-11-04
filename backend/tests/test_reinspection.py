@@ -250,3 +250,21 @@ def test_frames_follow_the_conditions_parts_even_when_steps_were_done_out_of_ord
     assert any(7.0 <= value <= 8.0 for value in times)
     history = R.timeline(execution, {"subjects": {"green"}, "targets": {"base"}})
     assert "7-8s" in history and "2-3s" not in history
+
+
+def test_a_reviewer_answer_reads_the_appearance_matches_the_report_was_made_with(lab, monkeypatch):  # noqa: F811
+    from app.services import verification_store as store
+
+    client, stub, tmp = lab
+    procedure, template = _accepted(lab)
+    report = _check(lab, procedure, template, HIDDEN, "white")
+    made_with = report["report"]["appearance"]["seen"]
+    # Views made again after the report must not change what a later rebuild reads.
+    monkeypatch.setattr(store, "_appearance_seen", lambda run_id: {"made-later"})
+    reviewed = client.post(
+        f"/api/verifications/{report['id']}/steps/s1/observations", json={"answer": "installed", "timestamp": 1.0}
+    ).json()
+    assert reviewed["report"]["appearance"]["seen"] == made_with
+    assert {item["step_id"]: item["verdict"] for item in reviewed["report"]["steps"] if item["step_id"] != "s1"} == {
+        item["step_id"]: item["verdict"] for item in report["report"]["steps"] if item["step_id"] != "s1"
+    }

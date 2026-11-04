@@ -195,10 +195,13 @@ def lab(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "object_views", False)
     rebind_engine(settings.sqlalchemy_url)
     from app.main import create_app, init_database
-    from app.pipeline import guided
+    from app.perception.encoder import HistogramEncoder
+    from app.pipeline import appearance_stage, guided
     from app.providers import model_list, registry
 
     monkeypatch.setattr(guided, "REPLAY_DIR", tmp_path / "no_replay")
+    # No DINOv2 weights in tests. A test of appearance itself replaces this with its own encoder.
+    monkeypatch.setattr(appearance_stage, "shared_encoder", lambda *args: HistogramEncoder())
     monkeypatch.setattr(model_list, "live_options", lambda *args, **kwargs: None)
     stub = StubMeta()
     monkeypatch.setattr(registry, "get_provider", lambda provider_id, session=None: stub)

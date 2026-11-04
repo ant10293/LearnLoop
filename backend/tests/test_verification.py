@@ -337,3 +337,18 @@ def test_a_seen_part_cannot_end_up_against_a_part_seen_nowhere():
     assert "was not seen at any point" in failed["note"] and failed["evidence"][0]["object_local_ids"] == ["E_lock"]
     # A box that matched the lock washer's learned appearance means it was there.
     assert _steps(verify_execution(template, execution, appearance_seen={"E_lock"}))["step_nut"]["verdict"] != "FAIL"
+
+
+def test_a_single_part_seen_nowhere_fails_only_when_another_part_was_seen():
+    from types import SimpleNamespace
+
+    from app.verification.predicates import _never_seen
+
+    predicate = SimpleNamespace(id="p1")
+    stud = SimpleNamespace(object_local_ids=["E_stud"], label="clear stud")
+    objects = [obj("E_stud", "clear stud", "small clear stud", "clear"), obj("E_body", "body", "white body", "white")]
+    # Nothing in the recording was in view: it did not show the work, so the condition stays undecided.
+    dark = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded"), obs("E_body", 12, visibility="absent")], relationships=[], actions=[])
+    assert _never_seen(predicate, dark, stud, None, set(), "v") is None
+    shown = document(objects=objects, observations=[obs("E_stud", 12, visibility="occluded"), obs("E_body", 12)], relationships=[], actions=[])
+    assert _never_seen(predicate, shown, stud, None, set(), "v").status == "fail"
