@@ -669,6 +669,26 @@ describe("Verify", () => {
     expect(screen.getByRole("link", { name: "Export report" })).toHaveAttribute("href", "/api/verifications/c1/export");
   });
 
+  it("shows a running second look as stages, one per unclear step", async () => {
+    const second = { ...stepResult, step_id: "s2", name: "Place red cube" };
+    mockApi((url, init) => {
+      if (url.endsWith("/verifications/c1")) {
+        const body = report(stepResult, "INCONCLUSIVE");
+        return { body: { ...body, report: { ...body.report, steps: [stepResult, second], reinspection: { status: "pending", steps: ["s1", "s2"], done: ["s1"] } } } };
+      }
+      return handler()(url, init);
+    });
+    show("/procedures/p1/verify");
+    const stages = await screen.findByRole("list", { name: "Reinspection progress" });
+    const items = Array.from(stages.querySelectorAll("li"));
+    expect(items.map((item) => [item.textContent, item.className])).toEqual([
+      ["Look again at “Place green cube” with a few frames", "completed"],
+      ["Look again at “Place red cube” with a few frames", "running"],
+      ["Make the verdicts again", "pending"],
+    ]);
+    expect(screen.queryByText(/Reinspecting/)).toBeNull();
+  });
+
   it("holds a frame's place until its picture loads", async () => {
     mockApi(handler());
     const { container } = show("/procedures/p1/verify");

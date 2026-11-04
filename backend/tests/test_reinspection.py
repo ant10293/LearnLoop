@@ -143,6 +143,8 @@ def test_an_unresolved_step_gets_one_second_look_that_can_pass_it_and_keeps_the_
     assert step["history"][-1]["verdict"] == "CANNOT_VERIFY"
     assert any(item["provenance"] == "AI_REINSPECTION" for item in step["evidence"])
     assert after["report"]["reinspection"]["changed"] == [{"step_id": "s3", "before": "CANNOT_VERIFY", "after": "PASS"}]
+    # Each step looked at is recorded as it finishes, so the report can show progress.
+    assert after["report"]["reinspection"]["done"] == ["s3"]
     assert after["overall"] == "PASS"
     exported = client.get(f"/api/verifications/{report['id']}/export").json()
     assert {item["step_id"]: item for item in exported["machine_report"]["steps"]}["s3"]["verdict"] == "CANNOT_VERIFY"

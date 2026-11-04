@@ -240,6 +240,7 @@ export interface Verification extends VerificationBrief {
       status: "pending" | "completed" | "failed" | "unavailable" | "not_needed" | "off";
       reason?: string;
       steps?: string[];
+      done?: string[];
       changed?: { step_id: string; before: string; after: string }[];
     };
   };

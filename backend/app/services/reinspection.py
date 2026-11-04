@@ -117,6 +117,10 @@ async def run_reinspection_job(session: Session, job: Job, verification_id: str)
     try:
         for target in targets:
             outcomes.append(await _inspect(session, row, target))
+            # Steps looked at so far, so the report can show progress while the rest run.
+            current = dict(row.report_json or {})
+            current["reinspection"] = {**(current.get("reinspection") or {}), "done": [item["step_id"] for item in outcomes]}
+            row.report_json = current
             session.commit()
         status = "completed"
         reason = ""

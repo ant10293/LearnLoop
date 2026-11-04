@@ -374,8 +374,7 @@ function Checkpoint({ step, verification, video, onChange }: { step: StepResult;
 function EvidenceChecks({ report }: { report: Verification["report"] }) {
   const lines: string[] = [];
   const reinspection = report.reinspection;
-  if (reinspection?.status === "pending") lines.push(`Reinspecting ${reinspection.steps?.length ?? 0} unclear step${reinspection.steps?.length === 1 ? "" : "s"} with a few frames…`);
-  else if (reinspection?.status === "completed") {
+  if (reinspection?.status === "completed") {
     const changed = reinspection.changed ?? [];
     lines.push(changed.length ? `Reinspection resolved ${changed.length} step${changed.length === 1 ? "" : "s"}: ${changed.map((item) => `${item.step_id} ${item.before} → ${item.after}`).join(", ")}.` : "Reinspection ran. The unclear steps are still unclear, so their verdicts stand.");
   } else if (reinspection?.status === "unavailable" || reinspection?.status === "failed") lines.push(`Reinspection unavailable. ${reinspection.reason ?? ""}`.trim());
@@ -386,6 +385,28 @@ function EvidenceChecks({ report }: { report: Verification["report"] }) {
   } else if (appearance && (appearance.gallery.status === "building" || appearance.error)) {
     lines.push(appearance.gallery.status === "building" ? "Object references were still being built, so appearance matching was not used." : "Appearance matching was not used for this recording.");
   }
-  if (!lines.length) return null;
-  return <div className="muted small">{lines.map((line) => <p key={line}>{line}</p>)}</div>;
+  const pending = reinspection?.status === "pending";
+  if (!lines.length && !pending) return null;
+  return (
+    <>
+      {pending && <ReinspectionStages report={report} />}
+      {lines.length > 0 && <div className="muted small">{lines.map((line) => <p key={line}>{line}</p>)}</div>}
+    </>
+  );
+}
+
+/** A second look at each unclear step, one at a time, then the verdicts made again. */
+function ReinspectionStages({ report }: { report: Verification["report"] }) {
+  const ids = report.reinspection?.steps ?? [];
+  const done = new Set(report.reinspection?.done ?? []);
+  const current = ids.find((id) => !done.has(id));
+  const names = new Map(report.steps.map((step) => [step.step_id, step.name]));
+  return (
+    <ol className="stages" aria-label="Reinspection progress">
+      {ids.map((id) => (
+        <li key={id} className={done.has(id) ? "completed" : id === current ? "running" : "pending"}>Look again at “{names.get(id) ?? id}” with a few frames</li>
+      ))}
+      <li className={current ? "pending" : "running"}>Make the verdicts again</li>
+    </ol>
+  );
 }
