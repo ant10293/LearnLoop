@@ -14,7 +14,7 @@ function ProcedureCardFace({ item }: { item?: ProcedureSummary }) {
     <>
       {item?.thumbnail_url ? <img src={item.thumbnail_url} alt="" /> : <div className="thumb-empty">{item ? "No demonstration yet" : <Bone className="bone-fill" />}</div>}
       <div className="card-body">
-        <h2>{item ? item.name : <Bone width="60%" />}</h2>
+        <h2 title={item?.name}>{item ? item.name : <Bone width="60%" />}</h2>
         <p className="muted small">{item ? <>{item.step_count} expected {item.step_count === 1 ? "step" : "steps"} · {item.execution_count} {item.execution_count === 1 ? "attempt" : "attempts"}</> : <Bone width="80%" />}</p>
         <div className="row">
           {item ? <ReviewTag state={item.review_state} /> : <TagBone />}
