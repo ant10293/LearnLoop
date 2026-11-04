@@ -320,7 +320,7 @@ def test_a_part_never_seen_anywhere_fails_as_missing(lab):
     report = _check(lab, procedure, template, NEVER_SEEN, "white")
     step = {item["step_id"]: item for item in report["report"]["steps"]}["s3"]
     assert step["verdict"] == "FAIL" and step["error_category"] == "MISSING_COMPONENT"
-    assert step["evidence"][0]["evidence_class"] == "NOT_OBSERVED"
+    assert step["evidence"][0]["evidence_class"] == "NOT_OBSERVED" and step["basis"] == "not_observed"
     assert report["overall"] == "FAIL" and report["report"]["reinspection"]["status"] == "not_needed"
 
 

@@ -206,6 +206,8 @@ def _basis(judgements: list[PredicateJudgement], verdict: str) -> str:
         return "human_confirmed"
     if verdict in {"PASS", "FAIL"} and any(item.reinspected and item.status != "cannot" for item in judgements):
         return "model_reinspection"
+    if verdict == "FAIL" and any(evidence.evidence_class == "NOT_OBSERVED" for item in judgements if item.status == "fail" for evidence in item.evidence):
+        return "not_observed"
     return "model_evidence" if verdict in {"PASS", "FAIL"} else "none"
 
 

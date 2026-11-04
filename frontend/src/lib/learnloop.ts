@@ -183,7 +183,7 @@ export interface StepResult {
   required: boolean;
   verdict: Verdict;
   machine_verdict: string;
-  basis: "model_evidence" | "model_reinspection" | "human_confirmed" | "human_override" | "none";
+  basis: "model_evidence" | "model_reinspection" | "not_observed" | "human_confirmed" | "human_override" | "none";
   error_category: string;
   expected: string;
   observed: string;
@@ -464,6 +464,7 @@ export const verdictLabels: Record<string, string> = {
 export const basisLabels: Record<StepResult["basis"], string> = {
   model_evidence: "Evidence-backed from Meta analysis",
   model_reinspection: "Decided by a second Meta look at a few frames",
+  not_observed: "Not seen anywhere in this recording",
   human_confirmed: "Human-confirmed",
   human_override: "Human override",
   none: "No deciding evidence",

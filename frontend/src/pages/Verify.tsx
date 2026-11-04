@@ -331,7 +331,7 @@ function StepDetail({ step, verification, video, onChange, onSeek }: { step: Ste
       {observations.map((item) => (
         <p key={item.id} className="edited">{item.reviewer || "Reviewer"} recorded “{item.answer.replaceAll("_", " ")}” at {clock(item.timestamp)}{item.note ? `: ${item.note}` : ""}</p>
       ))}
-      {(step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed") && <Checkpoint step={step} verification={verification} video={video} onChange={onChange} />}
+      {(step.verdict === "CANNOT_VERIFY" || step.basis === "human_confirmed" || step.basis === "not_observed") && <Checkpoint step={step} verification={verification} video={video} onChange={onChange} />}
     </StepDetailFrame>
   );
 }
