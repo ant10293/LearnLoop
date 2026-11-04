@@ -2,7 +2,18 @@
 
 **Status:** this flow has run live with real recordings and real Meta responses, on fixed-camera and head-mounted footage. Results vary between runs, so record the take you show and do not edit verdicts by hand.
 
-The video is three minutes. Show only what was built during the hackathon: the guided Meta analysis, SAM object views, appearance references, procedure review, verification with its evidence, the second look, and human confirmation. See [PROVENANCE.md](PROVENANCE.md).
+The video is three minutes. Show only what was built during the hackathon: the guided Meta analysis, SAM object views, appearance references, procedure review, the evidence view, the second look, and human confirmation. See [PROVENANCE.md](PROVENANCE.md).
+
+## Saying what is new
+
+Judges must be able to tell what was built during the hackathon from the video alone.
+
+- **Opening slide, about 5 seconds.** Two columns:
+  - *Before kickoff (vision-test-bench, 2026-10-21 to 10-26):* database tables, video upload and ingest, and the core of the deterministic verifier.
+  - *Built during the hackathon:* the Muse Wonder guided analysis, SAM 3.1 object views, DINOv2 appearance references, the never-seen check, the second look, reviewer observations, procedure review, the product API, and the whole UI.
+- **Caption each screen** with "Built during the hackathon". Every screen in the script qualifies, because the whole frontend is new.
+- **At the verdict, say where it comes from.** For example: "The verdict engine came from my earlier project. What's new is the evidence it reads, from Meta, SAM and DINOv2, the checks I added to it, and everything you see here." If the report labels the FAIL in step 7 as "not seen", it came from the never-seen check added during the hackathon (`596663a`), and you can say so.
+- Do not describe role mapping, action alignment, or condition judging as new work. The changes made to them are listed in [ARCHITECTURE.md](ARCHITECTURE.md#changed-during-the-hackathon).
 
 ## Recordings
 
@@ -35,7 +46,7 @@ A correct attempt, ideally by a different route, makes a good third clip. Keep e
 | Objects, actions, steps, relationships | Muse Wonder, live or labeled cached |
 | Object boxes and tracks | Muse Wonder on the first frame, then SAM 3.1 |
 | Appearance matches | DINOv2 on SAM crops |
-| Verdicts | Deterministic verifier reading that output |
+| Verdicts | Deterministic verifier reading that output. Its core predates the hackathon. |
 | Second-look findings | Muse Wonder, one question per unresolved step |
 | Edited steps, labels, conditions | Human, marked as such |
 | Checkpoint answers | Human, named and timestamped |

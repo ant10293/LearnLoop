@@ -28,6 +28,7 @@ from app.models.verification import (
     VerificationRunRow,
 )
 from app.pipeline.contracts import REINSPECT
+from app.pipeline.guided import shares_cache
 from app.providers.types import FrameInput, GenerationRequest
 from app.schemas.generation import ReinspectOutput
 from app.services.storage import data_path
@@ -71,7 +72,7 @@ def schedule(session: Session, row: VerificationRunRow, report: dict) -> dict:
         return {"status": "not_needed", "reason": "No required step was left unresolved."}
     run = session.get(AnalysisRun, row.execution_run_id)
     approved = bool(run and (run.config_json or {}).get("allow_live")) and settings.live_inference
-    cached = all(_cached(_key(session, row, target)) is not None for target in targets)
+    cached = shares_cache(run.config_json if run else None) and all(_cached(_key(session, row, target)) is not None for target in targets)
     if not approved and not cached:
         return {
             "status": "unavailable",
@@ -148,7 +149,8 @@ async def _inspect(session: Session, row: VerificationRunRow, target: dict) -> d
         return {"step_id": target["step_id"], "status": "failed", "reason": "The attempt or its procedure is missing."}
     times, question = plan_question(session, row, target)
     key = _key(session, row, target, times, question)
-    stored = _cached(key)
+    # An isolated run (Reliability Lab) asks again rather than replay another run's answer.
+    stored = _cached(key) if shares_cache(run.config_json) else None
     request_id, source = "", "cached"
     if stored is not None:
         text = stored["text"]
@@ -164,7 +166,7 @@ async def _inspect(session: Session, row: VerificationRunRow, target: dict) -> d
         answer = ReinspectOutput.model_validate_json(text, strict=True)
     except ValueError as exc:
         return _record(session, row, target, times, question, "invalid", f"The answer did not match its contract: {str(exc)[:300]}")
-    if source == "live":
+    if source == "live" and shares_cache(run.config_json):
         _store(key, {"text": text, "request_id": request_id, "model_id": run.model_id, "created_at": utcnow().isoformat()})
     findings, problems = validate_findings(answer, target, times, predicate_relations(target, template.document_json))
     for finding in findings:

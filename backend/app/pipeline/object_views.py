@@ -28,6 +28,7 @@ from app.models.runs import AnalysisRun
 from app.perception import appearance as app_
 from app.perception.sam_masks import cutout_from_mask
 from app.pipeline.contracts import GUIDED_LOCATE, GUIDED_LOCATE_LATER
+from app.pipeline.guided import shares_cache
 from app.providers.sam import (
     MAX_PROMPTED_OBJECTS,
     SamAdapter,
@@ -138,6 +139,8 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     approved = (run.config_json or {}).get("allow_live") if allow_live is None else allow_live
     allow_live = bool(approved) and settings.live_inference
     fresh = fresh and allow_live
+    # An isolated run (Reliability Lab) replays nothing, even without live calls, and stores nothing it sends.
+    fresh = fresh or not shares_cache(run.config_json)
     model_id = (run.config_json or {}).get("segmentation_model_id") or _DEFAULT_SAM
     secret, _source = load_secret(session, "meta")
     directory = views_dir(run.id)
@@ -245,7 +248,7 @@ async def _locate(
     except ValueError as exc:
         return [], requests, replayed, f"The starting boxes were not valid: {str(exc)[:300]}"
     if requests:
-        _store(key, text)
+        _store(key, text, run)
     return _seeds(document, answer), requests, replayed, ""
 
 
@@ -298,7 +301,7 @@ async def _locate_later(
     except ValueError as exc:
         return [], requests, replayed, f"The boxes for later objects were not valid: {str(exc)[:300]}"
     if requests:
-        _store(key, text)
+        _store(key, text, run)
     return _later_seeds(answer, {item.local_id for item in missing}, times, len(seeds)), requests, replayed, ""
 
 
@@ -479,7 +482,7 @@ async def _follow(
     text, failure = await _call(session, run, clip, prompt, secret, model_id, direction)
     # An empty answer may be the prompt or the footage, so a later run may try again.
     if text:
-        _store(key, text)
+        _store(key, text, run)
     return text, 1, 0, failure
 
 
@@ -925,7 +928,9 @@ def _cached(key: str) -> str | None:
         return None
 
 
-def _store(key: str, text: str) -> None:
+def _store(key: str, text: str, run: AnalysisRun | None = None) -> None:
+    if run is not None and not shares_cache(run.config_json):
+        return
     path = data_path("inference_cache", "sam", f"{key}.json")
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"text": text}))

@@ -11,10 +11,12 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app import __version__
 from app.api.product import router as product_router
+from app.api.reliability import router as reliability_router
 from app.api.routes import router
 from app.api.verification import router as verification_router
 from app.config import settings
-from app.jobs.worker import worker_loop
+from app.jobs.worker import recover_incomplete, worker_loop
+from app.reliability.executor import reliability_loop
 from app.services.experiments import seed_prompts
 from app.services.ingest import repair_preview_paths, resume_processing
 from app.services.storage import ensure_data_dirs
@@ -45,12 +47,18 @@ async def lifespan(_app: FastAPI):
     repair_preview_paths()
     resume_processing()
     stop = asyncio.Event()
-    task = None
+    tasks = []
     if settings.worker_enabled:
-        task = asyncio.create_task(worker_loop(stop))
+        # Interrupted jobs are requeued once, before either lane can claim one.
+        recovered = await asyncio.to_thread(recover_incomplete)
+        if recovered:
+            log.info("recovered %s interrupted jobs", recovered)
+        tasks.append(asyncio.create_task(worker_loop(stop, recover=False)))
+        # Reliability Lab repetitions run on their own bounded lane beside the ordinary worker.
+        tasks.append(asyncio.create_task(reliability_loop(stop)))
     yield
     stop.set()
-    if task is not None:
+    for task in tasks:
         await task
 
 
@@ -75,6 +83,7 @@ def create_app() -> FastAPI:
     app.include_router(router)
     app.include_router(verification_router)
     app.include_router(product_router)
+    app.include_router(reliability_router)
     return app
 
 

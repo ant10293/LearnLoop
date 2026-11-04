@@ -513,3 +513,60 @@ button.linkish {
   .hero h1 { font-size: 2rem; }
   .page { padding: 1rem; }
 }
+
+/* Reliability Lab */
+.lab-link { margin-left: auto; padding: 0.35rem 0.6rem; border-radius: 6px; color: var(--muted); font-size: 0.82rem; border: 1px dashed var(--line); white-space: nowrap; }
+.lab-link:hover { color: var(--ink); border-color: var(--ink); }
+.flow + .lab-link { margin-left: 0.5rem; }
+.lab-section { margin-bottom: 1rem; }
+.lab-section > summary { cursor: pointer; }
+.lab-inline { display: inline; }
+.lab-title { font-size: 1.5rem; }
+.lab-form { display: grid; gap: 0.8rem; }
+.lab-form .tabs { margin-bottom: 0; }
+.lab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
+.lab-truth { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; display: grid; gap: 0.5rem; }
+.lab-truth legend { padding: 0 0.3rem; color: var(--muted); }
+.lab-step-labels { display: grid; gap: 0.3rem; margin: 0.5rem 0; max-width: 40rem; }
+.lab-upload summary { cursor: pointer; color: var(--accent); }
+.lab-status { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 5px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; background: #ecebe5; color: var(--muted); }
+.lab-status.running, .lab-status.queued { background: #e3eafc; color: var(--accent); }
+.lab-status.completed { background: var(--pass-bg); color: var(--pass); }
+.lab-status.canceled, .lab-status.canceling { background: var(--unknown-bg); color: var(--unknown); }
+.lab-progress { height: 6px; background: var(--bg); border-radius: 3px; overflow: hidden; margin: 0.4rem 0; }
+.lab-progress > div { height: 100%; background: var(--accent); transition: width 0.4s; }
+.lab-counts { margin: 0.3rem 0; }
+.lab-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(11.5rem, 1fr)); gap: 0.6rem; margin-bottom: 1rem; }
+.lab-tile { display: flex; flex-direction: column; gap: 0.15rem; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 0.7rem 0.85rem; min-width: 0; }
+.lab-tile strong { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.lab-tile.bad { border-color: var(--fail); }
+.lab-tile.bad strong { color: var(--fail); }
+.lab-dist { display: flex; flex-wrap: wrap; gap: 0.25rem; font-size: 0.8rem; }
+.table-wrap { overflow-x: auto; max-width: 100%; }
+.lab-table { border-collapse: collapse; width: 100%; font-size: 0.86rem; }
+.lab-table th, .lab-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+.lab-table th { font-weight: 600; color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
+.lab-table td.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lab-table tr.errored { background: #fdf6f6; }
+.lab-table tr.current-row { background: #eef2fd; }
+.lab-table tr.unstable-row td:first-child { box-shadow: inset 3px 0 0 var(--unknown); }
+.lab-matrix th:not(:first-child), .lab-matrix td { text-align: center; }
+.lab-matrix td:nth-child(2) { text-align: left; }
+.lab-matrix th.unstable, .lab-matrix td.unstable { background: var(--unknown-bg); }
+.lab-cell { width: 1.9rem; height: 1.7rem; border-radius: 5px; border: 2px solid transparent; font: 600 0.82rem "IBM Plex Mono", monospace; cursor: pointer; background: #ecebe5; color: var(--muted); }
+.lab-cell.PASS { background: var(--pass-bg); color: var(--pass); }
+.lab-cell.FAIL { background: var(--fail-bg); color: var(--fail); }
+.lab-cell.CANNOT_VERIFY { background: var(--unknown-bg); color: var(--unknown); }
+.lab-cell.differs { border-color: var(--ink); }
+.lab-cell:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.verdict.error { color: #fff; background: var(--fail); }
+.lab-error-text { color: var(--fail); }
+.lab-flag { margin-left: 0.4rem; padding: 0.05rem 0.35rem; border-radius: 4px; font-size: 0.7rem; font-weight: 600; color: var(--unknown); background: var(--unknown-bg); }
+.lab-step-key { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; list-style: none; padding: 0; margin: 0.6rem 0 0; }
+.lab-columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 1rem; }
+.lab-list { margin: 0.3rem 0 0.7rem; padding-left: 1.1rem; display: grid; gap: 0.2rem; }
+.lab-thumbs { display: flex; gap: 0.3rem; }
+.lab-thumbs a { display: flex; flex-direction: column; align-items: center; gap: 0.1rem; }
+.lab-thumbs img { width: 72px; height: 48px; object-fit: cover; border-radius: 4px; background: var(--bg); }
+.lab-report { margin: 1rem 0; }
+.lab-pre { background: var(--bg); padding: 0.7rem; border-radius: 6px; font-size: 0.78rem; overflow-x: auto; }

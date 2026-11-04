@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import threading
 from pathlib import Path
 
 import certifi
@@ -24,6 +25,11 @@ DINOV2_ID = "dinov2_vits14"
 DINOV2_VERSION = "facebookresearch/dinov2:dinov2_vits14"
 IMAGENET_MEAN = np.array([0.485, 0.456, 0.406], dtype=np.float32)
 IMAGENET_STD = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+# Analyses can run side by side (Reliability Lab). One lock keeps a second copy of the weights from loading,
+# and one keeps forward passes on the shared model from interleaving on an accelerator. Frozen weights make
+# a serialized pass give the same vectors.
+_LOAD_LOCK = threading.Lock()
+_ENCODE_LOCK = threading.Lock()
 
 
 def l2_normalize(vectors: np.ndarray) -> np.ndarray:
@@ -85,7 +91,10 @@ def cached_encode(encoder, crops: list[np.ndarray], masks: list[np.ndarray | Non
                 continue
             path = root / keys[index][:2] / f"{keys[index]}.npy"
             path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(path, computed[row])
+            # Written aside and moved, so an analysis running beside this one never reads half a vector.
+            tmp = path.with_name(f".{path.stem}.{threading.get_ident()}.tmp.npy")
+            np.save(tmp, computed[row])
+            tmp.replace(path)
     return output
 
 
@@ -168,7 +177,7 @@ class Dinov2Encoder:
         rows = []
         for start in range(0, len(arrays), self.batch_size):
             tensor = torch.from_numpy(np.stack(arrays[start : start + self.batch_size])).to(self.device)
-            with torch.no_grad():
+            with _ENCODE_LOCK, torch.no_grad():
                 features = model(tensor)
             if hasattr(features, "detach"):
                 array = features.detach().float().cpu().numpy()
@@ -185,6 +194,12 @@ class Dinov2Encoder:
     def _load(self):
         if self._model is not None:
             return self._torch, self._model
+        with _LOAD_LOCK:
+            if self._model is not None:
+                return self._torch, self._model
+            return self._load_locked()
+
+    def _load_locked(self):
         try:
             import torch
         except ImportError as exc:
@@ -279,7 +294,9 @@ _SHARED: dict[str, object] = {}
 def shared_encoder(encoder_id: str = DINOV2_ID):
     """One loaded model per process, so a gallery build or a validation pass does not load weights per crop."""
     if encoder_id not in _SHARED:
-        _SHARED[encoder_id] = load_encoder(encoder_id)
+        with _LOAD_LOCK:
+            if encoder_id not in _SHARED:
+                _SHARED[encoder_id] = load_encoder(encoder_id)
     return _SHARED[encoder_id]
 
 
