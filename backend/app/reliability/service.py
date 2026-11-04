@@ -433,6 +433,7 @@ def options(session: Session) -> dict:
                 "family_id": row.family_id,
                 "acceptance_status": row.acceptance_status,
                 "created_at": _iso(row.created_at),
+                "source_filename": source.original_filename if (source := session.get(VideoAsset, row.source_video_id or "")) else "",
                 "steps": [
                     {"step_id": step["step_id"], "name": step.get("name") or step["step_id"], "required": bool(step.get("required"))}
                     for step in (row.document_json or {}).get("steps") or []

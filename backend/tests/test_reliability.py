@@ -574,3 +574,12 @@ def test_batch_validation_rejects_bad_requests(slow):
     draft = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": template["source_run_id"]}).json()
     assert draft["id"] == template["id"] or draft["acceptance_status"] != "accepted"
     json.dumps(client.get("/api/reliability/options").json())
+
+
+def test_options_name_each_version_by_its_demonstration(slow):
+    client, stub, tmp, gauge = slow
+    procedure, template = _accepted((client, stub, tmp))
+    entry = next(item for item in client.get("/api/reliability/options").json()["procedures"] if item["id"] == procedure)
+    listed = next(item for item in entry["templates"] if item["id"] == template["id"])
+    assert listed["source_filename"] == "demo.mp4"
+    assert listed["created_at"]

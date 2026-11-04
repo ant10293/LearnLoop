@@ -308,7 +308,7 @@ export interface LabOptions {
     id: string;
     name: string;
     recordings: { video_id: string; filename: string; role: "demonstration" | "execution"; duration_sec: number; ready: boolean }[];
-    templates: { id: string; version: number; name: string; family_id: string; acceptance_status: string; created_at: string; steps: { step_id: string; name: string; required: boolean }[] }[];
+    templates: { id: string; version: number; name: string; family_id: string; acceptance_status: string; created_at: string; source_filename?: string; steps: { step_id: string; name: string; required: boolean }[] }[];
   }[];
   models: { default_inference: string; default_segmentation: string };
   live_enabled: boolean;
@@ -404,4 +404,10 @@ export function modalVerdicts(runs: LabRun[], stepIds: string[]): Record<string,
 /** Where an experiment lives: under its procedure, beside Teach, Procedure and Verify. */
 export function labPath(procedureId: string, batchId?: string, runId?: string): string {
   return `/procedures/${procedureId}/lab${batchId ? `/${batchId}` : ""}${runId ? `/runs/${runId}` : ""}`;
+}
+
+/** "v4 · IMG_5588.MOV · 11/3/2026, 10:32:31 PM": the version, the demonstration it was learned from, and when. */
+export function versionLabel(template: { version: number; source_filename?: string; created_at: string }): string {
+  const stamp = template.created_at ? new Date(/[zZ]|[+-]\d\d:\d\d$/.test(template.created_at) ? template.created_at : `${template.created_at}Z`).toLocaleString() : "";
+  return [`v${template.version}`, template.source_filename || "the demonstration", stamp].filter(Boolean).join(" · ");
 }

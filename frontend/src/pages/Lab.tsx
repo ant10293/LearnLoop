@@ -4,7 +4,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { ErrorNote, Layout } from "../components/ui";
 import { ApiError, humanizeModel } from "../lib/learnloop";
-import { isActive, lab, labPath, seconds, type BatchBrief, type GroundTruth, type Mode } from "../lib/reliability";
+import { isActive, lab, labPath, seconds, versionLabel, type BatchBrief, type GroundTruth, type Mode } from "../lib/reliability";
 
 /** What sending the batch would involve, from the server's 409 answer. Nothing is sent until the person approves. */
 interface LivePlan {
@@ -197,7 +197,7 @@ function NewExperiment({ projectId }: { projectId: string }) {
               <span className="small muted">Accepted procedure version</span>
               <select className="field" value={templateId} onChange={(event) => { setTemplateId(event.target.value); setStepLabels({}); }}>
                 {accepted.length === 0 && <option value="">No accepted version</option>}
-                {accepted.map((item) => <option key={item.id} value={item.id}>v{item.version} · {item.name} · {item.steps.length} steps</option>)}
+                {accepted.map((item) => <option key={item.id} value={item.id}>{versionLabel(item)}</option>)}
               </select>
             </label>
           ) : (
@@ -205,7 +205,7 @@ function NewExperiment({ projectId }: { projectId: string }) {
               <span className="small muted">Reference procedure (optional)</span>
               <select className="field" value={referenceId} onChange={(event) => setReferenceId(event.target.value)}>
                 <option value="">None</option>
-                {(procedure?.templates ?? []).map((item) => <option key={item.id} value={item.id}>v{item.version} · {item.acceptance_status}</option>)}
+                {(procedure?.templates ?? []).map((item) => <option key={item.id} value={item.id}>{versionLabel(item)}{item.acceptance_status === "accepted" ? "" : ` · ${item.acceptance_status}`}</option>)}
               </select>
             </label>
           )}

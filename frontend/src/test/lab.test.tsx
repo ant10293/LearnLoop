@@ -115,7 +115,7 @@ describe("Experiment dashboard", () => {
 
 describe("New experiment", () => {
   const options = {
-    procedures: [{ id: "p1", name: "Cubes", recordings: [{ video_id: "v2", filename: "attempt.mp4", role: "execution", duration_sec: 12, ready: true }], templates: [{ id: "t1", version: 2, name: "Cubes", family_id: "t1", acceptance_status: "accepted", created_at: "", steps: [{ step_id: "s1", name: "Place red", required: true }] }] }],
+    procedures: [{ id: "p1", name: "Cubes", recordings: [{ video_id: "v2", filename: "attempt.mp4", role: "execution", duration_sec: 12, ready: true }], templates: [{ id: "t1", version: 2, name: "Cubes", family_id: "t1", acceptance_status: "accepted", created_at: "2026-11-04T04:32:31", source_filename: "IMG_5588.MOV", steps: [{ step_id: "s1", name: "Place red", required: true }] }] }],
     models: { default_inference: "muse-wonder-1.0", default_segmentation: "sam-3.1" },
     live_enabled: true,
     max_concurrency: 4,
@@ -139,6 +139,7 @@ describe("New experiment", () => {
     expect(screen.queryByText("Elsewhere")).not.toBeInTheDocument();
     expect(screen.queryByText("Procedure", { selector: "span" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Lab" })).toHaveAttribute("href", "/procedures/p1/lab");
+    expect(screen.getByRole("option", { name: `v2 · IMG_5588.MOV · ${new Date("2026-11-04T04:32:31Z").toLocaleString()}` })).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Review and start" }));
     const dialog = await screen.findByRole("dialog", { name: "Approve live calls" });
     expect(within(dialog).getByText(/Approve 5 independent runs/)).toBeInTheDocument();
