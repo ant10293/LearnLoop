@@ -64,7 +64,7 @@ def verify_execution(
         step.step_id: _judge_step(step, document, assignments, aligned, execution_video_id, appearance_seen)
         for step in spec.steps
     }
-    baseline = {step.step_id: _machine_verdict(step, machine) for step in spec.steps}
+    baseline = {step.step_id: _machine_verdict(step, machine, aligned) for step in spec.steps}
     if reinspection_findings:
         machine = apply_reinspection(spec, machine, reinspection_findings, execution_video_id)
     records: dict[str, list[dict]] = {}
@@ -83,6 +83,7 @@ def verify_execution(
         else machine[step.step_id]
         for step in spec.steps
     }
+    names = {step.step_id: step.name for step in spec.steps}
     steps = [
         _step_result(
             step,
@@ -94,6 +95,8 @@ def verify_execution(
             strategy,
             demonstration_video_id,
             baseline[step.step_id],
+            aligned,
+            names,
         )
         for step in spec.steps
     ]
@@ -118,9 +121,9 @@ def verify_execution(
     }
 
 
-def _machine_verdict(step: TemplateStep, machine: dict[str, list[PredicateJudgement]]) -> str:
+def _machine_verdict(step: TemplateStep, machine: dict[str, list[PredicateJudgement]], aligned: dict[str, dict]) -> str:
     required = [item for item in machine[step.step_id] if _is_required(step, item)]
-    return _decide(step, required, _order(step, required, machine))[0]
+    return _decide(step, required, _order(step, required, machine, aligned)[0])[0]
 
 
 def _judge_step(step: TemplateStep, document, assignments, aligned, video_id: str, appearance_seen: set[str] | None = None) -> list[PredicateJudgement]:
@@ -143,12 +146,15 @@ def _step_result(
     strategy: str,
     demo_video_id: str,
     machine_verdict: str = "",
+    aligned: dict[str, dict] | None = None,
+    names: dict[str, str] | None = None,
 ) -> StepResult:
     by_role = assignment_index(assignments)
     required = [item for item in judgements if item.human or _is_required(step, item)]
-    order = _order(step, required, all_judgements)
+    order, late = _order(step, required, all_judgements, aligned or {})
     verdict, category, corrected = _decide(step, required, order)
-    explanation = _explanation(step, required, order, verdict)
+    order_note = _order_note(late, names or {}) if order == "violated" else ""
+    explanation = order_note or _explanation(step, required, order, verdict)
     verdict, category, explanation = _strategy(strategy, verdict, category, explanation, proposal, alignment)
     state = _execution_state(verdict, corrected or order == "corrected", alignment)
     if corrected or order == "corrected":
@@ -174,7 +180,7 @@ def _step_result(
         execution_state=state,
         error_category=category,
         expected=_expected(step, by_role),
-        observed=_observed(required, verdict),
+        observed=order_note or _observed(required, verdict),
         explanation=explanation,
         uncertainty_notes=step.uncertainty_notes,
         review_required=review and step.required,
@@ -218,22 +224,43 @@ def _is_required(step: TemplateStep, judgement: PredicateJudgement) -> bool:
     return predicate is not None and predicate.evidence_requirement == "required"
 
 
-def _order(step: TemplateStep, judgements: list[PredicateJudgement], all_judgements) -> str | None:
+def _completion_times(judgements: list[PredicateJudgement], alignment: dict | None) -> list[float]:
+    """When a step's result was reached: the onsets of the states that show it, or, when no state carries one
+    (a condition read only from end frames, or decided by a second look), the end of the recognized action
+    the step was matched to. A step with a failing condition or an unfinished action has no time."""
+    if any(item.status == "fail" for item in judgements):
+        return []
     onsets = [stamp for item in judgements if item.status == "pass" for stamp in item.support_onsets]
+    if onsets:
+        return onsets
+    alignment = alignment or {}
+    if alignment.get("status") != "matched" or alignment.get("outcome") in {"attempted", "failed"}:
+        return []
+    end = alignment.get("end")
+    if end is None:
+        end = alignment.get("time")
+    return [float(end)] if end is not None else []
+
+
+def _order(
+    step: TemplateStep,
+    judgements: list[PredicateJudgement],
+    all_judgements,
+    aligned: dict[str, dict] | None = None,
+) -> tuple[str | None, list[tuple[str, float, float]]]:
+    """Whether an order-constraining prerequisite was completed after this step, and which ones were."""
+    aligned = aligned or {}
+    onsets = _completion_times(judgements, aligned.get(step.step_id))
     if not onsets:
-        return None
+        return None, []
     earliest = min(onsets)
     violated = False
     corrected = False
+    late: list[tuple[str, float, float]] = []
     for dep in step.dependencies:
         if not dep.constrains_order:
             continue
-        pred_onsets = [
-            stamp
-            for item in all_judgements.get(dep.step_id, [])
-            if item.status == "pass"
-            for stamp in item.support_onsets
-        ]
+        pred_onsets = _completion_times(all_judgements.get(dep.step_id, []), aligned.get(dep.step_id))
         if not pred_onsets:
             continue
         pred_time = min(pred_onsets)
@@ -242,11 +269,23 @@ def _order(step: TemplateStep, judgements: list[PredicateJudgement], all_judgeme
                 corrected = True
             else:
                 violated = True
+                late.append((dep.step_id, pred_time, earliest))
     if violated and not corrected:
-        return "violated"
+        return "violated", late
     if corrected:
-        return "corrected"
-    return None
+        return "corrected", []
+    return None, []
+
+
+def _order_note(late: list[tuple[str, float, float]], names: dict[str, str]) -> str:
+    if not late:
+        return "A required prerequisite was completed after this step's supporting evidence."
+    parts = [f"\"{names.get(step_id, step_id)}\" at {pred:.1f}s" for step_id, pred, _ in late]
+    done = late[0][2]
+    return (
+        f"Done out of order: this step was completed at {done:.1f}s, before its prerequisite "
+        f"{' and '.join(parts)}. The procedure requires the prerequisite first."
+    )
 
 
 def _decide(step: TemplateStep, judgements: list[PredicateJudgement], order: str | None):

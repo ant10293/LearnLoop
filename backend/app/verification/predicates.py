@@ -383,8 +383,9 @@ def apply_reinspection(spec, machine: dict[str, list[PredicateJudgement]], findi
     A finding replaces only a "cannot" judgement: it never overturns a reading the first
     analysis already supported or contradicted. Supported and contradicted need directly
     observed, visible evidence at frames that were sent; anything else stays cannot, with
-    the reason noted. A reinspected pass carries no onset, so it neither satisfies nor
-    breaks an order constraint: the frames show an end state, not when it was reached.
+    the reason noted. A reinspected pass carries no onset: the frames show an end state,
+    not when it was reached. Order is then read from the recognized action the step was
+    matched to (see engine._completion_times).
     """
     updated = {step_id: [item.model_copy(deep=True) for item in items] for step_id, items in machine.items()}
     for finding in findings:

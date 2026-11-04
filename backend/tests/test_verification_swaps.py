@@ -150,3 +150,38 @@ def test_a_word_left_out_is_the_same_part_and_a_word_replaced_is_not():
     assert same_kind("hex nut 2", "silver hex nut")
     assert not same_kind("dark split washer", "dark flat washer")
     assert not same_kind("hex nut", "wing nut")
+
+
+def test_a_prerequisite_placed_after_its_dependent_fails_on_order_when_a_second_look_decided_both():
+    # Recorded: cable, phone, then the packet on top of the phone, though the procedure puts the cable and the packet
+    # in the tray before the phone. Every placement was decided by a second look, which carries no state onset, so the
+    # order went unchecked. The recognized actions say when each was done.
+    recorded = json.loads((Path(__file__).parent / "fixtures" / "tray_packet_after_phone.json").read_text())
+    before = _steps(verify_execution(recorded["template"], recorded["execution"], appearance_seen=set(recorded["appearance_seen"])))
+    assert before["step_phone"]["verdict"] == "FAIL" and before["step_phone"]["error_category"] == "INCORRECT_ORDER", before["step_phone"]
+    report = verify_execution(
+        recorded["template"],
+        recorded["execution"],
+        reinspection_findings=recorded["findings"],
+        appearance_seen=set(recorded["appearance_seen"]),
+    )
+    steps = _steps(report)
+    assert steps["step_cable"]["verdict"] == "PASS"
+    assert steps["step_packet"]["verdict"] == "PASS"
+    phone = steps["step_phone"]
+    assert phone["verdict"] == "FAIL" and phone["error_category"] == "INCORRECT_ORDER", phone
+    assert "Place packet in tray" in phone["explanation"] and "Place cable in tray" not in phone["explanation"]
+    assert report["overall"] == "FAIL"
+
+
+def test_a_prerequisite_done_first_by_its_actions_does_not_fail_on_order():
+    recorded = json.loads((Path(__file__).parent / "fixtures" / "tray_packet_after_phone.json").read_text())
+    execution = recorded["execution"]
+    times = {"A2": (9.5, 11.8), "A3": (6.0, 9.0)}  # The packet first, then the phone.
+    for item in execution["actions"]:
+        if item["local_id"] in times:
+            item["start"], item["end"] = times[item["local_id"]]
+    report = verify_execution(
+        recorded["template"], execution, reinspection_findings=recorded["findings"], appearance_seen=set(recorded["appearance_seen"])
+    )
+    assert all(step["error_category"] != "INCORRECT_ORDER" for step in report["steps"]), report["steps"]

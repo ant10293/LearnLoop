@@ -1,0 +1,1795 @@
+{
+ "template": {
+  "schema_version": "1.0.0",
+  "name": "A person places a coiled cable and small packet into a white tray, places a flipped phone over them, covers the assembly with a matching lid, and leaves a closed printed box on the",
+  "summary": "A person places a coiled cable and small packet into a white tray, places a flipped phone over them, covers the assembly with a matching lid, and leaves a closed printed box on the desk.",
+  "source_run_id": "628368c9-40e7-435b-89e7-6acc5fbdc0c1",
+  "source_revision_id": "37221371-9253-43ce-8ffb-44c47114bf6f",
+  "source_video_id": "f773b6ef-4b9f-4a65-aea1-769b8c9de985",
+  "acceptance_status": "accepted",
+  "roles": [
+   {
+    "role_id": "role:phone",
+    "label": "dark gray phone with triple-camera module",
+    "description": "A dark gray rectangular phone with a dark front face and a gray rear face containing a triple-camera module.",
+    "visual_characteristics": "Dark rectangular slab that reveals a gray back and triple-camera module when flipped.",
+    "source_object_ids": [
+     "phone"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "flipped",
+     "placed"
+    ],
+    "relation_signature": [
+     "supported_by|white rectangular tray with circular recess"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:cable",
+    "label": "white coiled cable",
+    "description": "A thin white cable wound into a compact circular coil.",
+    "visual_characteristics": "Thin white cord forming a small circular coil.",
+    "source_object_ids": [
+     "cable"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "placed"
+    ],
+    "relation_signature": [
+     "supported_by|white rectangular tray with circular recess"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:packet",
+    "label": "small white square packet",
+    "description": "A small flat white square packet with visible flap-like surface lines.",
+    "visual_characteristics": "Flat white square with subtle folded-flap lines.",
+    "source_object_ids": [
+     "packet"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "placed"
+    ],
+    "relation_signature": [
+     "supported_by|white rectangular tray with circular recess"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:lower_tray",
+    "label": "white rectangular tray with circular recess",
+    "description": "A white rectangular shallow tray with a circular recess at one end.",
+    "visual_characteristics": "Shallow white rectangular form with a distinct circular recess.",
+    "source_object_ids": [
+     "lower_tray"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "full"
+    ],
+    "relation_signature": [
+     "around|white rectangular box lid with printed phone image",
+     "supported_by|dark gray phone with triple-camera module",
+     "supported_by|small white square packet",
+     "supported_by|white coiled cable"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   },
+   {
+    "role_id": "role:box_lid",
+    "label": "white rectangular box lid with printed phone image",
+    "description": "A white rectangular hollow lid with a square recess inside and a printed phone image on the outside.",
+    "visual_characteristics": "Hollow white rectangular cover with a square internal recess and printed phone graphic outside.",
+    "source_object_ids": [
+     "box_lid"
+    ],
+    "required": true,
+    "uncertain": false,
+    "cardinality": "one",
+    "state_labels": [
+     "placed"
+    ],
+    "relation_signature": [
+     "around|white rectangular tray with circular recess"
+    ],
+    "reference_area": null,
+    "original_label": ""
+   }
+  ],
+  "steps": [
+   {
+    "step_id": "step_cable",
+    "name": "Place cable in tray",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:cable",
+     "role:lower_tray"
+    ],
+    "preconditions": [
+     "The tray is visible and empty."
+    ],
+    "expected_action": "Place the coiled cable into the tray recess.",
+    "expected_action_type": "place",
+    "completion_conditions": [
+     {
+      "id": "rel:0:supported_by",
+      "type": "physical_relationship",
+      "subject_role": "role:cable",
+      "target_role": "role:lower_tray",
+      "relation": "supported_by",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:0",
+      "type": "state_transition",
+      "subject_role": "role:cable",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "placed",
+      "state_label": "placed",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.35,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 1.0,
+    "demo_time_end": 4.2,
+    "parallel_group": "",
+    "completion_text": "The cable is seated in the circular recess of the tray.",
+    "observed_text": "The cable lies in the circular recess at one end of the tray.",
+    "removed": false,
+    "human_edited": []
+   },
+   {
+    "step_id": "step_packet",
+    "name": "Place packet in tray",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:packet",
+     "role:lower_tray"
+    ],
+    "preconditions": [
+     "The tray remains on the desk."
+    ],
+    "expected_action": "Place the square packet into the tray.",
+    "expected_action_type": "place",
+    "completion_conditions": [
+     {
+      "id": "rel:0:supported_by",
+      "type": "physical_relationship",
+      "subject_role": "role:packet",
+      "target_role": "role:lower_tray",
+      "relation": "supported_by",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:cable",
+        "target_role": "role:lower_tray",
+        "relation": "supported_by"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "transition:1",
+      "type": "state_transition",
+      "subject_role": "role:packet",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "placed",
+      "state_label": "placed",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.35,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 4.2,
+    "demo_time_end": 6.7,
+    "parallel_group": "",
+    "completion_text": "The packet lies flat in the unoccupied tray section.",
+    "observed_text": "The packet lies flat beside the occupied cable recess.",
+    "removed": false,
+    "human_edited": []
+   },
+   {
+    "step_id": "step_phone",
+    "name": "Place phone on tray",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:phone",
+     "role:lower_tray",
+     "role:cable",
+     "role:packet"
+    ],
+    "preconditions": [
+     "The cable and packet are already in the tray."
+    ],
+    "expected_action": "Flip the phone and place it on the loaded tray.",
+    "expected_action_type": "flip",
+    "completion_conditions": [
+     {
+      "id": "rel:0:supported_by",
+      "type": "physical_relationship",
+      "subject_role": "role:phone",
+      "target_role": "role:lower_tray",
+      "relation": "supported_by",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:cable",
+        "target_role": "role:lower_tray",
+        "relation": "supported_by"
+       },
+       {
+        "subject_role": "role:packet",
+        "target_role": "role:lower_tray",
+        "relation": "supported_by"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "transition:2",
+      "type": "state_transition",
+      "subject_role": "role:phone",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "flipped",
+      "state_label": "flipped",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:3",
+      "type": "state_transition",
+      "subject_role": "role:phone",
+      "target_role": "",
+      "relation": "",
+      "from_state": "flipped",
+      "to_state": "placed",
+      "state_label": "placed",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:4",
+      "type": "state_transition",
+      "subject_role": "role:lower_tray",
+      "target_role": "",
+      "relation": "",
+      "from_state": "empty",
+      "to_state": "full",
+      "state_label": "full",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "INFERRED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [
+     {
+      "step_id": "step_cable",
+      "category": "necessary_physical",
+      "constrains_order": true,
+      "rationale": "The phone covers the cable in the tray, so the cable must be positioned before the phone is placed without removing the phone.",
+      "evidence_class": "DIRECTLY_OBSERVED",
+      "origin": "model"
+     },
+     {
+      "step_id": "step_packet",
+      "category": "necessary_physical",
+      "constrains_order": true,
+      "rationale": "The phone covers the packet in the tray, so the packet must be positioned before the phone is placed without removing the phone.",
+      "evidence_class": "DIRECTLY_OBSERVED",
+      "origin": "model"
+     }
+    ],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.35,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 7.0,
+    "demo_time_end": 10.3,
+    "parallel_group": "",
+    "completion_text": "The phone lies rear-facing upward on the tray.",
+    "observed_text": "The phone covers the cable and packet while resting on the tray.",
+    "removed": false,
+    "human_edited": []
+   },
+   {
+    "step_id": "step_lid",
+    "name": "Close box with lid",
+    "required": true,
+    "requirement_status": "required",
+    "observed": true,
+    "object_roles": [
+     "role:box_lid",
+     "role:lower_tray",
+     "role:phone"
+    ],
+    "preconditions": [
+     "The phone is seated on the loaded tray."
+    ],
+    "expected_action": "Cover the loaded tray with the lid and adjust the closed box.",
+    "expected_action_type": "place",
+    "completion_conditions": [
+     {
+      "id": "rel:0:around",
+      "type": "physical_relationship",
+      "subject_role": "role:box_lid",
+      "target_role": "role:lower_tray",
+      "relation": "around",
+      "from_state": "",
+      "to_state": "",
+      "state_label": "",
+      "evidence_requirement": "required",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [
+       {
+        "subject_role": "role:phone",
+        "target_role": "role:lower_tray",
+        "relation": "supported_by"
+       }
+      ],
+      "origin": "model"
+     },
+     {
+      "id": "transition:3",
+      "type": "state_transition",
+      "subject_role": "role:phone",
+      "target_role": "",
+      "relation": "",
+      "from_state": "flipped",
+      "to_state": "placed",
+      "state_label": "placed",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:4",
+      "type": "state_transition",
+      "subject_role": "role:lower_tray",
+      "target_role": "",
+      "relation": "",
+      "from_state": "empty",
+      "to_state": "full",
+      "state_label": "full",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "INFERRED",
+      "context_relations": [],
+      "origin": "model"
+     },
+     {
+      "id": "transition:5",
+      "type": "state_transition",
+      "subject_role": "role:box_lid",
+      "target_role": "",
+      "relation": "",
+      "from_state": "separate",
+      "to_state": "placed",
+      "state_label": "placed",
+      "evidence_requirement": "optional",
+      "source_evidence_class": "DIRECTLY_OBSERVED",
+      "context_relations": [],
+      "origin": "model"
+     }
+    ],
+    "dependencies": [
+     {
+      "step_id": "step_phone",
+      "category": "necessary_physical",
+      "constrains_order": true,
+      "rationale": "The lid encloses the phone and tray, so the phone must be seated before the lid is closed over it.",
+      "evidence_class": "DIRECTLY_OBSERVED",
+      "origin": "model"
+     }
+    ],
+    "verification_requirements": {
+     "action_evidence": "optional",
+     "resulting_state_evidence": "required"
+    },
+    "uncertainty": 0.35,
+    "uncertainty_notes": "",
+    "incidental": false,
+    "demo_time_start": 10.3,
+    "demo_time_end": 16.2,
+    "parallel_group": "",
+    "completion_text": "The lid covers the assembly and the closed box rests on the desk.",
+    "observed_text": "A closed white box with the printed phone image remains on the desk.",
+    "removed": false,
+    "human_edited": []
+   }
+  ],
+  "notes": [
+   "A single demonstration does not prove that every observed action is required.",
+   "Observed temporal order is stored and does not constrain a later execution.",
+   "Only dependencies categorized as necessary_physical constrain order, until a reviewer changes them.",
+   "Passing a step requires an observable completion condition, not an action label alone.",
+   "Appearance embeddings are not copied into the template, and role matching does not use them."
+  ],
+  "review_log": [
+   {
+    "field": "acceptance_status",
+    "target": "",
+    "before": "draft",
+    "after": "accepted",
+    "provenance": "HUMAN_CORRECTION",
+    "from_version": 1
+   }
+  ]
+ },
+ "execution": {
+  "schema_version": "1.0.0",
+  "summary": "Cable placed into the tray, then the flipped phone placed over it, then the packet placed on the phone, and finally the lid placed over the tray forming a closed box whose contents are hidden at the end.",
+  "fixture": false,
+  "fixture_label": "",
+  "camera": null,
+  "coverage": {
+   "modality": "native_video",
+   "sampling_preset": "sparse",
+   "nominal_fps": 0.5,
+   "frames_extracted": 19,
+   "frames_submitted": 0,
+   "frame_timestamps": [
+    0.0,
+    1.0,
+    2.0,
+    3.0,
+    4.0,
+    5.0,
+    6.0,
+    7.0,
+    8.0,
+    9.001667,
+    10.001667,
+    11.001667,
+    12.001667,
+    13.001667,
+    14.001667,
+    15.001667,
+    16.001667,
+    17.001667,
+    17.201667
+   ],
+   "selection_reasons": {
+    "uniform": 19
+   },
+   "duration_sec": 17.233333,
+   "native_video_submitted": true,
+   "temporal_coverage_note": "The model receives the requested interval as a video file. Preview frames were extracted so the inspector can show evidence.",
+   "time_start": 0.0,
+   "time_end": 17.233,
+   "time_basis": "presentation",
+   "max_gap_sec": null,
+   "uncovered_gaps": [],
+   "motion_frames": 69,
+   "candidate_peaks": [],
+   "selected_peaks": [],
+   "budget_exclusions": 0,
+   "scene_boundaries": [
+    {
+     "time": 12.268,
+     "kind": "soft",
+     "reason": "lighting"
+    }
+   ],
+   "semantic_selection": "provisional",
+   "selection_swaps": [],
+   "semantic_mode": "combined",
+   "semantic_calls": 1,
+   "tracking": {},
+   "segmentation": {},
+   "media_transforms": []
+  },
+  "objects": [
+   {
+    "local_id": "phone",
+    "label": "dark gray phone with triple-camera module",
+    "description": "Dark rectangular slab that reveals a gray back and triple-camera module when flipped.",
+    "visual_characteristics": "Dark rectangular phone with black front initially visible and gray back with camera module after flipping.",
+    "initial_state": "on desk",
+    "final_state": "inside closed box",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "cable",
+    "label": "white coiled cable",
+    "description": "Thin white cord forming a small circular coil.",
+    "visual_characteristics": "Thin white cord coiled into a small circle on the desk.",
+    "initial_state": "on desk",
+    "final_state": "inside closed box",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "packet",
+    "label": "small white square packet",
+    "description": "Flat white square with subtle folded-flap lines.",
+    "visual_characteristics": "Small flat white square packet resting separately on the desk at the start.",
+    "initial_state": "on desk",
+    "final_state": "inside closed box",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "tray",
+    "label": "white rectangular tray with circular recess",
+    "description": "Shallow white rectangular form with a distinct circular recess.",
+    "visual_characteristics": "Shallow white rectangular tray with a circular recess visible in its upper portion.",
+    "initial_state": "empty on desk",
+    "final_state": "covered by lid",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   },
+   {
+    "local_id": "lid",
+    "label": "white rectangular box lid with printed phone image",
+    "description": "Hollow white rectangular cover with a square internal recess and printed phone graphic outside.",
+    "visual_characteristics": "White rectangular box cover with a printed phone image on its outer top surface.",
+    "initial_state": "on desk at right",
+    "final_state": "covering tray on desk",
+    "uncertain_identity": false,
+    "manipulated": false,
+    "confidence": null,
+    "accepted": true,
+    "instance_id": null,
+    "identity_relation": null,
+    "association_status": "",
+    "association_score": null,
+    "association_rivals": []
+   }
+  ],
+  "observations": [
+   {
+    "object_local_id": "phone",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Phone lies on the desk at the left with its black front facing up.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Phone is clearly visible beside the cable at the start.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "phone",
+    "timestamp": 17.23,
+    "bbox": null,
+    "visibility": "occluded",
+    "description": "Phone is hidden inside the closed box at the end.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "The place where the phone would be is enclosed by the lid and is not visible.",
+     "frame_timestamps": [
+      17.2
+     ],
+     "time_start": 17.23,
+     "time_end": 17.23
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "cable",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Cable coil lies on the desk between the phone and packet.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "White circular coil is clearly visible at the start.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "cable",
+    "timestamp": 17.23,
+    "bbox": null,
+    "visibility": "occluded",
+    "description": "Cable is hidden inside the closed box at the end.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "The cable location is enclosed by the phone and lid and is not visible.",
+     "frame_timestamps": [
+      17.2
+     ],
+     "time_start": 17.23,
+     "time_end": 17.23
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "packet",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Packet lies flat on the desk beside the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Small white square is clearly visible at the start.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "packet",
+    "timestamp": 17.23,
+    "bbox": null,
+    "visibility": "occluded",
+    "description": "Packet is hidden inside the closed box at the end.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "The packet location is enclosed by the lid and is not visible.",
+     "frame_timestamps": [
+      17.2
+     ],
+     "time_start": 17.23,
+     "time_end": 17.23
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "tray",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Tray sits empty on the desk with its circular recess visible.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Empty white tray is clearly visible at the start.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "tray",
+    "timestamp": 17.23,
+    "bbox": null,
+    "visibility": "occluded",
+    "description": "Tray is covered by the lid at the end.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "The tray is enclosed within the closed box profile and is not separately visible.",
+     "frame_timestamps": [
+      17.2
+     ],
+     "time_start": 17.23,
+     "time_end": 17.23
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "lid",
+    "timestamp": 0.0,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Lid sits on the desk at the right with its printed phone image facing up.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Printed phone graphic on the lid is clearly visible at the start.",
+     "frame_timestamps": [
+      0.0
+     ],
+     "time_start": 0.0,
+     "time_end": 0.0
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   },
+   {
+    "object_local_id": "lid",
+    "timestamp": 17.23,
+    "bbox": null,
+    "visibility": "visible",
+    "description": "Lid forms the visible exterior of the closed box on the desk.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Closed box with printed phone image remains visible at the end.",
+     "frame_timestamps": [
+      17.2
+     ],
+     "time_start": 17.23,
+     "time_end": 17.23
+    },
+    "sharpness": null,
+    "occlusion": null,
+    "confidence": null,
+    "continuity": "continuous",
+    "coordinate_frame": "image",
+    "camera_compensated": false,
+    "track_ref": null,
+    "accepted": true,
+    "association_status": "",
+    "source_model": "",
+    "request_id": "",
+    "mask_ref": "",
+    "observation_role": "",
+    "geometry_origin": "",
+    "geometry_authority": "",
+    "detection_support": "",
+    "association_support": "",
+    "temporal_support": "",
+    "semantic_support": "",
+    "source_width": null,
+    "source_height": null,
+    "evidence_ref": ""
+   }
+  ],
+  "raw_observations": [],
+  "box_decisions": [],
+  "states": [],
+  "transitions": [
+   {
+    "object_local_id": "cable",
+    "timestamp": 5.5,
+    "from_state": "separate",
+    "to_state": "placed",
+    "description": "Cable changes from separate on the desk to placed in the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Cable is separate initially and seated in the tray recess after placement.",
+     "frame_timestamps": [
+      0.0,
+      5.0
+     ],
+     "time_start": 1.5,
+     "time_end": 5.5
+    },
+    "certainty": 0.1,
+    "accepted": true
+   },
+   {
+    "object_local_id": "phone",
+    "timestamp": 7.3,
+    "from_state": "separate",
+    "to_state": "flipped",
+    "description": "Phone changes from separate on the desk to flipped showing its gray back.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Phone is turned over in the hands before placement.",
+     "frame_timestamps": [
+      6.2,
+      7.2
+     ],
+     "time_start": 6.0,
+     "time_end": 7.3
+    },
+    "certainty": 0.1,
+    "accepted": true
+   },
+   {
+    "object_local_id": "phone",
+    "timestamp": 8.5,
+    "from_state": "flipped",
+    "to_state": "placed",
+    "description": "Phone changes from flipped in hand to placed in the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Phone is seated in the tray with its gray back visible.",
+     "frame_timestamps": [
+      7.2,
+      8.5
+     ],
+     "time_start": 7.3,
+     "time_end": 8.5
+    },
+    "certainty": 0.1,
+    "accepted": true
+   },
+   {
+    "object_local_id": "packet",
+    "timestamp": 11.3,
+    "from_state": "separate",
+    "to_state": "placed",
+    "description": "Packet changes from separate on the desk to placed on the phone.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Packet is separate initially and resting on the phone after placement.",
+     "frame_timestamps": [
+      0.0,
+      11.0
+     ],
+     "time_start": 9.8,
+     "time_end": 11.3
+    },
+    "certainty": 0.1,
+    "accepted": true
+   },
+   {
+    "object_local_id": "tray",
+    "timestamp": 11.3,
+    "from_state": "empty",
+    "to_state": "full",
+    "description": "Tray changes from empty to full as contents are added.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Tray is empty initially and contains the stacked items before lid closure.",
+     "frame_timestamps": [
+      0.0,
+      11.0
+     ],
+     "time_start": 2.5,
+     "time_end": 11.3
+    },
+    "certainty": 0.1,
+    "accepted": true
+   },
+   {
+    "object_local_id": "tray",
+    "timestamp": 13.2,
+    "from_state": "open",
+    "to_state": "closed",
+    "description": "Tray changes from open to closed when the lid is applied.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Open filled tray becomes hidden under the lid.",
+     "frame_timestamps": [
+      11.5,
+      13.2
+     ],
+     "time_start": 12.0,
+     "time_end": 13.2
+    },
+    "certainty": 0.1,
+    "accepted": true
+   },
+   {
+    "object_local_id": "lid",
+    "timestamp": 13.2,
+    "from_state": "separate",
+    "to_state": "placed",
+    "description": "Lid changes from separate on the desk to placed over the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lid is separate initially and forms the closed box exterior after placement.",
+     "frame_timestamps": [
+      0.0,
+      13.2
+     ],
+     "time_start": 12.0,
+     "time_end": 13.2
+    },
+    "certainty": 0.1,
+    "accepted": true
+   }
+  ],
+  "relationships": [
+   {
+    "subject_local_id": "cable",
+    "other_local_id": "tray",
+    "kind": "supported_by",
+    "time_start": 5.0,
+    "time_end": 7.2,
+    "description": "Cable rests in the circular recess and is supported by the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Coil is clearly seen seated in the tray recess before the phone covers it.",
+     "frame_timestamps": [
+      5.0,
+      6.5
+     ],
+     "time_start": 5.0,
+     "time_end": 7.2
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "phone",
+    "other_local_id": "tray",
+    "kind": "supported_by",
+    "time_start": 8.2,
+    "time_end": 12.4,
+    "description": "Phone is seated in the tray and supported by the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Gray phone back is clearly visible seated within the tray before the lid is applied.",
+     "frame_timestamps": [
+      8.5,
+      11.5
+     ],
+     "time_start": 8.2,
+     "time_end": 12.4
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "packet",
+    "other_local_id": "phone",
+    "kind": "supported_by",
+    "time_start": 11.0,
+    "time_end": 12.4,
+    "description": "Packet rests directly on the phone seated in the tray.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Packet is clearly seen on the phone back inside the tray footprint.",
+     "frame_timestamps": [
+      11.0,
+      12.0
+     ],
+     "time_start": 11.0,
+     "time_end": 12.4
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "packet",
+    "other_local_id": "tray",
+    "kind": "above",
+    "time_start": 11.0,
+    "time_end": 12.4,
+    "description": "Packet lies above the tray within its footprint, with the phone as the intervening support.",
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Packet is visible above the tray base while resting on the phone, not directly on the tray.",
+     "frame_timestamps": [
+      11.0,
+      12.0
+     ],
+     "time_start": 11.0,
+     "time_end": 12.4
+    },
+    "accepted": true
+   },
+   {
+    "subject_local_id": "lid",
+    "other_local_id": "tray",
+    "kind": "around",
+    "time_start": 13.0,
+    "time_end": 17.23,
+    "description": "Lid encloses the tray as the closed box exterior.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lid is seen lowered over the tray and the resulting closed box is visible, although the tray itself is then hidden.",
+     "frame_timestamps": [
+      13.0,
+      16.0
+     ],
+     "time_start": 13.0,
+     "time_end": 17.23
+    },
+    "accepted": true
+   }
+  ],
+  "actions": [
+   {
+    "local_id": "A1",
+    "action_type": "place",
+    "description": "Place white coiled cable into the circular recess of the tray.",
+    "start": 1.5,
+    "end": 5.5,
+    "actor": "person",
+    "object_local_ids": [
+     "cable",
+     "tray"
+    ],
+    "initial_state": "cable separate on desk",
+    "final_state": "cable in tray recess",
+    "outcome": "completed",
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Cable is seen moved from the desk and settled in the tray recess.",
+     "frame_timestamps": [
+      0.5,
+      3.0,
+      5.5
+     ],
+     "time_start": 1.5,
+     "time_end": 5.5
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "A2",
+    "action_type": "place",
+    "description": "Pick up the phone, flip it to its gray back, and place it into the tray over the cable.",
+    "start": 6.0,
+    "end": 9.0,
+    "actor": "person",
+    "object_local_ids": [
+     "phone",
+     "tray",
+     "cable"
+    ],
+    "initial_state": "phone separate on desk",
+    "final_state": "phone seated in tray",
+    "outcome": "completed",
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Phone is seen flipped revealing its back and camera module and then seated in the tray.",
+     "frame_timestamps": [
+      6.5,
+      8.0,
+      9.0
+     ],
+     "time_start": 6.0,
+     "time_end": 9.0
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "A3",
+    "action_type": "place",
+    "description": "Place the small white square packet onto the phone inside the tray.",
+    "start": 9.5,
+    "end": 11.8,
+    "actor": "person",
+    "object_local_ids": [
+     "packet",
+     "phone",
+     "tray"
+    ],
+    "initial_state": "packet separate on desk",
+    "final_state": "packet on phone in tray",
+    "outcome": "completed",
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Packet is seen placed centrally on the exposed back of the phone.",
+     "frame_timestamps": [
+      9.8,
+      10.8,
+      11.5
+     ],
+     "time_start": 9.5,
+     "time_end": 11.8
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "A4",
+    "action_type": "place",
+    "description": "Place the box lid over the filled tray to close it.",
+    "start": 11.9,
+    "end": 13.8,
+    "actor": "person",
+    "object_local_ids": [
+     "lid",
+     "tray"
+    ],
+    "initial_state": "lid separate on desk",
+    "final_state": "lid covering tray",
+    "outcome": "completed",
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lid is seen moved from the right and lowered over the tray until contents are hidden.",
+     "frame_timestamps": [
+      12.2,
+      13.0,
+      13.8
+     ],
+     "time_start": 11.9,
+     "time_end": 13.8
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "A5",
+    "action_type": "move",
+    "description": "Lift, tilt, and set down the closed box on the desk.",
+    "start": 14.0,
+    "end": 16.0,
+    "actor": "person",
+    "object_local_ids": [
+     "lid",
+     "tray"
+    ],
+    "initial_state": "closed box on desk",
+    "final_state": "closed box on desk",
+    "outcome": "completed",
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Closed box is seen lifted and returned to the desk without reopening.",
+     "frame_timestamps": [
+      14.5,
+      15.5
+     ],
+     "time_start": 14.0,
+     "time_end": 16.0
+    },
+    "accepted": true
+   }
+  ],
+  "workflow_steps": [
+   {
+    "local_id": "S1",
+    "name": "Place cable in tray",
+    "required_objects": [
+     "cable",
+     "tray"
+    ],
+    "preconditions": [
+     "Tray is empty and accessible on the desk."
+    ],
+    "expected_action": "Place the cable into the tray recess.",
+    "completion_condition": "Cable coil rests visibly in the circular recess of the tray.",
+    "observed_result": "Cable was placed and adjusted in the tray recess.",
+    "action_local_ids": [
+     "A1"
+    ],
+    "time_start": 1.5,
+    "time_end": 5.5,
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Cable is seen settled in the tray recess after hand adjustment.",
+     "frame_timestamps": [
+      5.0
+     ],
+     "time_start": 1.5,
+     "time_end": 5.5
+    },
+    "parallel_group": "",
+    "accepted": true
+   },
+   {
+    "local_id": "S2",
+    "name": "Place phone in tray",
+    "required_objects": [
+     "phone",
+     "tray",
+     "cable"
+    ],
+    "preconditions": [
+     "Cable is seated in the tray recess."
+    ],
+    "expected_action": "Flip the phone and place it into the tray over the cable.",
+    "completion_condition": "Phone rests in the tray with its gray back and camera module visible.",
+    "observed_result": "Phone was flipped and seated in the tray over the cable.",
+    "action_local_ids": [
+     "A2"
+    ],
+    "time_start": 6.0,
+    "time_end": 9.0,
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Phone is seen seated in the tray covering the cable recess area.",
+     "frame_timestamps": [
+      8.5
+     ],
+     "time_start": 6.0,
+     "time_end": 9.0
+    },
+    "parallel_group": "",
+    "accepted": true
+   },
+   {
+    "local_id": "S3",
+    "name": "Place packet on phone",
+    "required_objects": [
+     "packet",
+     "phone",
+     "tray"
+    ],
+    "preconditions": [
+     "Phone is seated in the tray with its back exposed."
+    ],
+    "expected_action": "Place the packet onto the phone in the tray.",
+    "completion_condition": "Packet rests visibly on the phone inside the tray.",
+    "observed_result": "Packet was placed on the exposed phone back.",
+    "action_local_ids": [
+     "A3"
+    ],
+    "time_start": 9.5,
+    "time_end": 11.8,
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Packet is seen centered on the phone back within the tray.",
+     "frame_timestamps": [
+      11.0
+     ],
+     "time_start": 9.5,
+     "time_end": 11.8
+    },
+    "parallel_group": "",
+    "accepted": true
+   },
+   {
+    "local_id": "S4",
+    "name": "Close tray with lid",
+    "required_objects": [
+     "lid",
+     "tray",
+     "phone",
+     "packet",
+     "cable"
+    ],
+    "preconditions": [
+     "Packet rests on the phone in the tray."
+    ],
+    "expected_action": "Place the lid over the filled tray.",
+    "completion_condition": "Lid covers the tray and the contents are no longer visible.",
+    "observed_result": "Lid was placed over the tray, forming a closed box that was later lifted and set down.",
+    "action_local_ids": [
+     "A4"
+    ],
+    "time_start": 11.9,
+    "time_end": 13.8,
+    "uncertainty": 0.1,
+    "evidence": {
+     "classification": "DIRECTLY_OBSERVED",
+     "provenance": "AI_PREDICTION",
+     "note": "Lid is seen covering the tray and forming a closed box.",
+     "frame_timestamps": [
+      13.0,
+      13.8
+     ],
+     "time_start": 11.9,
+     "time_end": 13.8
+    },
+    "parallel_group": "",
+    "accepted": true
+   }
+  ],
+  "dependencies": [
+   {
+    "from_step": "S2",
+    "to_step": "S1",
+    "category": "necessary_physical",
+    "rationale": "The cable must already be in the tray recess for the phone to be placed over it in the observed stack.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "The phone is seen covering the cable already seated in the tray.",
+     "frame_timestamps": [
+      5.5,
+      8.5
+     ],
+     "time_start": 5.5,
+     "time_end": 8.5
+    },
+    "accepted": true
+   },
+   {
+    "from_step": "S3",
+    "to_step": "S2",
+    "category": "necessary_physical",
+    "rationale": "The phone must be seated in the tray before the packet can rest on its exposed back in the observed position.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "The packet is placed directly onto the phone already seated in the tray.",
+     "frame_timestamps": [
+      8.5,
+      11.0
+     ],
+     "time_start": 8.5,
+     "time_end": 11.0
+    },
+    "accepted": true
+   },
+   {
+    "from_step": "S4",
+    "to_step": "S3",
+    "category": "necessary_physical",
+    "rationale": "The lid must be placed after the packet is inside the tray footprint to enclose the observed contents.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "The lid is lowered only after the packet is visible on the phone.",
+     "frame_timestamps": [
+      11.0,
+      13.0
+     ],
+     "time_start": 11.0,
+     "time_end": 13.0
+    },
+    "accepted": true
+   }
+  ],
+  "ambiguities": [
+   {
+    "local_id": "AMB1",
+    "kind": "occlusion",
+    "description": "After the lid closes at about 13 seconds, the cable, phone, and packet are hidden and their final internal positions are not directly verifiable.",
+    "time_start": 12.8,
+    "time_end": 17.23,
+    "object_local_ids": [
+     "cable",
+     "phone",
+     "packet",
+     "tray",
+     "lid"
+    ],
+    "action_local_ids": [
+     "A4"
+    ],
+    "alternative": "Contents could have shifted during lid closure or later handling.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "Only the exterior of the closed box is visible at the end.",
+     "frame_timestamps": [
+      13.8,
+      17.2
+     ],
+     "time_start": 13.0,
+     "time_end": 17.23
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "AMB2",
+    "kind": "occlusion",
+    "description": "The cable is hidden beneath the phone after the phone is placed, so its exact position under the phone is not visible.",
+    "time_start": 7.3,
+    "time_end": 12.5,
+    "object_local_ids": [
+     "cable",
+     "phone",
+     "tray"
+    ],
+    "action_local_ids": [
+     "A2"
+    ],
+    "alternative": "Cable could be compressed or displaced beneath the phone.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "Cable is last clearly visible before the phone covers the tray recess.",
+     "frame_timestamps": [
+      6.8,
+      8.5
+     ],
+     "time_start": 7.3,
+     "time_end": 12.5
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "AMB3",
+    "kind": "occlusion",
+    "description": "At the end the tray is mostly hidden by the lid, so whether any tray edge remains externally visible is unclear.",
+    "time_start": 14.0,
+    "time_end": 17.23,
+    "object_local_ids": [
+     "tray",
+     "lid"
+    ],
+    "action_local_ids": [],
+    "alternative": "A thin lower edge of the tray or box base may form part of the visible closed box side.",
+    "evidence": {
+     "classification": "UNKNOWN",
+     "provenance": "AI_PREDICTION",
+     "note": "The closed white box does not clearly distinguish tray from lid along its lower edge.",
+     "frame_timestamps": [
+      16.0,
+      17.2
+     ],
+     "time_start": 14.0,
+     "time_end": 17.23
+    },
+    "accepted": true
+   },
+   {
+    "local_id": "AMB4",
+    "kind": "missing_evidence",
+    "description": "Exact transition instants between sampled frames are approximate because continuous motion between frames was not inspected frame by frame.",
+    "time_start": 0.0,
+    "time_end": 17.23,
+    "object_local_ids": [
+     "phone",
+     "cable",
+     "packet",
+     "tray",
+     "lid"
+    ],
+    "action_local_ids": [],
+    "alternative": "Actions between sampled views could differ in detail.",
+    "evidence": {
+     "classification": "INFERRED",
+     "provenance": "AI_PREDICTION",
+     "note": "Times are estimated from visible state changes in the supplied recording.",
+     "frame_timestamps": [
+      0.0,
+      17.2
+     ],
+     "time_start": 0.0,
+     "time_end": 17.23
+    },
+    "accepted": true
+   }
+  ],
+  "validation_issues": [],
+  "reinspection_notes": [],
+  "reinspection_proposals": [],
+  "perception": null
+ },
+ "findings": [
+  {
+   "step_id": "step_cable",
+   "predicate_id": "rel:0:supported_by",
+   "outcome": "supported",
+   "visibility": "visible",
+   "evidence_timestamps": [
+    5.25,
+    6.35,
+    6.75
+   ],
+   "reason": "The white coiled cable is visible sitting in the circular recess of the white rectangular tray.",
+   "limitations": [],
+   "evidence_class": "DIRECTLY_OBSERVED",
+   "model_id": "muse-wonder-1.0",
+   "source": "live"
+  },
+  {
+   "step_id": "step_packet",
+   "predicate_id": "rel:0:supported_by",
+   "outcome": "supported",
+   "visibility": "visible",
+   "evidence_timestamps": [
+    10.9,
+    11.55
+   ],
+   "reason": "The small white square packet is seen lying inside the open white rectangular tray in the center of the desk.",
+   "limitations": [
+    "The packet lies on the phone seated in the tray, and the tray's circular recess is obscured by the phone."
+   ],
+   "evidence_class": "DIRECTLY_OBSERVED",
+   "model_id": "muse-wonder-1.0",
+   "source": "live"
+  },
+  {
+   "step_id": "step_phone",
+   "predicate_id": "rel:0:supported_by",
+   "outcome": "supported",
+   "visibility": "visible",
+   "evidence_timestamps": [
+    8.75,
+    9.6,
+    10.25
+   ],
+   "reason": "The dark gray phone with triple-camera module is seen lying resting inside the white rectangular tray.",
+   "limitations": [
+    "The circular recess is covered by the phone once it is placed, but the tray's white border remains visible around it."
+   ],
+   "evidence_class": "DIRECTLY_OBSERVED",
+   "model_id": "muse-wonder-1.0",
+   "source": "live"
+  }
+ ],
+ "appearance_seen": [
+  "cable",
+  "lid",
+  "packet",
+  "phone",
+  "tray"
+ ]
+}
