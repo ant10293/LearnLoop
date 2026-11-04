@@ -149,4 +149,32 @@ describe("New experiment", () => {
     await waitFor(() => expect(posts().at(-1)?.allow_live).toBe(true));
     expect(posts().at(-1)).toMatchObject({ mode: "verification", project_id: "p1", template_id: "t1", video_id: "v2", repetitions: 5, max_concurrency: 2, independent_inference: true });
   });
+
+  it("lets repetitions and concurrency be cleared and retyped", async () => {
+    const calls = mockApi((url, init) => {
+      if (url === "/api/reliability/options") return { body: options };
+      if (url === "/api/reliability/batches" && init?.method === "POST") return { status: 409, body: { detail: { code: "live_call_required", plan } } };
+      if (url === "/api/reliability/batches") return { body: [] };
+      if (url === "/api/settings") return { body: { video_storage: "copy" } };
+      return undefined;
+    });
+    show("/lab");
+    const reps = (await screen.findByLabelText("Repetitions")) as HTMLInputElement;
+    fireEvent.change(reps, { target: { value: "" } });
+    expect(reps.value).toBe("");
+    fireEvent.change(reps, { target: { value: "12" } });
+    fireEvent.blur(reps);
+    expect(reps.value).toBe("12");
+    const workers = screen.getByLabelText(/Concurrent runs/) as HTMLInputElement;
+    fireEvent.change(workers, { target: { value: "" } });
+    fireEvent.blur(workers);
+    expect(workers.value).toBe("2");
+    fireEvent.change(workers, { target: { value: "9" } });
+    fireEvent.blur(workers);
+    expect(workers.value).toBe("4");
+    fireEvent.click(screen.getByRole("button", { name: "Review and start" }));
+    await waitFor(() => expect(calls.some((call) => call.init?.method === "POST")).toBe(true));
+    const body = JSON.parse(String(calls.find((call) => call.init?.method === "POST")!.init!.body));
+    expect(body).toMatchObject({ repetitions: 12, max_concurrency: 4, allow_live: false });
+  });
 });

@@ -213,11 +213,11 @@ function NewExperiment() {
           </label>
           <label className="stack">
             <span className="small muted">Repetitions</span>
-            <input className="field" type="number" min={1} max={options.data?.max_repetitions ?? 50} value={repetitions} onChange={(event) => setRepetitions(Math.max(1, Number(event.target.value) || 1))} />
+            <CountField value={repetitions} max={options.data?.max_repetitions ?? 50} onChange={setRepetitions} />
           </label>
           <label className="stack">
             <span className="small muted">Concurrent runs (max {options.data?.max_concurrency ?? 4})</span>
-            <input className="field" type="number" min={1} max={options.data?.max_concurrency ?? 4} value={concurrency} onChange={(event) => setConcurrency(Math.min(options.data?.max_concurrency ?? 4, Math.max(1, Number(event.target.value) || 1)))} />
+            <CountField value={concurrency} max={options.data?.max_concurrency ?? 4} onChange={setConcurrency} />
           </label>
           <label className="stack">
             <span className="small muted">Name (optional)</span>
@@ -297,5 +297,33 @@ export function StepLabels({ steps, labels, onChange }: { steps: { step_id: stri
         </label>
       ))}
     </div>
+  );
+}
+
+/** A whole-number field that can be cleared and retyped. The parent gets each valid value as it is typed; leaving the field puts back the clamped value. */
+function CountField({ value, max, onChange }: { value: number; max: number; onChange: (value: number) => void }) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  const clamp = (raw: number) => Math.min(max, Math.max(1, Math.round(raw)));
+  return (
+    <input
+      className="field"
+      type="number"
+      min={1}
+      max={max}
+      step={1}
+      value={text}
+      onChange={(event) => {
+        setText(event.target.value);
+        const parsed = Number(event.target.value);
+        if (event.target.value.trim() !== "" && Number.isFinite(parsed) && parsed >= 1 && parsed <= max) onChange(Math.round(parsed));
+      }}
+      onBlur={() => {
+        const parsed = Number(text);
+        const next = text.trim() === "" || !Number.isFinite(parsed) ? value : clamp(parsed);
+        setText(String(next));
+        if (next !== value) onChange(next);
+      }}
+    />
   );
 }
