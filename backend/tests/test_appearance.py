@@ -494,3 +494,32 @@ def test_an_attempt_is_checked_against_the_procedures_references_which_it_never_
     assert appearance["used"] and appearance["gallery"]["gallery_id"] == before["gallery_id"]
     # Appearance is identity evidence only: no step's basis or evidence comes from it.
     assert all(item["provenance"] != "APPEARANCE" for step in report["report"]["steps"] for item in step["evidence"])
+
+
+def test_an_attempt_track_that_never_looks_like_its_part_is_rejected_whole():
+    # Seen live: "clear stud" boxes followed a fingertip, the pin, then the whole assembly; the stud never appeared.
+    rows = {
+        "stud": [{"own": value, "reading": "weak", "status": "provisional", "reason": "weak_match"} for value in (0.45, 0.53, 0.58, 0.34)],
+        "wheel": [{"own": value, "reading": reading, "status": "provisional", "reason": ""} for value, reading in ((0.82, "ambiguous"), (0.3, "unlike"), (0.35, "unlike"))],
+        "pin": [{"own": None, "reading": "unchecked", "status": "provisional", "reason": "too_small_to_check"}] * 5,
+    }
+    A.reject_never_matched(rows, OPTIONS)
+    assert {row["status"] for row in rows["stud"]} == {"rejected"} and rows["stud"][0]["reason"] == A.NEVER_MATCHED
+    assert {row["status"] for row in rows["wheel"]} == {"provisional"}
+    # Nothing could be judged, so nothing is called wrong.
+    assert {row["status"] for row in rows["pin"]} == {"provisional"}
+
+
+def test_an_object_whose_every_box_was_rejected_renders_as_not_found(tmp_path, monkeypatch):
+    # Seen live: the whole "clear stud" track was rejected, and drawing the views failed on the empty track.
+    from app.pipeline import object_views
+    from app.providers.sam import SamRecord
+    from app.schemas.analysis import AnalysisDocument
+
+    monkeypatch.setattr(object_views, "views_dir", lambda run_id: tmp_path)
+    media = _two_colour_video(tmp_path / "clip.mp4", frames=12)
+    record = SamRecord(0, "0", 10, 10, 60, 60, 160, 120, 0.9, "", "")
+    rejected = object_views.Sighting(0.0, {"x": 0.06, "y": 0.08, "w": 0.31, "h": 0.42}, record, status="rejected")
+    document = AnalysisDocument.model_validate({"objects": [{"local_id": "stud", "label": "clear stud"}]})
+    manifest = object_views._render("run", document, media, {"stud": [rejected]}, 0.9)
+    assert manifest["objects"]["stud"]["track"] == [] and manifest["objects"]["stud"]["seen_cells"] == 0

@@ -947,10 +947,18 @@ def test_object_views_can_be_made_again_with_approval_and_leave_the_analysis_alo
     assert after["status"] == "completed" and after["stages"]["segmentation"] == "completed"
 
 
-def test_object_views_are_not_made_again_for_an_attempt(lab):
+def test_an_attempt_can_have_object_views_made_with_approval(lab, monkeypatch):
+    # Attempts are followed with SAM so their boxes can be checked and seen, including attempts analyzed without it.
+    from app.config import settings
+
     client, stub, tmp = lab
     procedure, template = _accepted(lab)
     run = _analyze(client, _upload(client, procedure, _video(tmp / "blue.mp4", "blue"), "execution"))
+    assert client.get(f"/api/learnloop/runs/{run['id']}/objects").json()["can_remake"]
+    unapproved = client.post(f"/api/learnloop/runs/{run['id']}/objects/run", json={"allow_live": False})
+    assert unapproved.status_code == 409 and unapproved.json()["detail"]["code"] == "live_call_required"
+    assert unapproved.json()["detail"]["plan"]["segmentation_model_id"] == "sam-3.1"
+    monkeypatch.setattr(settings, "appearance_enabled", False)
     assert not client.get(f"/api/learnloop/runs/{run['id']}/objects").json()["can_remake"]
     assert client.post(f"/api/learnloop/runs/{run['id']}/objects/run", json={"allow_live": True}).status_code == 400
 

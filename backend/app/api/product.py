@@ -333,7 +333,7 @@ def remake_object_views(run_id: str, payload: ObjectViewsBody, session: Session 
     config = run.config_json or {}
     plan = {
         "model_id": run.model_id,
-        "segmentation_model_id": config.get("segmentation_model_id") or "",
+        "segmentation_model_id": config.get("segmentation_model_id") or guided.DEFAULT_SEGMENTATION_MODEL,
         "video_seconds": float(video.duration_sec or 0) if video else 0.0,
         # Stored answers are replayed. These are the most that could be sent.
         "object_view_locate_requests": 2,
@@ -349,7 +349,11 @@ def remake_object_views(run_id: str, payload: ObjectViewsBody, session: Session 
 
 
 def _makes_views(run: AnalysisRun) -> bool:
-    return guided.is_guided(run) and bool((run.config_json or {}).get("object_views"))
+    """A demonstration made with views, or any attempt checked against a procedure while appearance checks are on.
+    An attempt analyzed before attempts were followed can have its views made now."""
+    config = run.config_json or {}
+    attempt = bool(config.get("reference_template_id")) and settings.appearance_enabled
+    return guided.is_guided(run) and (bool(config.get("object_views")) or attempt)
 
 
 def _remaking_views(session: Session, run_id: str) -> bool:

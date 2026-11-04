@@ -550,6 +550,27 @@ def _smooth(rows: list[dict]) -> None:
             row["status"], row["reason"] = "provisional", "overlaps_other_object" if row["overlaps"] else reason
 
 
+NEVER_MATCHED = "never_matches_references"
+# Frames large enough to judge before a track that never matches is called someone else's.
+NEVER_MATCHED_MIN_SAMPLES = 3
+
+
+def reject_never_matched(rows: dict[str, list[dict]], options: Settings) -> None:
+    """On an attempt, a track that does not reach accept on any frame that could be judged is not following its part.
+
+    Seen on a real attempt: a locate box put on a fingertip was followed onto the pin and then the whole assembly
+    as "clear stud", while the stud never appeared. Only for attempts: a demonstration's references come from its
+    own tracks. A same-kind tie counts as matching, so identical parts are not rejected for looking alike."""
+    for items in rows.values():
+        judged = [row for row in items if row.get("own") is not None]
+        if len(judged) < NEVER_MATCHED_MIN_SAMPLES:
+            continue
+        if any(row["own"] >= options.accept or row["reading"] == "match" for row in judged):
+            continue
+        for row in items:
+            row["status"], row["reason"] = "rejected", NEVER_MATCHED
+
+
 def propagate(statuses: list[dict], times: list[float], segments: list[int], reach: float) -> list[tuple[str, str]]:
     """Status for every sighting from the nearest checked sample in the same segment."""
     out = []

@@ -48,7 +48,8 @@ export function RecordingAnalysis({ recording, onDone, action }: { recording: Re
   const [segmentation, setSegmentation] = useState<string | null>(null);
   // Skips stored answers for this video. The requests it sends still wait for approval.
   const [fresh, setFresh] = useState(false);
-  const segments = recording.role === "demonstration";
+  // Attempts are followed with SAM too, so their boxes can be checked against the procedure's references and seen.
+  const segments = true;
 
   useEffect(() => {
     const data = run.data;

@@ -684,6 +684,9 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
     picks = {local_id: _picks(sightings, times) for local_id, sightings in tracked.items()}
     wanted = set()
     for local_id, sightings in tracked.items():
+        # Every box of a track can be rejected, leaving nothing to draw for it.
+        if not sightings:
+            continue
         wanted.add(_first(sightings).record.frame_index)
         wanted.update(item.record.frame_index for item in picks[local_id] if item)
     frames = _read_frames(media, wanted)

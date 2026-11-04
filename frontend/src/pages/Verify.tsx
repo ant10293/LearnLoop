@@ -5,6 +5,7 @@ import { RecordingAnalysis } from "../components/RecordingAnalysis";
 import { RecordingDrop } from "../components/RecordingDrop";
 import { Bone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag, VerdictTag } from "../components/ui";
+import { ObjectViewsNotice } from "../components/RecordingAnalysis";
 import { api, basisLabels, clock, errorLabels, frameUrl, humanizeModel, type Answer, type FilmTrack, type ObjectViews, type Procedure, type Recording, type Role, type Run, type StepResult, type Verification, type VideoInfo } from "../lib/learnloop";
 
 const RESULT_PLACEHOLDERS = 3;
@@ -112,7 +113,12 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
   const demoRun = procedure.templates.find((item) => item.id === query.data?.template_id)?.source_run_id ?? "";
   const demoViews = useQuery({ queryKey: ["object-views", demoRun], queryFn: () => api.objectViews(demoRun), enabled: Boolean(demoRun) });
   const attemptRun = recording.run?.id ?? "";
-  const attemptViews = useQuery({ queryKey: ["object-views", attemptRun], queryFn: () => api.objectViews(attemptRun), enabled: Boolean(attemptRun) });
+  const attemptViews = useQuery({
+    queryKey: ["object-views", attemptRun],
+    queryFn: () => api.objectViews(attemptRun),
+    enabled: Boolean(attemptRun),
+    refetchInterval: (state) => (state.state.data?.running ? 1000 : false),
+  });
   if (query.error) return <ErrorNote message={(query.error as Error).message} />;
   if (!query.data || !report || !step) return <ReportSkeleton video={recording.video} />;
   const verification = query.data;
@@ -138,7 +144,12 @@ function Report({ verificationId, procedure, recording }: { verificationId: stri
         </>
       }
       demonstration={<Film src={demo?.video.playback_url ?? ""} time={step.demo_time_start} seek={tick} label="Demonstration" caption={`How “${step.name}” was shown`} tracks={roleTracks(demoViews.data, template?.document.roles ?? [])} />}
-      attempt={<Film src={recording.video.playback_url} time={evidenceTime} seek={tick} label="This attempt" caption={evidenceTime == null ? "No timestamp was tied to this step." : "Evidence moment for this step"} tracks={objectTracks(attemptViews.data)} />}
+      attempt={
+        <>
+          <Film src={recording.video.playback_url} time={evidenceTime} seek={tick} label="This attempt" caption={evidenceTime == null ? "No timestamp was tied to this step." : "Evidence moment for this step"} tracks={objectTracks(attemptViews.data)} />
+          {attemptRun && <ObjectViewsNotice runId={attemptRun} views={attemptViews.data} onStarted={() => void client.invalidateQueries({ queryKey: ["object-views", attemptRun] })} />}
+        </>
+      }
       results={report.steps.map((item) => (
         <li key={item.step_id}>
           <button className={`result ${item.step_id === step.step_id ? "active" : ""}`} onClick={() => { setStepId(item.step_id); setTick((value) => value + 1); }}>

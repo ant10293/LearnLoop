@@ -138,9 +138,14 @@ def check_tracks(
         result.labels.update(reference_labels)
         result.gallery = app_.gallery_summary(manifest) if manifest else None
     rows = app_.validate_samples(samples, galleries, result.labels, anchored, options)
+    if mode == "execution":
+        app_.reject_never_matched(rows, options)
     reach = step / fps + 1e-6
     for local_id, items in ordered.items():
         result.statuses[local_id] = app_.propagate(rows.get(local_id, []), [item.timestamp for item in items], segments[local_id], reach)
+        if any(row.get("reason") == app_.NEVER_MATCHED for row in rows.get(local_id, [])):
+            # Not one frame looked like the part, so no box of this track is drawn as it.
+            result.statuses[local_id] = [("rejected", app_.NEVER_MATCHED)] * len(items)
     result.used = True
     result.samples = samples
     result.galleries = galleries
