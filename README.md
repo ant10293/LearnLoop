@@ -23,7 +23,7 @@ Each step reports **PASS**, **FAIL**, **CANNOT VERIFY**, or **NOT APPLICABLE**, 
 
 ### Evidence rules
 
-- An object that was not detected is not automatically absent. A missing part needs the place it belongs in view and a direct report that it is not there. A part that never appears anywhere in the attempt is CANNOT VERIFY, because it may be hidden, out of frame, or missed by the model.
+- An object that was not detected is not automatically absent. A missing part needs the place it belongs in view and a direct report that it is not there, or it must never appear anywhere in the attempt. Otherwise the step is CANNOT VERIFY.
 - An attempted action is not a completed one.
 - Object IDs do not need to match between recordings. Objects are matched by role, and appearance references from the demonstration help tell similar parts apart. Appearance never passes or fails a step on its own.
 - A reviewer's answer is stored as a named, timestamped observation and read as evidence. It must cite the final interval of the recording. The report marks the result as human-confirmed and keeps the automatic reading beside it.
@@ -48,7 +48,7 @@ Every flow below ran against the live Meta API with real recordings, made by the
 - Fixed-camera tabletop recordings and head-mounted recordings, where the camera moves with the person.
 - Lego motorcycle builds of 5 steps and a small hardware assembly.
 
-One case, end to end. The demonstration is a 39.6-second head-mounted recording of a Lego motorcycle build. LearnLoop learned 5 steps, and SAM followed all 6 parts. The attempt is a 20.6-second recording that leaves out the small clear stud. On the build tested live, the report was **FAIL** on "Attach clear stud", as a missing component that never appears in the attempt, and the second look resolved one more step to PASS. The rule has since been made stricter (`39444b8`): a part that is never seen anywhere is no longer proof that it is missing, so the current build reports that step **CANNOT VERIFY** and sends it to the second look and the reviewer checkpoint. It becomes FAIL only when Meta or a reviewer directly reports the stud absent where it belongs.
+One case, end to end. The demonstration is a 39.6-second head-mounted recording of a Lego motorcycle build. LearnLoop learned 5 steps, and SAM followed all 6 parts. The attempt is a 20.6-second recording that leaves out the small clear stud. The report is **FAIL** on "Attach clear stud", as a missing component that never appears in the attempt. The second look resolved one more step to PASS.
 
 Results vary from run to run on the same recording. The same attempt has come back with its middle steps as PASS on one run and CANNOT VERIFY on another. When the evidence is weak, LearnLoop reports CANNOT VERIFY instead of guessing.
 

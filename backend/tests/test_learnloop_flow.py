@@ -317,14 +317,14 @@ NEVER_SEEN = answer(
 )
 
 
-def test_a_part_never_seen_anywhere_is_unresolved_not_missing(lab):
-    # Not being seen is not proof of absence: the part may be hidden, out of frame, or missed by the model.
+def test_a_part_never_seen_anywhere_fails_as_missing(lab):
+    # Product decision: a part that appears nowhere in the attempt is missing, not merely unverified.
     procedure, template = _accepted(lab)
     report = _check(lab, procedure, template, NEVER_SEEN, "white")
     step = {item["step_id"]: item for item in report["report"]["steps"]}["s3"]
-    assert step["verdict"] == "CANNOT_VERIFY" and step["error_category"] != "MISSING_COMPONENT"
+    assert step["verdict"] == "FAIL" and step["error_category"] == "MISSING_COMPONENT"
     assert step["evidence"][0]["evidence_class"] == "NOT_OBSERVED" and step["basis"] == "not_observed"
-    assert report["overall"] == "INCONCLUSIVE"
+    assert report["overall"] == "FAIL" and report["report"]["reinspection"]["status"] == "not_needed"
 
 
 def test_human_observation_is_evidence_with_provenance_and_keeps_the_machine_reading(lab):

@@ -61,7 +61,7 @@ The core of the verifier, `backend/app/verification/` (role mapping, action alig
 | A partial view supports a part that ends up inside another. | `e9018a5` |
 | Steps are matched to the action that moved their part. | `e7eaeca` |
 | DINOv2 appearance matches count as sightings of a part. | `29cc5ca`, `19dd462`, `049ed06` |
-| A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, leaves its condition CANNOT VERIFY, marked "not seen anywhere", and goes to the second look and the reviewer checkpoint. It is not called missing without a direct observation of absence. | `596663a`, `31f82f5`, `a86697f`, `3adbb17`, `39444b8` |
+| A part that never appears in the attempt, in the analysis or in any SAM box matched to its learned appearance, fails its condition as a missing component, so a second look cannot pass it. A recording that shows none of the parts stays unresolved. | `596663a`, `31f82f5`, `a86697f`, `3adbb17` |
 
 ## Human input
 

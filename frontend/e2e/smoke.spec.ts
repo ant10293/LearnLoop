@@ -44,8 +44,7 @@ test("teach, review, accept, verify, inspect evidence, confirm, export", async (
   await expect(page.locator(".overall")).toContainText("FAIL", { timeout: 60_000 });
   const detail = page.getByRole("region", { name: /Details for/ });
   await expect(detail).toContainText("Missing component");
-  // A missing part fails only on a direct report of absence where it belongs. A part never seen anywhere stays CANNOT VERIFY.
-  await expect(detail).toContainText("The expected part was not seen in that view");
+  await expect(detail).toContainText("Not seen anywhere in this recording");
   await page.screenshot({ path: "test-results/3-fail.png", fullPage: true });
 
   const seeks = page.locator("video");
