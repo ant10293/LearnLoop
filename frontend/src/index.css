@@ -523,6 +523,7 @@ button.linkish {
 .lab-inline { display: inline; }
 .lab-title { font-size: 1.5rem; }
 .lab-form { display: grid; gap: 0.8rem; }
+.lab-form > .btn { justify-self: start; }
 .lab-form .tabs { margin-bottom: 0; }
 .lab-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.75rem; }
 .lab-truth { border: 1px solid var(--line); border-radius: 8px; padding: 0.6rem 0.8rem; display: grid; gap: 0.5rem; }
