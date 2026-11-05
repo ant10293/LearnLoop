@@ -1135,3 +1135,63 @@ def test_a_reviewer_picks_a_look_alike_and_attempts_are_told_what_to_tell_apart(
     sent = stub.calls[-1].user_prompt
     assert "- red cylinder: round top. Not to be confused with: red cube (large red cube). A reviewer confirmed this identity" in sent
     assert accepted["acceptance_status"] == "accepted"
+
+
+def test_a_reviewer_redraws_boxes_and_marks_frames_and_the_corrections_outlive_new_views(lab, monkeypatch):
+    from app.config import settings
+    from app.pipeline import object_views
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    answer_text = "\n".join(_sam_line(frame, [(0, 10)]) for frame in range(4))
+
+    class FakeSam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            return SimpleNamespace(text=answer_text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    ids = [item["local_id"] for item in json.loads(stub.text)["objects"]]
+    box = {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    stub.locate_text = json.dumps({"objects": [{"local_id": ids[0], "bbox": box}] + [{"local_id": local_id, "bbox": None} for local_id in ids[1:]]})
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Corrections"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    base = f"/api/learnloop/runs/{run['id']}/objects"
+    first = client.get(base).json()["objects"][ids[0]]
+    assert [row["time"] for row in first["track"]] == [round(index / object_views.SAM_FPS, 3) for index in range(4)]
+    old_cell = first["cells"][0]["url"]
+
+    # Not in frame on SAM's first box: that frame is gone, and the cell shows the next frame SAM found in its second.
+    marked = client.put(f"{base}/{ids[0]}/corrections", json={"time": 0.0, "box": None}).json()["objects"][ids[0]]
+    assert [row["time"] for row in marked["track"]] == [round(index / object_views.SAM_FPS, 3) for index in range(1, 4)]
+    assert marked["corrections"] == [{"time": 0.0, "frame_index": 0, "box": None}]
+    assert marked["cells"][0]["frame_time"] == round(1 / object_views.SAM_FPS, 3)
+
+    # A box SAM never found, drawn on a frame of its own.
+    drawn = client.put(f"{base}/{ids[1]}/corrections", json={"time": 0.17, "box": {"x": 0.5, "y": 0.4, "w": 0.2, "h": 0.3}}).json()
+    item = drawn["objects"][ids[1]]
+    assert item["track"] == [{"time": round(2 / object_views.SAM_FPS, 3), "x": 0.5, "y": 0.4, "w": 0.2, "h": 0.3, "status": "human"}]
+    assert item["cells"][0]["status"] == "human" and item["cells"][0]["url"] and item["seen_cells"] == 1
+    assert client.get(item["cells"][0]["url"]).status_code == 200
+    # The same file name is versioned, so a redrawn crop is not served from a stale cache.
+    assert drawn["objects"][ids[0]]["cells"][0]["url"] != old_cell
+
+    assert client.put(f"{base}/{ids[1]}/corrections", json={"time": 0.5, "box": {"x": 0.5, "y": 0.4, "w": 0.001, "h": 0.3}}).status_code == 400
+    assert client.put(f"{base}/missing/corrections", json={"time": 0.5, "box": None}).status_code == 404
+
+    # The corrections are kept apart from SAM's answers and survive making the views again.
+    remade = client.post(f"{base}/run", json={"allow_live": True})
+    assert remade.status_code == 200, remade.text
+    _run_job(run["id"])
+    again = client.get(base).json()["objects"]
+    assert [row["status"] for row in again[ids[1]]["track"]] == ["human"]
+    assert len(again[ids[0]]["track"]) == 3
+    raw = json.loads((object_views.views_dir(run["id"]) / "raw_tracks.json").read_text())["sightings"]
+    assert ids[1] not in raw and len(raw[ids[0]]) == 4
+
+    undone = client.delete(f"{base}/{ids[0]}/corrections", params={"frame_index": 0}).json()["objects"][ids[0]]
+    assert len(undone["track"]) == 4 and undone["corrections"] == []
+    assert client.delete(f"{base}/{ids[0]}/corrections", params={"frame_index": 0}).status_code == 404

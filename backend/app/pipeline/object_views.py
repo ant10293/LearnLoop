@@ -8,6 +8,10 @@ SAM request follows those boxes forward. Each box is then checked against DINOv2
 appearance references (appearance_stage.py): a demonstration learns them here, an attempt
 reads its procedure's. A rejected box stays in raw_tracks.json and is not drawn. No box
 decides a verdict. A failure leaves the analysis in place.
+
+A reviewer can redraw an object's box on one frame or mark it not in that frame. Those
+corrections are kept apart from SAM's answers, in box_corrections.json, and replace SAM's
+box on that frame whenever the views are drawn, including after they are made again.
 """
 
 from __future__ import annotations
@@ -59,6 +63,9 @@ _LONG_SIDE = 1080
 _CROP_SIDE = 160
 _PADDING = 0.15
 _MANIFEST = "manifest.json"
+_RAW = "raw_tracks.json"
+# Outside the views folder, so making the views again never removes a reviewer's work.
+_CORRECTIONS = "box_corrections.json"
 _LOCATE_OUTPUT_TOKENS = 8_000
 # A box over most of the frame is the scene, not one part.
 _MAX_SEED_AREA = 0.5
@@ -199,7 +206,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     requests += recovery.get("requests", 0)
     replayed += recovery.get("replayed_requests", 0)
     _write_raw(run.id, tracked, checked)
-    manifest = _render(run.id, document, media, tracked, _last_frame_time(video), checked)
+    manifest = _render(run.id, document, media, with_corrections(tracked, read_corrections(run.id)), _last_frame_time(video), checked)
     manifest.update(
         {
             "source": model_id,
@@ -720,18 +727,134 @@ def _write_raw(run_id: str, tracked: dict[str, list[Sighting]], checked) -> None
     samples = {}
     if checked and checked.used:
         samples = {local_id: rows for local_id, rows in checked.rows.items()}
-    (views_dir(run_id) / "raw_tracks.json").write_text(json.dumps({"sightings": out, "appearance_samples": samples}))
+    (views_dir(run_id) / _RAW).write_text(json.dumps({"sightings": out, "appearance_samples": samples}))
 
 
-_STATUS_RANK = {"validated": 3, "recovered": 3, "ambiguous": 2, "provisional": 1}
+# A reviewer's box is shown before any box SAM proposed for the same cell.
+_STATUS_RANK = {"human": 4, "validated": 3, "recovered": 3, "ambiguous": 2, "provisional": 1}
+HUMAN = "human"
 
 
 def _shown(sightings: list[Sighting], checked, local_id: str) -> list[Sighting]:
     """Boxes drawn as the object. A rejected box, or one a recovered box replaced, is kept in raw_tracks.json, not here."""
-    return [item for item in sorted(sightings, key=lambda item: item.timestamp) if item.status in app_.SHOWN and not item.superseded]
+    return [
+        item
+        for item in sorted(sightings, key=lambda item: item.timestamp)
+        if (item.status in app_.SHOWN or item.status == HUMAN) and not item.superseded
+    ]
 
 
-def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float, checked=None) -> dict:
+def frame_index_at(time: float) -> int:
+    """The tracked copy's frame at a timestamp. Frame k shows time k / SAM_FPS."""
+    return max(int(round(time * SAM_FPS)), 0)
+
+
+def read_corrections(run_id: str) -> dict[str, dict[str, dict]]:
+    """Reviewer corrections by object id, then by frame index as a string."""
+    try:
+        return json.loads(data_path("runs", run_id, _CORRECTIONS).read_text()).get("objects") or {}
+    except (OSError, ValueError):
+        return {}
+
+
+def _write_corrections(run_id: str, objects: dict) -> None:
+    path = data_path("runs", run_id, _CORRECTIONS)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    tmp.write_text(json.dumps({"objects": {key: value for key, value in objects.items() if value}}, indent=2))
+    tmp.replace(path)
+
+
+def save_correction(run_id: str, local_id: str, frame_index: int, box: dict | None, reviewer: str = "") -> dict:
+    """box None means the reviewer saw that the object is not in this frame."""
+    from app.models.util import utcnow
+
+    objects = read_corrections(run_id)
+    mark = {
+        "frame_index": frame_index,
+        "time": round(frame_index / SAM_FPS, 3),
+        "box": box,
+        "absent": box is None,
+        "reviewer": reviewer,
+        "created_at": utcnow().isoformat(),
+        "provenance": "HUMAN_CORRECTION",
+    }
+    objects.setdefault(local_id, {})[str(frame_index)] = mark
+    _write_corrections(run_id, objects)
+    return mark
+
+
+def remove_correction(run_id: str, local_id: str, frame_index: int) -> bool:
+    objects = read_corrections(run_id)
+    if objects.get(local_id, {}).pop(str(frame_index), None) is None:
+        return False
+    _write_corrections(run_id, objects)
+    return True
+
+
+def with_corrections(tracked: dict[str, list[Sighting]], corrections: dict[str, dict[str, dict]]) -> dict[str, list[Sighting]]:
+    """SAM's boxes with every corrected frame replaced by the reviewer's box, or left empty when it was marked not in frame."""
+    out = {local_id: list(sightings) for local_id, sightings in tracked.items()}
+    for local_id, marks in corrections.items():
+        frames = {int(index) for index in marks}
+        kept = [item for item in out.get(local_id, []) if item.record.frame_index not in frames]
+        kept += [_human_sighting(mark) for mark in marks.values() if mark.get("box")]
+        out[local_id] = kept
+    return out
+
+
+def _human_sighting(mark: dict) -> Sighting:
+    index = int(mark["frame_index"])
+    record = SamRecord(frame_index=index, track_id=HUMAN, x1=0, y1=0, x2=0, y2=0, width=0, height=0, confidence=None, mask_payload="", mask_encoding="")
+    return Sighting(index / SAM_FPS, dict(mark["box"]), record, status=HUMAN, provenance=HUMAN, reason="drawn by a reviewer")
+
+
+def tracked_frame_count(run_id: str) -> int:
+    capture = cv2.VideoCapture(str(views_dir(run_id) / f"tracked_{SAM_FPS:g}fps.mp4"))
+    try:
+        return int(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    finally:
+        capture.release()
+
+
+def redraw(run_id: str, video: VideoAsset) -> dict:
+    """Draw the views again from SAM's stored boxes and the reviewer's corrections. Sends nothing to a provider."""
+    from app.pipeline.infer import load_working
+
+    manifest = read_manifest(run_id)
+    try:
+        raw = json.loads((views_dir(run_id) / _RAW).read_text())["sightings"]
+    except (OSError, ValueError, KeyError) as exc:
+        raise ValueError("These object views were made before corrections were possible. Make them again first.") from exc
+    if manifest is None:
+        raise ValueError("This analysis has no object views.")
+    tracked = {local_id: [_stored_sighting(row) for row in rows] for local_id, rows in raw.items()}
+    tracked = with_corrections(tracked, read_corrections(run_id))
+    media = _low_rate_copy(resolve_stored(video.stored_path), views_dir(run_id) / f"tracked_{SAM_FPS:g}fps.mp4")
+    rendered = _render(run_id, load_working(run_id), media, tracked, _last_frame_time(video), keep=manifest.get("objects") or {})
+    manifest["objects"] = rendered["objects"]
+    (views_dir(run_id) / _MANIFEST).write_text(json.dumps(manifest, indent=2))
+    return manifest
+
+
+def _stored_sighting(row: dict) -> Sighting:
+    """A SAM box as raw_tracks.json kept it. Its mask is not kept, so a thumbnail made from it is a rectangle."""
+    record = SamRecord(
+        frame_index=int(row["frame_index"]), track_id=str(row.get("sam_track_id") or ""), x1=0, y1=0, x2=0, y2=0, width=0, height=0,
+        confidence=row.get("confidence"), mask_payload="", mask_encoding="",
+    )
+    return Sighting(
+        float(row["time"]), dict(row["box"]), record,
+        status=row.get("status") or "provisional", provenance=row.get("provenance") or "sam",
+        reason=row.get("reason") or "", superseded=bool(row.get("superseded")),
+    )
+
+
+def _render(
+    run_id: str, document: AnalysisDocument, media: Path, tracked: dict[str, list[Sighting]], last_frame: float, checked=None, keep: dict | None = None
+) -> dict:
+    """keep is the objects of the views drawn before. A thumbnail whose first view did not change is kept, since
+    a redraw from stored boxes has no mask to cut it out again."""
     directory = views_dir(run_id)
     times = _cell_times(last_frame)
     tracked = {local_id: _shown(sightings, checked, local_id) for local_id, sightings in tracked.items()}
@@ -761,8 +884,14 @@ def _render(run_id: str, document: AnalysisDocument, media: Path, tracked: dict[
                     confidence = sighting.record.confidence
                     frame_time = round(sighting.timestamp, 3)
             cells.append({"time": round(moment, 3), "frame_time": frame_time, "image": image, "confidence": confidence, "status": sighting.status if image else None})
+        before = (keep or {}).get(item.local_id) or {}
+        first = _first(sightings) if sightings else None
+        same_first = (
+            first is not None and first.status != HUMAN and before.get("thumbnail") and before.get("first_seen") == round(first.timestamp, 3)
+            and (directory / before["thumbnail"]).exists()
+        )
         objects[item.local_id] = {
-            "thumbnail": _thumbnail(directory, position, sightings, frames),
+            "thumbnail": before["thumbnail"] if same_first else _thumbnail(directory, position, sightings, frames),
             "cells": cells,
             "seen_cells": sum(cell["image"] is not None for cell in cells),
             "first_seen": round(_first(sightings).timestamp, 3) if sightings else None,

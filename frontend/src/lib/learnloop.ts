@@ -319,14 +319,23 @@ export interface ObjectView {
   /** What the analysis called the object. */
   label: string;
   thumbnail_url: string | null;
-  cells: { time: number; frame_time?: number | null; url: string | null; confidence?: number | null }[];
+  /** status "human" is a box a reviewer drew. */
+  cells: { time: number; frame_time?: number | null; url: string | null; confidence?: number | null; status?: string | null }[];
   seen_cells: number;
   track?: TrackBox[];
+  /** A reviewer's boxes and not-in-frame marks, one per frame. box null means not in frame. */
+  corrections?: BoxCorrection[];
+}
+
+export interface BoxCorrection {
+  time: number;
+  frame_index: number;
+  box: { x: number; y: number; w: number; h: number } | null;
 }
 
 export interface TrackBox {
   time: number;
-  /** validated or recovered: appearance agrees. provisional or ambiguous: drawn as unconfirmed. */
+  /** validated or recovered: appearance agrees. provisional or ambiguous: drawn as unconfirmed. human: a reviewer drew it. */
   status?: string;
   x: number;
   y: number;
@@ -430,6 +439,10 @@ export const api = {
   procedureRecording: (videoId: string) => request<Recording>(`/api/learnloop/recordings/${videoId}`),
   run: (runId: string) => request<Run>(`/api/learnloop/runs/${runId}`),
   objectViews: (runId: string) => request<ObjectViews>(`/api/learnloop/runs/${runId}/objects`),
+  correctBox: (runId: string, localId: string, time: number, box: { x: number; y: number; w: number; h: number } | null) =>
+    request<ObjectViews>(`/api/learnloop/runs/${runId}/objects/${encodeURIComponent(localId)}/corrections`, { method: "PUT", body: JSON.stringify({ time, box }) }),
+  undoBoxCorrection: (runId: string, localId: string, frameIndex: number) =>
+    request<ObjectViews>(`/api/learnloop/runs/${runId}/objects/${encodeURIComponent(localId)}/corrections?frame_index=${frameIndex}`, { method: "DELETE" }),
   remakeObjectViews: (runId: string, allowLive: boolean) => post<ObjectViews>(`/api/learnloop/runs/${runId}/objects/run`, { allow_live: allowLive }),
   learn: (id: string, runId: string) => post<Template>(`/api/learnloop/procedures/${id}/learn`, { run_id: runId }),
   revise: (templateId: string, patch: TemplatePatch) => request<Template>(`/api/workflow-templates/${templateId}`, { method: "PATCH", body: JSON.stringify(patch) }),

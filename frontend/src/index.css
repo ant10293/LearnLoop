@@ -245,10 +245,41 @@ code { font-family: "IBM Plex Mono", monospace; font-size: 0.85em; }
 .asset-preview-close:hover, .asset-preview-action:hover { background: rgba(255, 255, 255, 0.15); color: #fff; }
 .asset-preview-filename { max-width: 40vw; overflow: hidden; color: #fff; font-size: 1.1rem; text-overflow: ellipsis; white-space: nowrap; }
 .asset-preview-actions { position: absolute; top: 10px; right: 16px; z-index: 1; display: flex; align-items: center; gap: 4px; }
+.asset-preview-tools { position: absolute; top: 10px; left: 50%; z-index: 1; display: flex; align-items: center; gap: 4px; max-width: calc(100vw - 32px); padding: 2px; background: rgba(0, 0, 0, 0.6); border-radius: 22px; transform: translateX(-50%); white-space: nowrap; }
+.asset-preview-tools:empty { display: none; }
+/* Too narrow for the name, the capsule, and the icons on one line: the capsule drops below them. */
+@media (max-width: 900px) {
+  .asset-preview-tools { top: 58px; flex-wrap: wrap; justify-content: center; white-space: normal; }
+  .asset-preview-note { top: 112px; }
+}
 .asset-preview-action { padding: 8px; color: #9aa0a6; border-radius: 50%; transition: background 0.15s, color 0.15s; }
 .asset-preview-viewport { display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; overflow: auto; padding: 3rem 4rem; }
 .asset-preview-action.has-label { gap: 6px; padding: 8px 12px; font-size: 0.875rem; border-radius: 18px; }
 .asset-preview-box { position: absolute; border: 2px solid #00e5ff; border-radius: 2px; pointer-events: none; }
+.asset-preview-box.is-replaced { opacity: 0.35; border-style: dashed; }
+.asset-preview-box.is-draft { border-color: #ffd54a; background: rgba(255, 213, 74, 0.12); pointer-events: auto; cursor: move; }
+.asset-preview-handle { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; background: #ffd54a; border: 1px solid #111; border-radius: 1px; }
+/* The square is small, but the area that catches the pointer is not. */
+.asset-preview-handle::after { content: ""; position: absolute; inset: -5px; }
+.asset-preview-handle.is-nw { left: 0; top: 0; cursor: nwse-resize; }
+.asset-preview-handle.is-n { left: 50%; top: 0; cursor: ns-resize; }
+.asset-preview-handle.is-ne { left: 100%; top: 0; cursor: nesw-resize; }
+.asset-preview-handle.is-e { left: 100%; top: 50%; cursor: ew-resize; }
+.asset-preview-handle.is-se { left: 100%; top: 100%; cursor: nwse-resize; }
+.asset-preview-handle.is-s { left: 50%; top: 100%; cursor: ns-resize; }
+.asset-preview-handle.is-sw { left: 0; top: 100%; cursor: nesw-resize; }
+.asset-preview-handle.is-w { left: 0; top: 50%; cursor: ew-resize; }
+@media (pointer: coarse) { .asset-preview-handle { width: 16px; height: 16px; margin: -8px 0 0 -8px; } }
+.shot-frame.is-drawing { cursor: crosshair; touch-action: none; }
+.asset-preview-action:disabled { opacity: 0.45; cursor: not-allowed; }
+.asset-preview-action:focus-visible { outline: 2px solid #fff; outline-offset: 1px; }
+.asset-preview-action.is-primary { color: #111; background: #ffd54a; }
+.asset-preview-action.is-primary:hover:not(:disabled) { color: #111; background: #ffe17a; }
+.asset-preview-hint { padding: 0 8px; color: #e8eaed; font-size: 0.875rem; }
+.asset-preview-note { position: absolute; top: 64px; left: 50%; z-index: 1; max-width: min(36rem, calc(100vw - 32px)); padding: 6px 12px; color: #e8eaed; font-size: 0.85rem; background: rgba(0, 0, 0, 0.6); border-radius: 16px; transform: translateX(-50%); }
+.asset-preview-note.is-error { color: #fff; background: #b3261e; }
+.object-frame.human { outline: 2px solid var(--human); outline-offset: -2px; }
+button.object-frame.missing { cursor: pointer; }
 .asset-preview-img { max-width: 90vw; max-height: 85vh; min-width: min(512px, 90vw); min-height: min(512px, 70vh); object-fit: contain; user-select: none; }
 .shot-frame { position: relative; display: block; width: fit-content; max-width: 100%; line-height: 0; transition: transform 0.15s ease; }
 .shot-score { position: absolute; top: 0.35rem; right: 0.35rem; z-index: 1; padding: 0.12rem 0.35rem; color: #fff; font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 11px; line-height: 1.2; background: color-mix(in srgb, #090b10 78%, transparent); border-radius: 4px; pointer-events: none; }

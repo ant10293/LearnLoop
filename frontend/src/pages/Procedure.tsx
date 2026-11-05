@@ -1,12 +1,12 @@
-import { X } from "lucide-react";
+import { EyeOff, X } from "lucide-react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { AssetPreview } from "../components/AssetPreview";
+import { AssetPreview, type PreviewEditor, type PreviewImage } from "../components/AssetPreview";
 import { AnalysisStages, ObjectViewsNotice } from "../components/RecordingAnalysis";
 import { Bone, FieldBone, TagBone } from "../components/Skeleton";
 import { ErrorNote, Film, Layout, ReviewTag } from "../components/ui";
-import { api, appearanceLine, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
+import { api, appearanceLine, boxAt, clock, conditionText, frameUrl, relationLabels, learnedProcedures, type Condition, type ObjectView, type ObjectViews, type Procedure, type Recording, type Role, type Template, type TemplateDependency, type TemplatePatch, type TemplateStep } from "../lib/learnloop";
 
 type StepEdit = Partial<Pick<TemplateStep, "name" | "expected_action" | "completion_text" | "removed" | "requirement_status">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] };
 type OtherStep = { step_id: string; number: number; name: string; follows: boolean };
@@ -205,7 +205,7 @@ export function ProcedurePage() {
                 <input className="field" aria-label={`Label for ${role.label}`} value={labels[role.role_id] ?? role.label} onChange={(event) => setLabels((current) => ({ ...current, [role.role_id]: event.target.value }))} />
               </div>
               {remaking && <Bone width="100%" />}
-              {view && <ObjectTimeline view={view} label={role.label} videoId={template.source_video_id} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
+              {view && <ObjectTimeline view={view} label={role.label} videoId={template.source_video_id} runId={template.source_run_id} localId={role.source_object_ids[0]} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
               <IdentityCheck
                 role={role}
                 label={labels[role.role_id] ?? role.label}
@@ -283,44 +283,118 @@ function IdentityCheck({ role, label, answered, onPick }: { role: Role; label: s
   );
 }
 
-function ObjectTimeline({ view, label, videoId, onSeek }: { view: ObjectView; label: string; videoId: string; onSeek: (time: number) => void }) {
+/** The reviewer's mark on the frame a cell shows, if any. Times are rounded to the millisecond on both sides. */
+function markAt(view: ObjectView, time: number) {
+  return view.corrections?.find((mark) => Math.abs(mark.time - time) < 0.002);
+}
+
+/** A not-in-frame mark that emptied a cell: the nearest one within a second of it. */
+function absentNear(view: ObjectView, time: number) {
+  return (view.corrections ?? [])
+    .filter((mark) => !mark.box && Math.abs(mark.time - time) <= 1)
+    .sort((a, b) => Math.abs(a.time - time) - Math.abs(b.time - time))[0];
+}
+
+type TimelineFrame = PreviewImage & { time: number; frameIndex?: number };
+
+function ObjectTimeline({ view, label, videoId, runId, localId, onSeek }: { view: ObjectView; label: string; videoId: string; runId?: string; localId?: string; onSeek: (time: number) => void }) {
+  const client = useQueryClient();
   const [preview, setPreview] = useState<number | null>(null);
-  if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;
+  // A cell with no crop opens on its own, on the full frame, so a box SAM missed can be drawn.
+  const [emptyAt, setEmptyAt] = useState<number | null>(null);
+  const editable = Boolean(runId && localId);
+  if (view.seen_cells === 0 && !editable) return <p className="muted small">SAM did not find this object.</p>;
   // The crop came from the most confident sighting in its second, so the cell is labeled, seeks, and shows its full frame at that sighting's own time.
   const shown = (cell: ObjectView["cells"][number]) => cell.frame_time ?? cell.time;
-  const frames = view.cells.flatMap((cell) => {
+  const frames: TimelineFrame[] = view.cells.flatMap((cell) => {
     if (!cell.url) return [];
-    const box = boxAt(view.track ?? [], shown(cell));
-    return [{ time: shown(cell), src: cell.url, filename: `${label} · ${clock(shown(cell))}`, confidence: cell.confidence, full: box ? { src: frameUrl(videoId, box.time), box } : undefined }];
+    const time = shown(cell);
+    const box = boxAt(view.track ?? [], time);
+    const mark = markAt(view, time);
+    return [{
+      time,
+      frameIndex: mark?.frame_index,
+      src: cell.url,
+      filename: `${label} · ${clock(time)}`,
+      confidence: cell.status === "human" ? null : cell.confidence,
+      full: { src: frameUrl(videoId, time), box },
+      correction: mark ? { label: "You drew this box." } : undefined,
+    }];
   });
+  const emptyFrame = (time: number): TimelineFrame => {
+    const mark = absentNear(view, time);
+    const at = mark?.time ?? time;
+    return {
+      time: at,
+      frameIndex: mark?.frame_index,
+      src: "",
+      filename: `${label} · ${clock(at)}`,
+      full: { src: frameUrl(videoId, at), box: null },
+      correction: mark ? { label: "You marked this object not in this frame." } : undefined,
+    };
+  };
+  const refresh = (data: ObjectViews) => client.setQueryData(["object-views", runId], data);
+  const editor: PreviewEditor | undefined = editable
+    ? {
+        onSave: async (image, box) => {
+          const frame = image as TimelineFrame;
+          refresh(await api.correctBox(runId!, localId!, frame.time, box));
+          if (!frame.src) setEmptyAt(null);
+        },
+        onUndo: async (image) => {
+          const frame = image as TimelineFrame;
+          if (frame.frameIndex == null) return;
+          refresh(await api.undoBoxCorrection(runId!, localId!, frame.frameIndex));
+          if (!frame.src) setEmptyAt(null);
+        },
+      }
+    : undefined;
   return (
-    <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
-      {view.cells.map((cell) => {
-        const stamp = clock(shown(cell));
-        return (
-          <div key={cell.time} role="listitem" className="object-cell" aria-label={cell.url ? `Frame at ${stamp}` : `Not found at ${stamp}`}>
-            {cell.url ? (
-              <button
-                type="button"
-                className="object-frame"
-                title={stamp}
-                aria-label={`Expand frame at ${stamp}`}
-                onClick={() => {
-                  onSeek(shown(cell));
-                  setPreview(frames.findIndex((frame) => frame.src === cell.url));
-                }}
-              >
-                <img src={cell.url} alt="" loading="lazy" />
-              </button>
-            ) : (
-              <div className="object-frame missing" title={`Not found · ${stamp}`} />
-            )}
-            <div className="object-time mono">{stamp}</div>
-          </div>
-        );
-      })}
-      {preview != null && <AssetPreview images={frames} startIndex={preview} onClose={() => setPreview(null)} />}
-    </div>
+    <>
+      {view.seen_cells === 0 && <p className="muted small">SAM did not find this object. Open a frame to draw its box.</p>}
+      <div className="object-timeline" role="list" aria-label={`Timeline for ${label}`}>
+        {view.cells.map((cell) => {
+          const stamp = clock(shown(cell));
+          const absent = !cell.url && absentNear(view, cell.time);
+          return (
+            <div key={cell.time} role="listitem" className="object-cell" aria-label={cell.url ? `Frame at ${stamp}` : `Not found at ${stamp}`}>
+              {cell.url ? (
+                <button
+                  type="button"
+                  className={`object-frame${cell.status === "human" ? " human" : ""}`}
+                  title={cell.status === "human" ? `${stamp} · drawn by you` : stamp}
+                  aria-label={`Expand frame at ${stamp}`}
+                  onClick={() => {
+                    onSeek(shown(cell));
+                    setPreview(frames.findIndex((frame) => frame.src === cell.url));
+                  }}
+                >
+                  <img src={cell.url} alt="" loading="lazy" />
+                </button>
+              ) : editable ? (
+                <button
+                  type="button"
+                  className="object-frame missing"
+                  title={absent ? `Marked not in frame · ${stamp}` : `Not found · ${stamp}`}
+                  aria-label={`Open empty frame at ${stamp}`}
+                  onClick={() => {
+                    onSeek(cell.time);
+                    setEmptyAt(cell.time);
+                  }}
+                >
+                  {absent && <EyeOff size={14} strokeWidth={1.8} aria-hidden="true" />}
+                </button>
+              ) : (
+                <div className="object-frame missing" title={`Not found · ${stamp}`} />
+              )}
+              <div className="object-time mono">{stamp}</div>
+            </div>
+          );
+        })}
+        {preview != null && frames.length > 0 && <AssetPreview images={frames} startIndex={preview} editor={editor} onClose={() => setPreview(null)} />}
+        {emptyAt != null && <AssetPreview images={[emptyFrame(emptyAt)]} editor={editor} onClose={() => setEmptyAt(null)} />}
+      </div>
+    </>
   );
 }
 

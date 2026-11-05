@@ -72,6 +72,21 @@ class ObjectViewsBody(BaseModel):
     allow_live: bool = False
 
 
+class CorrectionBox(BaseModel):
+    x: float
+    y: float
+    w: float
+    h: float
+
+
+class BoxCorrectionBody(BaseModel):
+    """A reviewer's box for one object on one frame. box None means the object is not in that frame."""
+
+    time: float
+    box: CorrectionBox | None = None
+    reviewer: str = ""
+
+
 class LearnBody(BaseModel):
     run_id: str
 
@@ -319,14 +334,97 @@ def run_objects(run_id: str, session: Session = Depends(db)) -> dict:
     base = f"/api/learnloop/runs/{run_id}/objects"
     # What the analysis called each object, for a page with no learned roles to name its boxes.
     labels = {item.local_id: item.label for item in load_working(run_id).objects} if manifest["objects"] else {}
+    corrections = object_views.read_corrections(run_id)
+    directory = object_views.views_dir(run_id)
+
+    def url(name: str | None) -> str | None:
+        if not name:
+            return None
+        # A redraw writes the same file names, so the version keeps a browser from showing the old picture.
+        try:
+            version = (directory / name).stat().st_mtime_ns
+        except OSError:
+            version = 0
+        return f"{base}/{name}?v={version}"
+
     for local_id, item in manifest["objects"].items():
         item["label"] = labels.get(local_id) or local_id
-        item["thumbnail_url"] = f"{base}/{item['thumbnail']}" if item.get("thumbnail") else None
+        item["thumbnail_url"] = url(item.get("thumbnail"))
         item["cells"] = [
-            {"time": cell["time"], "frame_time": cell.get("frame_time"), "url": f"{base}/{cell['image']}" if cell["image"] else None, "confidence": cell.get("confidence")}
+            {
+                "time": cell["time"],
+                "frame_time": cell.get("frame_time"),
+                "url": url(cell["image"]),
+                "confidence": cell.get("confidence"),
+                "status": cell.get("status"),
+            }
             for cell in item["cells"]
         ]
+        item["corrections"] = sorted(
+            ({"time": mark["time"], "frame_index": mark["frame_index"], "box": mark.get("box")} for mark in (corrections.get(local_id) or {}).values()),
+            key=lambda mark: mark["frame_index"],
+        )
     return manifest
+
+
+@router.put("/runs/{run_id}/objects/{local_id}/corrections")
+def correct_object_box(run_id: str, local_id: str, payload: BoxCorrectionBody, session: Session = Depends(db)) -> dict:
+    """Redraw one object's box on one frame, or mark it not in that frame. Sends nothing to a provider."""
+    video = _correctable(session, run_id, local_id)
+    box = None if payload.box is None else _clean_box(payload.box)
+    index = object_views.frame_index_at(payload.time)
+    frames = object_views.tracked_frame_count(run_id)
+    if frames:
+        index = min(index, frames - 1)
+    object_views.save_correction(run_id, local_id, index, box, payload.reviewer.strip())
+    _redraw(run_id, video)
+    return run_objects(run_id, session)
+
+
+@router.delete("/runs/{run_id}/objects/{local_id}/corrections")
+def undo_object_box(run_id: str, local_id: str, frame_index: int, session: Session = Depends(db)) -> dict:
+    """Remove a reviewer's correction, so SAM's box for that frame, if any, is drawn again."""
+    video = _correctable(session, run_id, local_id)
+    if not object_views.remove_correction(run_id, local_id, frame_index):
+        raise HTTPException(404, "No correction on that frame.")
+    _redraw(run_id, video)
+    return run_objects(run_id, session)
+
+
+def _correctable(session: Session, run_id: str, local_id: str) -> VideoAsset:
+    run = session.get(AnalysisRun, run_id)
+    if run is None:
+        raise HTTPException(404, "analysis not found")
+    manifest = object_views.read_manifest(run_id)
+    if not manifest or local_id not in (manifest.get("objects") or {}):
+        raise HTTPException(404, "This analysis has no object views for that object.")
+    if not (object_views.views_dir(run_id) / "raw_tracks.json").exists():
+        raise HTTPException(409, "These object views were made before boxes could be corrected. Make them again first.")
+    if _remaking_views(session, run_id):
+        raise HTTPException(409, "Object views are being made again. Correct boxes once they finish.")
+    video = session.get(VideoAsset, run.video_id)
+    if video is None:
+        raise HTTPException(404, "recording not found")
+    return video
+
+
+# A box smaller than this on either side is a slip of the mouse, not a part.
+_MIN_SIDE = 0.005
+
+
+def _clean_box(box: CorrectionBox) -> dict:
+    x0, y0 = min(max(box.x, 0.0), 1.0), min(max(box.y, 0.0), 1.0)
+    x1, y1 = min(max(box.x + box.w, 0.0), 1.0), min(max(box.y + box.h, 0.0), 1.0)
+    if x1 - x0 < _MIN_SIDE or y1 - y0 < _MIN_SIDE:
+        raise HTTPException(400, "The box is too small. Drag across the whole object.")
+    return {"x": round(x0, 4), "y": round(y0, 4), "w": round(x1 - x0, 4), "h": round(y1 - y0, 4)}
+
+
+def _redraw(run_id: str, video: VideoAsset) -> None:
+    try:
+        object_views.redraw(run_id, video)
+    except ValueError as exc:
+        raise HTTPException(409, str(exc)) from exc
 
 
 @router.post("/runs/{run_id}/objects/run")

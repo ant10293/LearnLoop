@@ -643,6 +643,110 @@ describe("Procedure review", () => {
     expect(dialog.querySelector(".asset-preview-box")).toBeNull();
   });
 
+  describe("Correcting an object's boxes", () => {
+    const cells = [{ time: 0, frame_time: 0.25, url: "/f0", confidence: 0.9 }, { time: 1, url: null }];
+    const views = (over: Record<string, unknown> = {}) => ({ objects: { o1: { thumbnail_url: null, seen_cells: 1, cells, track: [{ time: 0.25, x: 0.1, y: 0.1, w: 0.2, h: 0.2 }], corrections: [], ...over } } });
+    const tracked = () => {
+      const item = template("accepted");
+      item.document.roles = [{ ...roles[0], source_object_ids: ["o1"] as never[] }, roles[1]];
+      return item;
+    };
+    function serve(after: unknown) {
+      return mockApi((url, init) => {
+        if (url.endsWith("/procedures/p1")) return { body: { ...procedure(), template: tracked(), templates: [tracked()] } };
+        if (url.includes("/objects/o1/corrections")) return { body: after };
+        if (url.endsWith("/objects")) return { body: views() };
+        return init ? undefined : undefined;
+      });
+    }
+    function sized(dialog: HTMLElement) {
+      const image = dialog.querySelector("img") as HTMLImageElement;
+      Object.defineProperty(image, "naturalWidth", { value: 1000 });
+      Object.defineProperty(image, "naturalHeight", { value: 500 });
+      image.getBoundingClientRect = () => ({ left: 0, top: 0, width: 1000, height: 500, right: 1000, bottom: 500, x: 0, y: 0, toJSON: () => ({}) });
+      fireEvent.load(image);
+    }
+    function drag(from: [number, number], to: [number, number], on?: HTMLElement) {
+      if (!("PointerEvent" in window)) vi.stubGlobal("PointerEvent", MouseEvent);
+      const frame = screen.getByTestId("preview-frame");
+      fireEvent.pointerDown(on ?? frame, { clientX: from[0], clientY: from[1], pointerId: 1 });
+      fireEvent.pointerMove(frame, { clientX: to[0], clientY: to[1], pointerId: 1 });
+      fireEvent.pointerUp(frame, { clientX: to[0], clientY: to[1], pointerId: 1 });
+    }
+
+    it("redraws a box on the full frame and saves it for that frame", async () => {
+      const calls = serve(views({ cells: [{ ...cells[0], status: "human", url: "/f0?v=2" }, cells[1]], corrections: [{ time: 0.25, frame_index: 3, box: { x: 0.2, y: 0.2, w: 0.3, h: 0.4 } }] }));
+      show("/procedures/p1/procedure");
+      fireEvent.click(await screen.findByRole("button", { name: "Expand frame at 0:00.3" }));
+      const dialog = screen.getByRole("dialog");
+      fireEvent.click(screen.getByRole("button", { name: "Redraw box" }));
+      sized(dialog);
+      // Redrawing starts from the box SAM drew, so it can be adjusted. A drag outside it starts over.
+      expect(screen.getByLabelText("New box").style.left).toBe("10%");
+      expect(screen.getByRole("button", { name: "Save box" })).toBeEnabled();
+      drag([500, 300], [200, 100]);
+      expect(screen.getByLabelText("New box").style.left).toBe("20%");
+      fireEvent.click(screen.getByRole("button", { name: "Save box" }));
+      await waitFor(() => expect(calls.some((call) => call.init?.method === "PUT")).toBe(true));
+      const put = calls.find((call) => call.init?.method === "PUT")!;
+      expect(put.url).toBe("/api/learnloop/runs/r1/objects/o1/corrections");
+      expect(JSON.parse(String(put.init?.body))).toEqual({ time: 0.25, box: { x: 0.2, y: 0.2, w: 0.3, h: 0.4 } });
+      // The saved box is shown as the reviewer's, with a way to undo it.
+      expect(await screen.findByText("You drew this box.")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Undo correction" })).toBeInTheDocument();
+      expect(screen.queryByText("90%")).toBeNull();
+    });
+
+    it("resizes and moves a drawn box before it is saved", async () => {
+      const calls = serve(views());
+      show("/procedures/p1/procedure");
+      fireEvent.click(await screen.findByRole("button", { name: "Open empty frame at 0:01.0" }));
+      const dialog = screen.getByRole("dialog");
+      fireEvent.click(screen.getByRole("button", { name: "Draw box" }));
+      sized(dialog);
+      expect(screen.queryByLabelText("New box")).toBeNull();
+      drag([100, 100], [300, 200]);
+      // The bottom right corner pulled out, then the left edge pulled past the right one: the sides swap.
+      drag([300, 200], [500, 300], screen.getByLabelText("Resize se"));
+      drag([100, 150], [700, 150], screen.getByLabelText("Resize w"));
+      // The whole box moved up, and kept inside the frame.
+      drag([600, 200], [600, 0], screen.getByLabelText("New box"));
+      const box = screen.getByLabelText("New box");
+      expect([box.style.left, box.style.top, box.style.width, box.style.height]).toEqual(["50%", "0%", "20%", "40%"]);
+      fireEvent.click(screen.getByRole("button", { name: "Save box" }));
+      await waitFor(() => expect(calls.some((call) => call.init?.method === "PUT")).toBe(true));
+      expect(JSON.parse(String(calls.find((call) => call.init?.method === "PUT")!.init?.body)).box).toEqual({ x: 0.5, y: 0, w: 0.2, h: 0.4 });
+    });
+
+    it("marks the object not in a frame", async () => {
+      const calls = serve(views({ seen_cells: 0, cells: [{ time: 0, url: null }, cells[1]], track: [], corrections: [{ time: 0.25, frame_index: 3, box: null }] }));
+      show("/procedures/p1/procedure");
+      fireEvent.click(await screen.findByRole("button", { name: "Expand frame at 0:00.3" }));
+      fireEvent.click(screen.getByRole("button", { name: "Not in frame" }));
+      await waitFor(() => expect(calls.some((call) => call.init?.method === "PUT")).toBe(true));
+      expect(JSON.parse(String(calls.find((call) => call.init?.method === "PUT")!.init?.body))).toEqual({ time: 0.25, box: null });
+      // The only frame is gone, so the preview closes and the cell says why it is empty.
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(screen.getByRole("button", { name: "Open empty frame at 0:00.0" })).toHaveAttribute("title", "Marked not in frame · 0:00.0");
+    });
+
+    it("draws a box on a frame where SAM found nothing", async () => {
+      const calls = serve(views());
+      show("/procedures/p1/procedure");
+      fireEvent.click(await screen.findByRole("button", { name: "Open empty frame at 0:01.0" }));
+      const dialog = screen.getByRole("dialog");
+      expect(dialog.querySelector("img")).toHaveAttribute("src", "/api/learnloop/videos/v1/frame?t=1.00");
+      expect(screen.queryByRole("button", { name: "Not in frame" })).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: "Draw box" }));
+      sized(dialog);
+      drag([100, 100], [300, 200]);
+      fireEvent.click(screen.getByRole("button", { name: "Save box" }));
+      await waitFor(() => expect(calls.some((call) => call.init?.method === "PUT")).toBe(true));
+      expect(JSON.parse(String(calls.find((call) => call.init?.method === "PUT")!.init?.body))).toEqual({ time: 1, box: { x: 0.1, y: 0.2, w: 0.2, h: 0.2 } });
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    });
+  });
+
   it("learns once when the analysis finished after leaving Teach", async () => {
     const calls = mockApi((url) => {
       if (url.endsWith("/procedures/p1")) return { body: untaught("completed") };
