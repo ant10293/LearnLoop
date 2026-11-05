@@ -65,6 +65,7 @@ actions: one action per physical operation, with its outcome. An attempt that di
 workflow_steps: the ordered procedure seen in the recording, usually one step per placed or changed object. required_objects lists every object in the step, including the object it is placed on. action_local_ids lists its actions. time_start and time_end bound the work. completion_condition states the visible end state. observed_result states what was seen.
 dependencies: only between different steps. Use necessary_physical only when the physics requires the order.
 ambiguities: anything hidden, unclear, or not verifiable, including hand occlusion of the final state.
+uncertainty on every action and step is a number from 0 to 1, where 0 means certain and 1 means unknown. It is not a percentage: write 0.3, not 30.
 Keep descriptions and notes to one short sentence.
 """.strip()
 

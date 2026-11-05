@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.enums import (
     ActionOutcome,
@@ -22,6 +22,9 @@ from app.schemas.enums import (
     RelationKind,
     Visibility,
 )
+
+
+_UNCERTAINTY = "A number from 0 to 1, where 0 means certain and 1 means unknown. Not a percentage."
 
 
 class _Closed(BaseModel):
@@ -117,7 +120,7 @@ class GeneratedAction(_Closed):
     initial_state: str
     final_state: str
     outcome: ActionOutcome
-    uncertainty: float
+    uncertainty: float = Field(description=_UNCERTAINTY)
     evidence: GeneratedEvidence
 
 
@@ -132,7 +135,7 @@ class GeneratedStep(_Closed):
     action_local_ids: list[str]
     time_start: float | None
     time_end: float | None
-    uncertainty: float
+    uncertainty: float = Field(description=_UNCERTAINTY)
     evidence: GeneratedEvidence
     parallel_group: str | None
 
