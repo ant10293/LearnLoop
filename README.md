@@ -2,6 +2,8 @@
 
 **Teach a physical workflow once. Check a new attempt against what was learned.**
 
+**Demo video:** [youtu.be/MBAlZAZBJjg](https://youtu.be/MBAlZAZBJjg)
+
 LearnLoop learns a short physical procedure from a recorded demonstration and checks a later recording against it. Meta models propose what happened and follow each part through the video. A person reviews the procedure. Deterministic code decides each verdict and shows the evidence.
 
 ## The problem
