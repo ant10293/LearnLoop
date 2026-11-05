@@ -546,6 +546,8 @@ button.linkish {
 .lab-table th, .lab-table td { text-align: left; padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
 .lab-table th { font-weight: 600; color: var(--muted); font-size: 0.78rem; white-space: nowrap; }
 .lab-table td.mono { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.lab-table tr.row-link { cursor: pointer; }
+.lab-table tr.row-link:hover { background: #f5f7fb; }
 .lab-table tr.errored { background: #fdf6f6; }
 .lab-table tr.current-row { background: #eef2fd; }
 .lab-table tr.unstable-row td:first-child { box-shadow: inset 3px 0 0 var(--unknown); }

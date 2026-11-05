@@ -1,7 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
-import { ErrorNote, Layout } from "../components/ui";
+import { ErrorNote, Layout, useRowLink } from "../components/ui";
 import { humanizeModel } from "../lib/learnloop";
 import {
   fraction,
@@ -140,6 +140,7 @@ type SortKey = "run" | "verdict" | "runtime" | "evidence";
 
 function RunMatrix({ batch }: { batch: Batch }) {
   const navigate = useNavigate();
+  const rowLink = useRowLink();
   const [sort, setSort] = useState<SortKey>("run");
   const [filter, setFilter] = useState("all");
   const stepIds = batch.steps.map((step) => step.step_id);
@@ -195,7 +196,7 @@ function RunMatrix({ batch }: { batch: Batch }) {
           </thead>
           <tbody>
             {rows.map((run) => (
-              <tr key={run.id} className={run.status === "failed" ? "errored" : ""}>
+              <tr key={run.id} {...rowLink(labPath(batch.project_id, batch.id, run.id))} className={`row-link${run.status === "failed" ? " errored" : ""}`}>
                 <td className="mono"><Link to={labPath(batch.project_id, batch.id, run.id)}>{String(run.index).padStart(2, "0")}</Link></td>
                 <td>
                   <span className={`verdict ${runTone(run)}`}>{runLabel(run)}</span>
@@ -392,6 +393,7 @@ function Usage({ metrics }: { metrics: VerificationMetrics | LearningMetrics }) 
 
 function LearningView({ batch }: { batch: Batch }) {
   const metrics = batch.metrics as LearningMetrics;
+  const rowLink = useRowLink();
   const distribution = (values: Record<string, number>) => Object.entries(values).map(([key, count]) => `${count}× ${key}`).join(", ") || "—";
   return (
     <>
@@ -411,7 +413,7 @@ function LearningView({ batch }: { batch: Batch }) {
             <thead><tr><th>Run</th><th>Status</th><th>Steps</th><th>Required</th><th>Checkable</th><th>Roles</th><th>Objects</th><th>Validation</th><th>Reviewable</th><th>Runtime</th><th>Inference</th><th /></tr></thead>
             <tbody>
               {batch.runs.map((run) => (
-                <tr key={run.id} className={run.status === "failed" ? "errored" : ""}>
+                <tr key={run.id} {...rowLink(labPath(batch.project_id, batch.id, run.id))} className={`row-link${run.status === "failed" ? " errored" : ""}`}>
                   <td className="mono"><Link to={labPath(batch.project_id, batch.id, run.id)}>{String(run.index).padStart(2, "0")}</Link></td>
                   <td><span className={`verdict ${run.status === "completed" ? "muted" : runTone(run)}`}>{run.status.toUpperCase()}</span>{run.status === "failed" && <div className="lab-error-text small" title={run.error}>{run.error_kind.replaceAll("_", " ")}</div>}{run.progress && <div className="muted small">{run.progress.phase} {run.progress.stages_done}/{run.progress.stages_total}</div>}</td>
                   <td className="mono">{run.result.step_count ?? "—"}</td>

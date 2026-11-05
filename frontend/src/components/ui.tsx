@@ -1,8 +1,22 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode, type RefObject } from "react";
 import { Maximize, Minimize, Pause, Play, Volume2, VolumeX } from "lucide-react";
-import { Link, NavLink } from "react-router-dom";
+import { Link, NavLink, useNavigate } from "react-router-dom";
 import { boxBetween, clock, smoothTrack, reviewLabels, verdictLabels, verdictTone, type FilmTrack, type ReviewState } from "../lib/learnloop";
 import { Bone } from "./Skeleton";
+
+/** Props that make a whole table row open `to`. Links, buttons, and form controls inside the row keep their own clicks,
+ * a drag that selected text is not a click, and Cmd/Ctrl-click opens a new tab. */
+export function useRowLink() {
+  const navigate = useNavigate();
+  return (to: string) => ({
+    className: "row-link",
+    onClick: (event: MouseEvent<HTMLTableRowElement>) => {
+      if ((event.target as HTMLElement).closest("a, button, input, select, textarea, label") || window.getSelection()?.toString()) return;
+      if (event.metaKey || event.ctrlKey) window.open(to, "_blank");
+      else navigate(to);
+    },
+  });
+}
 
 export function Logo() {
   return (

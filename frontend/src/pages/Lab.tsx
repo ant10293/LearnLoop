@@ -2,7 +2,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import { RecordingDrop } from "../components/RecordingDrop";
-import { ErrorNote, Layout } from "../components/ui";
+import { ErrorNote, Layout, useRowLink } from "../components/ui";
 import { ApiError, api, humanizeModel, type Recording } from "../lib/learnloop";
 import { isActive, lab, labPath, seconds, versionLabel, type BatchBrief, type GroundTruth, type Mode } from "../lib/reliability";
 
@@ -60,6 +60,7 @@ export function LegacyLabRedirect() {
 function History({ items }: { items: BatchBrief[] }) {
   const revisions = new Set(items.map((item) => item.git_revision));
   const fingerprints = new Set(items.map((item) => item.fingerprint));
+  const rowLink = useRowLink();
   return (
     <div className="table-wrap">
       <table className="lab-table">
@@ -77,7 +78,7 @@ function History({ items }: { items: BatchBrief[] }) {
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr key={item.id}>
+            <tr key={item.id} {...rowLink(labPath(item.project_id, item.id))}>
               <td><Link to={labPath(item.project_id, item.id)}>{item.name}</Link>{item.template_version ? <div className="muted small">v{item.template_version}</div> : null}</td>
               <td>{item.mode}{!item.independent_inference && <div className="muted small">replay allowed</div>}</td>
               <td><span className={`lab-status ${item.status}`}>{item.status}</span></td>
