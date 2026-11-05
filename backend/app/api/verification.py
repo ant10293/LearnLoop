@@ -35,6 +35,8 @@ class RoleEdit(BaseModel):
     role_id: str
     cardinality: Literal["one", "group"] | None = None
     label: str | None = None
+    # The reviewer answered which part this is. With a label from the role's look-alikes, the role becomes that part.
+    confirm_identity: bool | None = None
 
 
 class TemplateEdit(BaseModel):

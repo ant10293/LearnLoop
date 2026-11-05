@@ -96,6 +96,13 @@ class Coverage(BaseModel):
     media_transforms: list[dict] = Field(default_factory=list)
 
 
+class LookAlike(BaseModel):
+    """A different kind of part this object could be mistaken for, and what that part would show instead."""
+
+    label: str
+    difference: str = ""
+
+
 class ObjectPrediction(BaseModel):
     local_id: str
     label: str
@@ -104,6 +111,7 @@ class ObjectPrediction(BaseModel):
     initial_state: str = ""
     final_state: str = ""
     uncertain_identity: bool = False
+    look_alikes: list[LookAlike] = Field(default_factory=list)
     manipulated: bool = False
     confidence: float | None = None
     accepted: bool = True

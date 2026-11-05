@@ -125,6 +125,12 @@ a.card:hover { border-color: var(--ink); }
 .review.human_reviewed { color: var(--human); background: var(--human-bg); border-color: transparent; }
 .review.accepted { color: var(--pass); background: var(--pass-bg); border-color: transparent; }
 .edited { color: var(--human); font-size: 0.8rem; }
+.identity-check { display: flex; flex-direction: column; gap: 0.4rem; padding: 0.55rem; border: 1px dashed var(--line); border-radius: 8px; }
+.identity-options { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.identity-option { display: flex; flex-direction: column; align-items: flex-start; gap: 0.1rem; flex: 1 1 9rem; min-width: 0; padding: 0.4rem 0.55rem; color: inherit; font: inherit; font-size: 0.85rem; text-align: left; background: var(--surface); border: 1px solid var(--line); border-radius: 7px; cursor: pointer; overflow-wrap: anywhere; }
+.identity-option:hover { border-color: var(--ink); }
+.identity-option:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.identity-option[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 .error { color: var(--fail); background: var(--fail-bg); padding: 0.6rem 0.8rem; border-radius: 7px; font-size: 0.9rem; margin: 0.5rem 0; overflow-wrap: anywhere; }
 .warning { color: var(--unknown); background: var(--unknown-bg); padding: 0.45rem 0.7rem; border-radius: 6px; font-size: 0.85rem; }
 .status-line { color: var(--muted); font-size: 0.9rem; }

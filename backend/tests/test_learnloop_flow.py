@@ -17,7 +17,7 @@ def _evidence(kind="DIRECTLY_OBSERVED", start=None, end=None, stamps=None):
     return {"classification": kind, "note": "authored", "frame_timestamps": stamps or [], "time_start": start, "time_end": end}
 
 
-def _object(local_id, label, visual):
+def _object(local_id, label, visual, look_alikes=None):
     return {
         "local_id": local_id,
         "label": label,
@@ -26,6 +26,7 @@ def _object(local_id, label, visual):
         "initial_state": "separate",
         "final_state": "placed",
         "uncertain_identity": False,
+        "look_alikes": look_alikes or [],
     }
 
 
@@ -1089,3 +1090,48 @@ def test_deleting_a_procedure_removes_its_recordings_versions_and_reports(lab):
     for video in videos:
         assert client.get(f"/api/learnloop/recordings/{video}").status_code == 404
     assert client.delete(f"/api/learnloop/procedures/{procedure}").status_code == 404
+
+
+def test_a_reviewer_picks_a_look_alike_and_attempts_are_told_what_to_tell_apart(lab):
+    client, stub, tmp = lab
+    uncertain = {
+        **_object("red", "red cube", "large red cube", [{"label": "red cylinder", "difference": "round top"}, {"label": "red cube", "difference": "same"}]),
+        "uncertain_identity": True,
+    }
+    stub.text = json.loads(DEMONSTRATION)
+    stub.text["objects"] = [uncertain if item["local_id"] == "red" else item for item in stub.text["objects"]]
+    stub.text = json.dumps(stub.text)
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Look-alikes"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    assert "look_alikes" in stub.calls[-1].system_prompt
+    draft = client.post(f"/api/learnloop/procedures/{procedure}/learn", json={"run_id": run["id"]}).json()
+    red = next(role for role in draft["document"]["roles"] if role["role_id"] == "role:red")
+    # The object's own label is never its own look-alike.
+    assert red["look_alikes"] == [{"label": "red cylinder", "difference": "round top"}]
+    assert red["uncertain"] is True and red["identity_confirmed"] is False
+
+    edited = client.patch(
+        f"/api/workflow-templates/{draft['id']}",
+        json={"roles": [{"role_id": "role:red", "label": "red cylinder", "confirm_identity": True}]},
+    ).json()
+    red = next(role for role in edited["document"]["roles"] if role["role_id"] == "role:red")
+    assert red["label"] == "red cylinder" and red["original_label"] == "red cube"
+    assert red["visual_characteristics"] == "round top"
+    assert red["look_alikes"] == [{"label": "red cube", "difference": "large red cube"}]
+    assert red["identity_confirmed"] is True and red["uncertain"] is False
+    assert {item["field"] for item in edited["document"]["review_log"]} == {"label", "identity_confirmed"}
+
+    # Confirming the model's own label keeps the look-alikes as they were.
+    blue = client.patch(
+        f"/api/workflow-templates/{edited['id']}", json={"roles": [{"role_id": "role:blue", "confirm_identity": True}]}
+    ).json()
+    blue_role = next(role for role in blue["document"]["roles"] if role["role_id"] == "role:blue")
+    assert blue_role["label"] == "blue cube" and blue_role["identity_confirmed"] is True
+
+    accepted = client.patch(f"/api/workflow-templates/{blue['id']}", json={"acceptance_status": "accepted"}).json()
+    stub.text = CORRECT
+    _analyze(client, _upload(client, procedure, _video(tmp / "attempt.mp4", "blue"), "execution"))
+    sent = stub.calls[-1].user_prompt
+    assert "- red cylinder: round top. Not to be confused with: red cube (large red cube). A reviewer confirmed this identity" in sent
+    assert accepted["acceptance_status"] == "accepted"

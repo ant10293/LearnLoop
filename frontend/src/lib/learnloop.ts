@@ -123,6 +123,16 @@ export interface Role {
   original_label: string;
   visual_characteristics: string;
   uncertain: boolean;
+  /** Other kinds of part the model said this could be mistaken for. Absent on procedures learned before look-alikes. */
+  look_alikes?: LookAlike[];
+  /** A reviewer answered which part this is. */
+  identity_confirmed?: boolean;
+}
+
+export interface LookAlike {
+  label: string;
+  /** What that other part would show that this one does not. */
+  difference: string;
 }
 
 export interface Template {
@@ -377,7 +387,7 @@ export interface TemplatePatch {
   name?: string;
   acceptance_status?: "accepted" | "draft";
   steps?: (Partial<Omit<TemplateStep, "completion_conditions" | "dependencies">> & { completion_conditions?: Partial<Condition>[]; order_after?: string[] })[];
-  roles?: { role_id: string; label: string }[];
+  roles?: { role_id: string; label?: string; confirm_identity?: boolean }[];
 }
 
 export const api = {

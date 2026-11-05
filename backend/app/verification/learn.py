@@ -21,6 +21,7 @@ from app.verification.schema import (
     CompletionPredicate,
     LearnedTemplate,
     ObjectRole,
+    RoleLookAlike,
     TemplateDependency,
     TemplateStep,
 )
@@ -124,6 +125,7 @@ def _roles(demo: AnalysisDocument) -> list[ObjectRole]:
                 source_object_ids=[item.local_id],
                 required=True,
                 uncertain=bool(item.uncertain_identity),
+                look_alikes=[RoleLookAlike(label=other.label, difference=other.difference) for other in item.look_alikes if other.label and other.label != item.label],
                 cardinality="one",
                 state_labels=labels,
                 relation_signature=relations,

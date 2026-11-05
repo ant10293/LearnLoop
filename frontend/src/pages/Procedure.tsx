@@ -39,6 +39,8 @@ export function ProcedurePage() {
   const learning = useRef("");
   const [steps, setSteps] = useState<Record<string, StepEdit>>({});
   const [labels, setLabels] = useState<Record<string, string>>({});
+  // Roles whose identity the reviewer answered on this page, not yet saved.
+  const [identities, setIdentities] = useState<Record<string, boolean>>({});
   const [title, setTitle] = useState("");
   const [seek, setSeek] = useState({ time: null as number | null, tick: 0 });
   const [error, setError] = useState("");
@@ -53,6 +55,7 @@ export function ProcedurePage() {
   useEffect(() => {
     setSteps({});
     setLabels({});
+    setIdentities({});
     setTitle("");
   }, [template?.id]);
 
@@ -105,14 +108,18 @@ export function ProcedurePage() {
 
   const demo = procedure.data?.recordings.find((item) => item.video.id === template.source_video_id);
   const roles = template.document.roles;
-  const dirty = Object.keys(steps).length > 0 || Object.keys(labels).length > 0 || Boolean(title);
+  const dirty = Object.keys(steps).length > 0 || Object.keys(labels).length > 0 || Object.keys(identities).length > 0 || Boolean(title);
   const change = (stepId: string, edit: StepEdit) => setSteps((current) => ({ ...current, [stepId]: { ...current[stepId], ...edit } }));
 
   function patch(): TemplatePatch {
     return {
       ...(title ? { name: title } : {}),
       steps: Object.entries(steps).map(([step_id, edit]) => ({ step_id, ...edit })),
-      roles: Object.entries(labels).map(([role_id, label]) => ({ role_id, label })),
+      roles: [...new Set([...Object.keys(labels), ...Object.keys(identities)])].map((role_id) => ({
+        role_id,
+        ...(labels[role_id] ? { label: labels[role_id] } : {}),
+        ...(identities[role_id] ? { confirm_identity: true } : {}),
+      })),
     };
   }
 
@@ -199,6 +206,15 @@ export function ProcedurePage() {
               </div>
               {remaking && <Bone width="100%" />}
               {view && <ObjectTimeline view={view} label={role.label} videoId={template.source_video_id} onSeek={(time) => setSeek((current) => ({ time, tick: current.tick + 1 }))} />}
+              <IdentityCheck
+                role={role}
+                label={labels[role.role_id] ?? role.label}
+                answered={Boolean(identities[role.role_id])}
+                onPick={(label) => {
+                  setLabels((current) => ({ ...current, [role.role_id]: label }));
+                  setIdentities((current) => ({ ...current, [role.role_id]: true }));
+                }}
+              />
               {role.original_label && <span className="edited">Human-corrected from “{role.original_label}”</span>}
             </div>
           );
@@ -244,6 +260,29 @@ function ProcedureView({ version, actions, notices, film, history, objects, step
 }
 
 /** Where SAM found the object, moment by moment. A blank cell means it was not found, not that it was gone. */
+/** Asks which part this is when the model named look-alikes. The answer is sent with every later attempt. */
+function IdentityCheck({ role, label, answered, onPick }: { role: Role; label: string; answered: boolean; onPick: (label: string) => void }) {
+  const others = role.look_alikes ?? [];
+  if (role.identity_confirmed) return <span className="edited">Identity confirmed by a reviewer</span>;
+  if (!others.length) return null;
+  const options = [{ label: role.label, difference: role.visual_characteristics }, ...others];
+  return (
+    <div className="identity-check" role="group" aria-label={`Which part is ${role.label}?`}>
+      <span className="small">
+        {role.uncertain ? "The model is not sure which part this is. Which is it?" : "This could be mistaken for a similar part. Which is it?"}
+      </span>
+      <div className="identity-options">
+        {options.map((option) => (
+          <button key={option.label} type="button" className="identity-option" aria-pressed={answered && label === option.label} onClick={() => onPick(option.label)}>
+            <span>{option.label}</span>
+            {option.difference && <span className="muted small">{option.difference}</span>}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ObjectTimeline({ view, label, videoId, onSeek }: { view: ObjectView; label: string; videoId: string; onSeek: (time: number) => void }) {
   const [preview, setPreview] = useState<number | null>(null);
   if (view.seen_cells === 0) return <p className="muted small">SAM did not find this object.</p>;

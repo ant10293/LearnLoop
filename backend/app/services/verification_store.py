@@ -28,7 +28,12 @@ from app.services.appearance import ensure_gallery, gallery_status
 from app.verification.engine import verify_execution
 from app.verification.learn import learn_template
 from app.verification.reinspect import plan_reinspections
-from app.verification.schema import CompletionPredicate, LearnedTemplate, TemplateDependency
+from app.verification.schema import (
+    CompletionPredicate,
+    LearnedTemplate,
+    RoleLookAlike,
+    TemplateDependency,
+)
 
 
 def create_template(
@@ -161,8 +166,14 @@ def revise_template(session: Session, template_id: str, patch: dict) -> dict:
             role.cardinality = change["cardinality"]
         if change.get("label") and change["label"] != role.label:
             log.append(_edit("label", role.role_id, role.label, change["label"]))
+            if change.get("confirm_identity"):
+                _swap_look_alike(role, change["label"])
             role.original_label = role.original_label or role.label
             role.label = change["label"]
+        if change.get("confirm_identity") and not role.identity_confirmed:
+            log.append(_edit("identity_confirmed", role.role_id, False, True))
+            role.identity_confirmed = True
+            role.uncertain = False
     if log:
         # Changed content has not been accepted, whatever the parent's status was.
         document.acceptance_status = "draft"
@@ -187,6 +198,19 @@ def revise_template(session: Session, template_id: str, patch: dict) -> dict:
     session.add(row)
     session.commit()
     return template_payload(row)
+
+
+def _swap_look_alike(role, label: str) -> None:
+    """The reviewer picked a look-alike: its distinguishing feature now describes the role, and the old label becomes the look-alike."""
+    picked = next((item for item in role.look_alikes if item.label == label), None)
+    if picked is None:
+        return
+    role.look_alikes = [
+        *[item for item in role.look_alikes if item is not picked],
+        RoleLookAlike(label=role.label, difference=role.visual_characteristics),
+    ]
+    if picked.difference:
+        role.visual_characteristics = picked.difference
 
 
 def _edit(field: str, target: str, before, after) -> dict:

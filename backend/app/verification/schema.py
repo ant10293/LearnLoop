@@ -81,6 +81,11 @@ class TemplateStep(BaseModel):
     human_edited: list[str] = Field(default_factory=list)
 
 
+class RoleLookAlike(BaseModel):
+    label: str
+    difference: str = ""
+
+
 class ObjectRole(BaseModel):
     role_id: str
     label: str = ""
@@ -94,6 +99,10 @@ class ObjectRole(BaseModel):
     relation_signature: list[str] = Field(default_factory=list)
     reference_area: float | None = None
     original_label: str = ""
+    # Other kinds of part the model said this could be mistaken for, and what each would show instead.
+    look_alikes: list[RoleLookAlike] = Field(default_factory=list)
+    # A reviewer answered which part this is.
+    identity_confirmed: bool = False
 
 
 class LearnedTemplate(BaseModel):

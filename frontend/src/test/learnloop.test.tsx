@@ -495,6 +495,38 @@ describe("Procedure review", () => {
     expect(patch.steps).toEqual([{ step_id: "s1", name: "Seat the cube" }]);
   });
 
+  it("asks which part an uncertain object is and sends the answer as a confirmed identity", async () => {
+    const unsure = { ...roles[0], label: "green washer", visual_characteristics: "closed flat ring", uncertain: true, look_alikes: [{ label: "green split washer", difference: "ring cut through with offset ends" }] };
+    const draft = { ...template("ai_draft"), document: { ...template("ai_draft").document, roles: [unsure, roles[1]] } };
+    const calls = mockApi((url, init) => {
+      if (url.includes("/workflow-templates/") && init?.method === "PATCH") return { body: draft };
+      if (url.endsWith("/procedures/p1")) return { body: procedure({ template: draft, templates: [draft] }) };
+      return undefined;
+    });
+    show("/procedures/p1/procedure");
+    expect(await screen.findByText("The model is not sure which part this is. Which is it?")).toBeTruthy();
+    // The gray base has no look-alikes, so it asks nothing.
+    expect(screen.getAllByRole("group", { name: /Which part is/ })).toHaveLength(1);
+    const split = screen.getByRole("button", { name: /green split washer/ });
+    expect(split).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(split);
+    expect(split).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByLabelText("Label for green washer")).toHaveValue("green split washer");
+    fireEvent.click(screen.getByRole("button", { name: "Save edits" }));
+    await waitFor(() => expect(calls.some((call) => call.init?.method === "PATCH")).toBe(true));
+    const patch = JSON.parse(String(calls.find((call) => call.init?.method === "PATCH")?.init?.body));
+    expect(patch.roles).toEqual([{ role_id: "role:green", label: "green split washer", confirm_identity: true }]);
+  });
+
+  it("does not ask again once a reviewer confirmed the identity", async () => {
+    const confirmed = { ...roles[0], look_alikes: [{ label: "green cylinder", difference: "round top" }], identity_confirmed: true };
+    const draft = { ...template("ai_draft"), document: { ...template("ai_draft").document, roles: [confirmed, roles[1]] } };
+    mockApi((url) => (url.endsWith("/procedures/p1") ? { body: procedure({ template: draft, templates: [draft] }) } : undefined));
+    show("/procedures/p1/procedure");
+    expect(await screen.findByText("Identity confirmed by a reviewer")).toBeTruthy();
+    expect(screen.queryByRole("group", { name: /Which part is/ })).toBeNull();
+  });
+
   it("edits each check on its own and keeps the rest", async () => {
     const second = { ...templateStep.completion_conditions[0], id: "rel:1", subject_role: "role:base", target_role: "role:green", relation: "inside" };
     const step = { ...templateStep, completion_conditions: [...templateStep.completion_conditions, second] };

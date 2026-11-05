@@ -223,6 +223,11 @@ class ReinspectionOutput(_Closed):
     ambiguities: list[GeneratedAmbiguity]
 
 
+class GeneratedLookAlike(_Closed):
+    label: str
+    difference: str
+
+
 class GuidedObject(_Closed):
     local_id: str
     label: str
@@ -231,6 +236,7 @@ class GuidedObject(_Closed):
     initial_state: str
     final_state: str
     uncertain_identity: bool
+    look_alikes: list[GeneratedLookAlike]
 
 
 class GuidedObservation(_Closed):
