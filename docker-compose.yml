@@ -1,0 +1,24 @@
+# Run LearnLoop with one command: docker compose up --build
+# Then open http://localhost:8080. Live Meta calls stay off unless .env turns them on.
+services:
+  api:
+    build: ./backend
+    env_file:
+      - path: .env
+        required: false
+    volumes:
+      # Kept apart from data/app, which scripts/dev.sh uses: stored media paths differ inside the container.
+      - learnloop-data:/app/data
+    restart: unless-stopped
+
+  web:
+    build: ./frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  learnloop-data:

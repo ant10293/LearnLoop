@@ -82,6 +82,19 @@ scripts/dev.sh
 
 Open http://127.0.0.1:5180. The API runs on port 8010.
 
+### Run with Docker
+
+Requires Docker with Compose 2.24 or newer. Nothing else needs installing.
+
+```bash
+docker compose up --build
+```
+
+Open http://localhost:8080. The first build takes a few minutes, because it installs PyTorch and fetches the DINOv2 weights into the image. If `.env` exists, Compose reads `MODEL_API_KEY` and `LEARNLOOP_LIVE_INFERENCE` from it.
+
+- Data lives in the `learnloop-data` volume, apart from `data/app`, which `scripts/dev.sh` uses. `docker compose down -v` deletes it.
+- DINOv2 runs on CPU in the container, because Docker on macOS cannot reach the Mac's GPU. Use `scripts/dev.sh` for day-to-day development and hot reload.
+
 ### Live analysis
 
 Live calls are off by default. A live analysis needs all three of these, and cached replay needs none of them:
