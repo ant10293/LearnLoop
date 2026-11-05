@@ -228,6 +228,28 @@ def cancel_batch(session: Session, batch_id: str) -> dict:
     return batch_payload(session, batch)
 
 
+def delete_batch(session: Session, batch_id: str) -> list[str]:
+    """Remove a finished experiment, its runs, and the verification reports they made. Returns the analysis runs
+    it launched, which the caller removes with their files. A running experiment must be canceled first."""
+    from app.models.verification import VerificationRunRow
+    from app.services.verification_store import _delete_reports
+
+    batch = _batch(session, batch_id)
+    if batch.status in ACTIVE:
+        raise ValueError("Cancel the experiment and let it stop before deleting it.")
+    runs = session.scalars(select(ReliabilityRun).where(ReliabilityRun.batch_id == batch.id)).all()
+    analysis_ids = [run.analysis_run_id for run in runs if run.analysis_run_id]
+    reports = {run.verification_id for run in runs if run.verification_id}
+    if analysis_ids:
+        reports |= set(session.scalars(select(VerificationRunRow.id).where(VerificationRunRow.execution_run_id.in_(analysis_ids))))
+    _delete_reports(session, list(reports))
+    for run in runs:
+        session.delete(run)
+    session.delete(batch)
+    session.commit()
+    return analysis_ids
+
+
 def cancel_run(session: Session, batch_id: str, run_id: str) -> dict:
     batch = _batch(session, batch_id)
     run = session.get(ReliabilityRun, run_id)

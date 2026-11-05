@@ -85,6 +85,17 @@ def cancel_batch(batch_id: str, session: Session = Depends(db)) -> dict:
     return _call(lambda: service.cancel_batch(session, batch_id))
 
 
+@router.delete("/batches/{batch_id}")
+def delete_batch(batch_id: str, session: Session = Depends(db)) -> dict:
+    from app.api.routes import delete_run
+    from app.models.runs import AnalysisRun
+
+    for run_id in _call(lambda: service.delete_batch(session, batch_id)):
+        if session.get(AnalysisRun, run_id) is not None:
+            delete_run(run_id, session)
+    return {"deleted": batch_id}
+
+
 @router.post("/batches/{batch_id}/runs/{run_id}/cancel")
 def cancel_run(batch_id: str, run_id: str, session: Session = Depends(db)) -> dict:
     return _call(lambda: service.cancel_run(session, batch_id, run_id))

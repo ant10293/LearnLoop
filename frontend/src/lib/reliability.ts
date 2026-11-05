@@ -336,6 +336,7 @@ export const lab = {
   batch: (id: string) => request<Batch>(`/api/reliability/batches/${id}`),
   create: (body: NewBatch) => request<Batch>("/api/reliability/batches", { method: "POST", body: JSON.stringify(body) }),
   cancel: (id: string) => request<Batch>(`/api/reliability/batches/${id}/cancel`, { method: "POST" }),
+  remove: (id: string) => request<{ deleted: string }>(`/api/reliability/batches/${id}`, { method: "DELETE" }),
   cancelRun: (id: string, runId: string) => request<Batch>(`/api/reliability/batches/${id}/runs/${runId}/cancel`, { method: "POST" }),
   groundTruth: (id: string, body: GroundTruth) => request<Batch>(`/api/reliability/batches/${id}/ground-truth`, { method: "PUT", body: JSON.stringify(body) }),
 };

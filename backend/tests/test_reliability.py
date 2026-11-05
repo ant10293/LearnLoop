@@ -415,6 +415,36 @@ def test_export_has_one_row_per_run(slow):
     assert listed[0]["id"] == done["id"] and listed[0]["summary"]["modal_agreement"] == 1.0
 
 
+def test_deleting_an_experiment_removes_its_runs_reports_and_analyses(slow):
+    from app.db import SessionLocal
+    from app.models.reliability import ReliabilityRun
+    from app.models.runs import AnalysisRun
+    from app.models.verification import VerificationRunRow
+
+    client, stub, tmp, gauge = slow
+    procedure, template = _accepted((client, stub, tmp))
+    video = _attempt(client, tmp, procedure)
+    stub.text = CORRECT
+    batch = _batch(client, project_id=procedure, video_id=video, template_id=template["id"], repetitions=2, max_concurrency=1)
+    assert client.delete(f"/api/reliability/batches/{batch['id']}").status_code == 400
+    done = _drive(batch["id"])
+    analyses = [run["analysis_run_id"] for run in done["runs"]]
+    reports = [run["verification_id"] for run in done["runs"]]
+    assert client.delete(f"/api/reliability/batches/{done['id']}").json() == {"deleted": done["id"]}
+    assert client.get(f"/api/reliability/batches/{done['id']}").status_code == 404
+    assert client.get("/api/reliability/batches").json() == []
+    session = SessionLocal()
+    try:
+        assert session.scalars(select(ReliabilityRun).where(ReliabilityRun.batch_id == done["id"])).all() == []
+        assert all(session.get(AnalysisRun, run_id) is None for run_id in analyses)
+        assert all(session.get(VerificationRunRow, report) is None for report in reports)
+    finally:
+        session.close()
+    assert not any((tmp / "runs" / run_id).exists() for run_id in analyses)
+    assert client.get(f"/api/learnloop/procedures/{procedure}").status_code == 200
+    assert client.delete("/api/reliability/batches/missing").status_code == 404
+
+
 # ---------------------------------------------------------------- learning mode
 
 

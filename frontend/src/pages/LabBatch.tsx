@@ -31,7 +31,10 @@ export function LabBatchPage() {
     queryFn: () => lab.batch(batchId),
     refetchInterval: (state) => (state.state.data && isActive(state.state.data.status) ? 1500 : false),
   });
+  const navigate = useNavigate();
   const [error, setError] = useState("");
+  const [removeError, setRemoveError] = useState("");
+  const [removing, setRemoving] = useState(false);
   const batch = query.data;
   const set = (next: Batch) => client.setQueryData(["lab-batch", batchId], next);
 
@@ -41,6 +44,22 @@ export function LabBatchPage() {
       set(await lab.cancel(batchId));
     } catch (exc) {
       setError((exc as Error).message);
+    }
+  }
+
+  async function remove() {
+    const madeOn = new Date(`${batch!.created_at}Z`).toLocaleString();
+    if (!window.confirm(`Delete the experiment “${batch!.name}” from ${madeOn}? Its runs, their analyses, and their reports will be removed. This cannot be undone.`)) return;
+    setRemoving(true);
+    setRemoveError("");
+    try {
+      await lab.remove(batchId);
+      client.removeQueries({ queryKey: ["lab-batch", batchId] });
+      await client.invalidateQueries({ queryKey: ["lab-batches"] });
+      navigate(labPath(id));
+    } catch (exc) {
+      setRemoveError((exc as Error).message);
+      setRemoving(false);
     }
   }
 
@@ -55,6 +74,10 @@ export function LabBatchPage() {
           <Overview batch={batch} onCancel={() => void cancel()} />
           {batch.mode === "verification" ? <VerificationView batch={batch} onChange={set} /> : <LearningView batch={batch} />}
           <Reproducibility batch={batch} />
+          <ErrorNote message={removeError} />
+          <div className="procedure-footer">
+            <button className="btn danger" disabled={removing || isActive(batch.status)} title={isActive(batch.status) ? "Cancel the experiment and let it stop before deleting it." : undefined} onClick={() => void remove()}>Delete experiment</button>
+          </div>
         </>
       )}
     </Layout>
