@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { modalVerdicts, percent, runLabel, type LabRun } from "../lib/reliability";
@@ -153,6 +153,49 @@ describe("New experiment", () => {
     fireEvent.click(within(await screen.findByRole("dialog")).getByRole("button", { name: "Approve and start" }));
     await waitFor(() => expect(posts().at(-1)?.allow_live).toBe(true));
     expect(posts().at(-1)).toMatchObject({ mode: "verification", project_id: "p1", template_id: "t1", video_id: "v2", repetitions: 5, max_concurrency: 2, independent_inference: true });
+  });
+
+  it("keeps an uploaded attempt listed with its preparation progress", async () => {
+    let uploadedSoFar = options;
+    const uploaded = { id: "v9", filename: "new-attempt.mp4", duration_sec: 8, playback_url: "", thumbnail_url: "", ingest_status: "processing", ingest_progress: 40, ingest_detail: "Preparing playback" };
+    mockApi((url) => {
+      if (url === "/api/reliability/options") return { body: uploadedSoFar };
+      if (url === "/api/reliability/batches") return { body: [] };
+      if (url === "/api/settings") return { body: { video_storage: "copy" } };
+      if (url === "/api/learnloop/procedures/p1") return { body: { id: "p1", name: "Cubes", recordings: [{ role: "execution", video: uploaded, run: null }], templates: [], verifications: [] } };
+      return undefined;
+    });
+    let request!: { status: number; response: unknown; onload?: () => void; upload: { onprogress?: (event: unknown) => void } };
+    vi.stubGlobal("URL", Object.assign(URL, { createObjectURL: () => "blob:clip", revokeObjectURL: () => undefined }));
+    vi.stubGlobal("XMLHttpRequest", class {
+      status = 0;
+      response: unknown = null;
+      onload?: () => void;
+      upload = {} as { onprogress?: (event: unknown) => void };
+      constructor() { request = this; }
+      open() {}
+      send() {}
+    });
+    const { container } = show("/procedures/p1/lab");
+    fireEvent.click(await screen.findByText("Upload another attempt to this procedure"));
+    fireEvent.change(container.querySelector('input[type="file"]')!, { target: { files: [new File(["x"], "new-attempt.mp4", { type: "video/mp4" })] } });
+    await waitFor(() => expect(request).toBeTruthy());
+    act(() => request.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 2 }));
+    expect(await screen.findByRole("progressbar")).toHaveTextContent("50%");
+    const start = screen.getByRole("button", { name: "Review and start" });
+    expect(start).not.toBeDisabled();
+    const procedure = options.procedures[0];
+    uploadedSoFar = { ...options, procedures: [{ ...procedure, recordings: [...procedure.recordings, { video_id: "v9", filename: "new-attempt.mp4", role: "execution", duration_sec: 8, ready: false }] }] };
+    await act(async () => {
+      request.status = 200;
+      request.response = { role: "execution", video: uploaded, run: null };
+      request.onload?.();
+    });
+    expect(await screen.findByText("Preparing playback")).toBeInTheDocument();
+    expect(screen.getByText("new-attempt.mp4")).toBeInTheDocument();
+    expect(screen.getByRole("progressbar")).toHaveTextContent("40%");
+    await waitFor(() => expect(screen.getByRole("button", { name: "Review and start" })).toBeDisabled());
+    expect(screen.getByText("Waiting for the selected recording to finish uploading.")).toBeInTheDocument();
   });
 
   it("lets repetitions and concurrency be cleared and retyped", async () => {
