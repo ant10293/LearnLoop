@@ -34,7 +34,7 @@ export function LabPage() {
       <div className="heading">
         <div>
           <h1>Reliability Lab</h1>
-          <p className="muted">Run one recording of this procedure through verification or learning several times under identical conditions, then compare the results. Developer tool.</p>
+          <p className="muted">Run one recording of this procedure through verification or learning several times under identical conditions, then compare the results.</p>
         </div>
       </div>
       {options.data && !procedure ? <p className="error" role="alert">This procedure was not found.</p> : <NewExperiment projectId={id} />}
