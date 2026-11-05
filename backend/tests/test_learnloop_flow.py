@@ -587,6 +587,38 @@ def test_a_recording_can_be_referenced_and_removed(lab):
     assert client.get(f"/api/learnloop/procedures/{procedure}").json()["recordings"] == []
 
 
+def test_a_recording_whose_file_is_missing_does_not_block_uploading_it_again(lab, monkeypatch):
+    from app.api import product
+    from app.config import settings
+    from app.services.ingest import process_accepted
+
+    client, stub, tmp = lab
+    procedure = client.post("/api/learnloop/procedures", json={"name": "Cube"}).json()["id"]
+    path = _video(tmp / "moved.mp4", "red")
+    made = client.post(f"/api/learnloop/procedures/{procedure}/recordings/reference", json={"path": str(path), "role": "execution"})
+    assert made.status_code == 200, made.text
+    gone = made.json()["video"]["id"]
+    copy = tmp / "copy.mp4"
+    copy.write_bytes(path.read_bytes())
+    path.unlink()
+
+    # The queued path, as the app runs it: accept now, ingest in the background.
+    monkeypatch.setattr(settings, "ingest_inline", False)
+    queued: list[str] = []
+    monkeypatch.setattr(product, "schedule_ingest", queued.append)
+    video = _upload(client, procedure, copy, "execution")
+    assert queued == [video] and video != gone
+    process_accepted(video)
+    detail = client.get(f"/api/learnloop/recordings/{video}").json()["video"]
+    assert detail["ingest_status"] == "ready", detail.get("ingest_error")
+
+    # Uploading the same file again now finds the working copy, never the row whose file is gone.
+    monkeypatch.setattr(settings, "ingest_inline", True)
+    again = tmp / "again.mp4"
+    again.write_bytes(copy.read_bytes())
+    assert _upload(client, procedure, again, "execution") == video
+
+
 def test_removing_an_attempt_removes_its_report_but_the_source_recording_stays(lab):
     client = lab[0]
     procedure, template = _accepted(lab)

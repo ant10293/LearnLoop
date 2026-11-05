@@ -82,12 +82,20 @@ def ingest_file(
         _step(on_progress, mark, "Hashing")
 
     checksum = sha256_file(source, on_hashed)
-    existing = session.scalar(
-        select(VideoAsset).where(
-            _same_project(project_id),
-            VideoAsset.checksum_sha256 == checksum,
-            VideoAsset.id != (video.id if video is not None else ""),
-        )
+    # A row whose file is gone is not a copy to keep: the new upload stands in for it.
+    existing = next(
+        (
+            row
+            for row in session.scalars(
+                select(VideoAsset).where(
+                    _same_project(project_id),
+                    VideoAsset.checksum_sha256 == checksum,
+                    VideoAsset.id != (video.id if video is not None else ""),
+                )
+            )
+            if not _file_gone(row)
+        ),
+        None,
     )
     if existing is not None:
         if video is not None:
@@ -524,6 +532,16 @@ def _project_or_library(session: Session, project_id: str | None) -> Project | N
     if project is None:
         raise VideoError("project not found")
     return project
+
+
+def _file_gone(video: VideoAsset) -> bool:
+    """True when the row's original is no longer on disk, whether copied in or referenced."""
+    if not video.stored_path:
+        return False
+    try:
+        return not resolve_stored(video.stored_path).is_file()
+    except ValueError:
+        return True
 
 
 def _same_project(project_id: str | None):
