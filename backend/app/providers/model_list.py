@@ -26,21 +26,6 @@ _LIVE_NOTE = (
     "Reported by the connected account. This model is not in the price catalog, "
     "so the call stays unpriced."
 )
-_SKIPPED_API = (
-    "embedding",
-    "whisper",
-    "tts",
-    "audio",
-    "realtime",
-    "moderation",
-    "transcribe",
-    "dall-e",
-    "babbage",
-    "davinci",
-    "imagen",
-    "sora",
-)
-
 _lock = threading.Lock()
 _cache: dict[str, tuple[float, list[dict]]] = {}
 _saved: dict[tuple[str, str], dict] = {}
@@ -261,19 +246,6 @@ def _fetch_records(provider_id: str, secret: str, base_url: str) -> list[dict]:
             return []
         return _meta_models(secret)
     return []
-
-
-def chat_model(model_id: str) -> bool:
-    name = model_id.lower()
-    if any(part in name for part in _SKIPPED_API):
-        return False
-    return name.startswith(("gpt-", "o1", "o3", "o4", "chatgpt-", "codex-"))
-
-
-
-
-
-
 
 
 def _meta_models(secret: str) -> list[dict]:

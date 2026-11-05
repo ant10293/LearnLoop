@@ -40,7 +40,7 @@ Each step reports **PASS**, **FAIL**, **CANNOT VERIFY**, or **NOT APPLICABLE**, 
 | Second look at an unresolved step | `muse-wonder-1.0` | Meta Responses API, a few frames and one question |
 | Appearance references for each object | DINOv2 ViT-S/14 (Meta open weights) | Runs locally with frozen weights |
 
-No non-Meta model runs in this build. The `openai` Python package is only the HTTP client for Meta's compatible API. OpenCV, NumPy, and ffmpeg handle media and use no AI models.
+No non-Meta model runs in this build. Meta API calls go through a small httpx client (`backend/app/providers/meta_client.py`); no third-party AI SDK is installed. OpenCV, NumPy, and ffmpeg handle media and use no AI models.
 
 ## Live results
 

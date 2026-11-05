@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import time
 
 import httpx
-from openai import AsyncOpenAI
 
 from app.config import settings
 from app.providers.common import data_url, translate
+from app.providers.meta_client import META_BASE, MetaClient, client_version
 from app.providers.model_list import capabilities_for
 from app.providers.types import (
     GenerationRequest,
@@ -22,7 +21,6 @@ from app.providers.types import (
     provider_timeout,
 )
 
-META_BASE = "https://api.meta.ai/v1"
 # Above every complete answer recorded so far. Reasoning tokens count toward it.
 # A call that repeats itself stops here instead of at the provider's far larger limit.
 MAX_OUTPUT_TOKENS = 65_536
@@ -38,9 +36,9 @@ class MetaProvider:
             raise UnsupportedMode("SAM is a segmentation model. Select it as the segmentation model, not the analysis model.")
         return caps
 
-    def _client(self, secret: str, timeout: float) -> AsyncOpenAI:
-        # The SDK retries by default. A retry is another billable request, so it stays off.
-        return AsyncOpenAI(api_key=secret, base_url=META_BASE, timeout=timeout, max_retries=0)
+    def _client(self, secret: str, timeout: float) -> MetaClient:
+        # MetaClient never retries. A retry is another billable request.
+        return MetaClient(secret, timeout=timeout)
 
     async def validate(self, secret: str) -> None:
         try:
@@ -155,7 +153,7 @@ class MetaProvider:
             request_id=str(getattr(response, "id", "") or ""),
             latency_ms=int((time.perf_counter() - started) * 1000),
             model_id=request.model_id,
-            sdk_version=_sdk(),
+            sdk_version=client_version(),
             incomplete_reason=incomplete,
         )
 
@@ -214,9 +212,3 @@ def _usage_dict(usage) -> dict:
         return usage.model_dump()
     return {"input_tokens": getattr(usage, "input_tokens", 0), "output_tokens": getattr(usage, "output_tokens", 0)}
 
-
-def _sdk() -> str:
-    try:
-        return importlib.metadata.version("openai")
-    except importlib.metadata.PackageNotFoundError:
-        return ""

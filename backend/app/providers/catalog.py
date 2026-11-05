@@ -16,75 +16,6 @@ _SAM_NOTE = (
     "SAM 3.1 returns boxes, masks, and video tracks. It is not an action-recognition model "
     "and is never substituted for a scene-understanding model. Select it as the segmentation model."
 )
-_OPENAI_NOTE = (
-    "Public Responses API accepts images, not video files. Native video stays disabled "
-    "unless a future capability record explicitly enables it for that model id. "
-    "A Codex subscription run attaches those frames in read-only mode and is recorded as unpriced plan usage. "
-    "An API key run uses the catalog list rate when one is set."
-)
-_ANTHROPIC_NOTE = (
-    "Claude vision accepts images, not video files. Long sequences are windowed. "
-    "A Claude Code subscription run is recorded as unpriced plan usage. "
-    "An API key run uses the catalog list rate when one is set."
-)
-_CURSOR_NOTE = (
-    "Cursor CLI ask mode. The agent reads frame files and is not given permission to edit them. "
-    "When the answer is not one JSON object, a follow-up call edits answer.json in a temporary "
-    "workspace until it parses. The CLI does not enforce the JSON schema; the lab validates the "
-    "document after the call. Native video is refused. Linked-account usage is recorded as unpriced "
-    "plan usage."
-)
-
-# Messages API output_config.effort. xhigh is the "extra high" level.
-# Opus 4.6 and Sonnet 4.6 accept max but not xhigh. Opus 4.5 accepts the original three.
-# Older 4.5 and 4.1 ids are omitted because the effort parameter is not offered there.
-_EFFORT_ALL = ("low", "medium", "high", "xhigh", "max")
-_EFFORT_NO_XHIGH = ("low", "medium", "high", "max")
-_EFFORT_CORE = ("low", "medium", "high")
-_ANTHROPIC_EFFORTS: dict[str, tuple[str, ...]] = {
-    "claude-sonnet-5-5": _EFFORT_ALL,
-    "claude-opus-5-5": _EFFORT_ALL,
-    "claude-haiku-5-5": _EFFORT_ALL,
-    "claude-fable-5-1": _EFFORT_ALL,
-    "claude-opus-5": _EFFORT_ALL,
-    "claude-sonnet-5": _EFFORT_ALL,
-    "claude-fable-5": _EFFORT_ALL,
-    "claude-opus-4-8": _EFFORT_ALL,
-    "claude-opus-4-7": _EFFORT_ALL,
-    "claude-sonnet-4-6": _EFFORT_NO_XHIGH,
-    "claude-opus-4-6": _EFFORT_NO_XHIGH,
-    "claude-opus-4-5-20251101": _EFFORT_CORE,
-}
-
-# model id, context, temperature, input $/MTok, output $/MTok, extra note.
-# Current ids match the Claude Code /model list and the claude.ai picker.
-_ANTHROPIC_MODELS: tuple[tuple, ...] = (
-    ("claude-sonnet-5-5", 1_000_000, False, 2.0, 10.0, ""),
-    ("claude-opus-5-5", 1_000_000, False, 4.0, 20.0, ""),
-    (
-        "claude-haiku-5-5",
-        1_000_000,
-        False,
-        0.10,
-        0.50,
-        "The Haiku 5.5 figures are the short-context list rate. API input over 100k tokens costs more.",
-    ),
-    ("claude-fable-5-1", 1_000_000, False, 10.0, 50.0, ""),
-    ("claude-opus-5", 1_000_000, False, None, None, ""),
-    ("claude-sonnet-5", 1_000_000, False, None, None, ""),
-    ("claude-fable-5", 1_000_000, False, None, None, ""),
-    ("claude-opus-4-8", 1_000_000, False, None, None, ""),
-    ("claude-opus-4-7", 1_000_000, False, None, None, ""),
-    ("claude-sonnet-4-6", 200_000, False, None, None, ""),
-    ("claude-opus-4-6", 200_000, False, None, None, ""),
-    ("claude-opus-4-5-20251101", 200_000, True, None, None, ""),
-    ("claude-haiku-4-5-20251001", 200_000, True, None, None, ""),
-    ("claude-sonnet-4-5-20250929", 200_000, True, None, None, ""),
-    ("claude-sonnet-4-5", 200_000, True, 3.0, 15.0, ""),
-    ("claude-opus-4-1", 200_000, True, 15.0, 75.0, ""),
-    ("claude-haiku-4-5", 200_000, True, 1.0, 5.0, ""),
-)
-
 MUSE_EFFORTS = ("minimal", "low", "medium", "high", "xhigh", "max")
 
 
@@ -93,66 +24,6 @@ def _caps(**kwargs) -> ModelCapabilities:
 
 
 CATALOG: dict[tuple[str, str], ModelCapabilities] = {
-    ("openai", "gpt-4.1"): _caps(
-        model_id="gpt-4.1",
-        provider_id="openai",
-        image=True,
-        structured_output=True,
-        max_images=16,
-        context_tokens=1_047_576,
-        supports_temperature=True,
-        input_price_per_mtok=2.0,
-        output_price_per_mtok=8.0,
-        notes=_OPENAI_NOTE,
-    ),
-    ("openai", "gpt-4.1-mini"): _caps(
-        model_id="gpt-4.1-mini",
-        provider_id="openai",
-        image=True,
-        structured_output=True,
-        max_images=16,
-        context_tokens=1_047_576,
-        input_price_per_mtok=0.4,
-        output_price_per_mtok=1.6,
-        notes=_OPENAI_NOTE,
-    ),
-    ("openai", "gpt-4o"): _caps(
-        model_id="gpt-4o",
-        provider_id="openai",
-        image=True,
-        structured_output=True,
-        max_images=16,
-        context_tokens=128_000,
-        input_price_per_mtok=2.5,
-        output_price_per_mtok=10.0,
-        notes=_OPENAI_NOTE,
-    ),
-    ("gemini", "gemini-2.5-flash"): _caps(
-        model_id="gemini-2.5-flash",
-        provider_id="gemini",
-        image=True,
-        native_video=True,
-        structured_output=True,
-        max_images=16,
-        max_video_seconds=3600,
-        context_tokens=1_048_576,
-        input_price_per_mtok=0.3,
-        output_price_per_mtok=2.5,
-        notes="Native video uses the Gemini Files API and is polled until ACTIVE. Frame mode is a separate modality.",
-    ),
-    ("gemini", "gemini-2.5-pro"): _caps(
-        model_id="gemini-2.5-pro",
-        provider_id="gemini",
-        image=True,
-        native_video=True,
-        structured_output=True,
-        max_images=16,
-        max_video_seconds=3600,
-        context_tokens=1_048_576,
-        input_price_per_mtok=1.25,
-        output_price_per_mtok=10.0,
-        notes="Native video uses the Gemini Files API and is polled until ACTIVE. Frame mode is a separate modality.",
-    ),
     ("meta", "muse-wonder-1.0"): _caps(
         model_id="muse-wonder-1.0",
         provider_id="meta",
@@ -243,48 +114,6 @@ CATALOG: dict[tuple[str, str], ModelCapabilities] = {
     ),
 }
 
-for _model_id, _context, _temperature, _input_price, _output_price, _extra in _ANTHROPIC_MODELS:
-    CATALOG[("anthropic", _model_id)] = _caps(
-        model_id=_model_id,
-        provider_id="anthropic",
-        image=True,
-        structured_output=True,
-        max_images=20,
-        context_tokens=_context,
-        reasoning_efforts=_ANTHROPIC_EFFORTS.get(_model_id, ()),
-        supports_temperature=_temperature,
-        input_price_per_mtok=_input_price,
-        output_price_per_mtok=_output_price,
-        notes=_ANTHROPIC_NOTE + (f" {_extra}" if _extra else ""),
-    )
-
-
-for _cursor_model in ("composer-2.5", "auto"):
-    CATALOG[("cursor", _cursor_model)] = _caps(
-        model_id=_cursor_model,
-        provider_id="cursor",
-        image=True,
-        structured_output=True,
-        max_images=16,
-        supports_temperature=False,
-        notes=_CURSOR_NOTE,
-    )
-
-
-# The submission build runs Meta models only.
-CATALOG = {key: value for key, value in CATALOG.items() if key[0] in {"meta", "deterministic", "fixture", "manual_json"}}
-
-
-def cursor_accepts_video(model_id: str) -> bool:
-    """Gemini and Muse accept a video file when Cursor lists those same models.
-
-    Claude, GPT, Grok, Composer, and Auto stay on frames. Grok's chat models take
-    text and images. Its video API generates clips and does not watch one.
-    """
-    token = model_id.lower().removeprefix("cursor-")
-    return token.startswith("gemini") or token.startswith("muse-")
-
-
 def lookup(provider_id: str, model_id: str) -> ModelCapabilities:
     known = CATALOG.get((provider_id, model_id))
     if known:
@@ -293,34 +122,19 @@ def lookup(provider_id: str, model_id: str) -> ModelCapabilities:
 
 
 def _default_manual(provider_id: str, model_id: str) -> ModelCapabilities:
-    native = provider_id in {"gemini", "meta"} and not model_id.startswith("sam")
-    if provider_id == "cursor":
-        native = cursor_accepts_video(model_id)
-    temperature = provider_id not in {"meta", "cursor"}
-    if provider_id == "cursor" and native:
-        note = (
-            "Cursor CLI ask mode. This model accepts the video file. "
-            "Linked-account usage is unpriced. An API key run is not. Temperature is not enabled."
-        )
-    elif provider_id == "cursor":
-        note = (
-            "Manually added Cursor model. The CLI runs in ask mode. Linked-account usage is "
-            "unpriced. An API key run is not. Native video and temperature are not enabled."
-        )
-    else:
-        note = (
-            "Manually added model id. Capabilities are a conservative default, not a live "
-            "provider capability record. Native video is not enabled for OpenAI or Anthropic defaults."
-        )
+    segmentation = model_id.startswith("sam")
     return ModelCapabilities(
         model_id=model_id,
         provider_id=provider_id,
-        image=provider_id not in {"manual_json"},
-        native_video=native,
-        structured_output=provider_id != "meta" or not model_id.startswith("sam"),
-        max_images=16 if provider_id != "anthropic" else 20,
-        supports_temperature=temperature,
-        notes=note,
+        image=provider_id != "manual_json",
+        native_video=provider_id == "meta" and not segmentation,
+        structured_output=not segmentation,
+        max_images=16,
+        supports_temperature=provider_id != "meta",
+        notes=(
+            "Manually added model id. Capabilities are a conservative default, not a live "
+            "provider capability record."
+        ),
     )
 
 

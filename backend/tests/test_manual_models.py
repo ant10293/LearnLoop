@@ -17,7 +17,6 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("LEARNLOOP_DATABASE_URL", f"sqlite:///{tmp_path}/lab.db")
     monkeypatch.setenv("LEARNLOOP_WORKER_ENABLED", "0")
     monkeypatch.setenv("LEARNLOOP_AUTO_SEED", "0")
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     from app.config import settings
     from app.db import rebind_engine
 
@@ -51,9 +50,9 @@ def test_upgrade_removes_repeated_rows_and_enforces_uniqueness(tmp_path):
         conn.execute(
             text(
                 "INSERT INTO manual_models VALUES "
-                "('later', 'anthropic', 'claude-test-9', '', '2026-10-02'), "
-                "('first', 'anthropic', 'claude-test-9', '', '2026-10-01'), "
-                "('other', 'openai', 'claude-test-9', '', '2026-10-03')"
+                "('later', 'meta', 'muse-test-9', '', '2026-10-02'), "
+                "('first', 'meta', 'muse-test-9', '', '2026-10-01'), "
+                "('other', 'fixture', 'muse-test-9', '', '2026-10-03')"
             )
         )
 
@@ -65,5 +64,5 @@ def test_upgrade_removes_repeated_rows_and_enforces_uniqueness(tmp_path):
     assert kept == ["first", "other"]
     with pytest.raises(IntegrityError), engine.begin() as conn:
         conn.execute(
-            text("INSERT INTO manual_models VALUES ('again', 'anthropic', 'claude-test-9', '', '2026-10-04')")
+            text("INSERT INTO manual_models VALUES ('again', 'meta', 'muse-test-9', '', '2026-10-04')")
         )

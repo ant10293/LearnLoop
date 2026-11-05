@@ -16,10 +16,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from openai import AsyncOpenAI
-
 from app.providers.common import data_url, translate
-from app.providers.meta_provider import META_BASE
+from app.providers.meta_client import MetaClient
 from app.providers.types import ProviderError, provider_timeout
 
 # Documented model limits. Chunk size is this lab's budget for a reliable short clip,
@@ -467,8 +465,8 @@ class SamAdapter:
         self.timeout_s = provider_timeout(timeout_s)
         self.model_id = model_id
 
-    def _client(self) -> AsyncOpenAI:
-        return AsyncOpenAI(api_key=self.secret, base_url=META_BASE, timeout=self.timeout_s)
+    def _client(self) -> MetaClient:
+        return MetaClient(self.secret, timeout=self.timeout_s)
 
     async def segment_image(self, image_path, concept: str) -> SamImageResult:
         body = image_request(concept, data_url(Path(image_path)), prompt_kind="concept", model=self.model_id)

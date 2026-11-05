@@ -19,7 +19,6 @@ dependencies = [
   "httpx>=0.28",
   "certifi>=2024.2.2",
   "cryptography>=44.0",
-  "openai>=1.60",
 ]
 
 [project.optional-dependencies]
