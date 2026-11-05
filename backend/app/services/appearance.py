@@ -17,6 +17,9 @@ from app.models.runs import AnalysisRun, Job, PipelineStageRun
 from app.perception import appearance as app_
 
 APPEARANCE_JOB = "appearance_gallery"
+# Made again although one exists, because a reviewer corrected the boxes it learns from.
+APPEARANCE_REBUILD_JOB = "appearance_gallery_rebuild"
+_JOBS = (APPEARANCE_JOB, APPEARANCE_REBUILD_JOB)
 STAGE = "appearance"
 
 
@@ -24,10 +27,12 @@ def gallery_status(session: Session, run_id: str) -> dict:
     """What a page shows: ready, partial, unavailable, building, failed, disabled, or missing. Never vectors."""
     if not settings.appearance_enabled or not settings.auto_gallery:
         return {"status": "disabled", "reason": "Appearance references are turned off."}
+    job = _latest_job(session, run_id)
+    if job is not None and job.from_stage == APPEARANCE_REBUILD_JOB and job.status in {"pending", "running"}:
+        return {"status": "building", "rebuilding": True}
     manifest, _vectors = app_.read_gallery(run_id)
     if manifest is not None:
         return app_.gallery_summary(manifest)
-    job = _latest_job(session, run_id)
     if job is not None and job.status in {"pending", "running"}:
         return {"status": "building"}
     stage = session.scalar(select(PipelineStageRun).where(PipelineStageRun.run_id == run_id, PipelineStageRun.stage == STAGE))
@@ -56,12 +61,30 @@ def ensure_gallery(session: Session, run_id: str) -> dict:
 
 def _latest_job(session: Session, run_id: str) -> Job | None:
     return session.scalar(
-        select(Job).where(Job.run_id == run_id, Job.from_stage == APPEARANCE_JOB).order_by(Job.created_at.desc())
+        select(Job).where(Job.run_id == run_id, Job.from_stage.in_(_JOBS)).order_by(Job.created_at.desc())
     )
 
 
-async def build_gallery_job(session: Session, job: Job, run: AnalysisRun, video) -> None:
-    """Rebuild object views from stored answers only. A missing answer leaves the views as they were and says why."""
+def rebuild_after_correction(session: Session, run_id: str) -> dict:
+    """A demonstration's references learn from its boxes, so a corrected box makes them again, from stored answers only.
+    An attempt's boxes never teach references. One waiting rebuild covers every correction made before it starts."""
+    if not settings.appearance_enabled or not settings.auto_gallery:
+        return {"status": "disabled"}
+    run = session.get(AnalysisRun, run_id)
+    if run is None or (run.config_json or {}).get("reference_template_id") or not (run.config_json or {}).get("object_views"):
+        return {"status": "unchanged"}
+    waiting = session.scalar(
+        select(Job.id).where(Job.run_id == run_id, Job.from_stage.in_(_JOBS), Job.status == "pending")
+    )
+    if waiting is None:
+        session.add(Job(run_id=run_id, from_stage=APPEARANCE_REBUILD_JOB, max_attempts=1))
+        session.commit()
+    return {"status": "building", "rebuilding": True}
+
+
+async def build_gallery_job(session: Session, job: Job, run: AnalysisRun, video, force: bool = False) -> None:
+    """Rebuild object views from stored answers only. A missing answer leaves the views as they were and says why.
+    force makes the gallery again although one exists, as after a reviewer corrected a box."""
     from app.models.util import utcnow
     from app.pipeline.object_views import run_object_views
     from app.pipeline.runner import _error_text, _stage
@@ -73,7 +96,7 @@ async def build_gallery_job(session: Session, job: Job, run: AnalysisRun, video)
     stage.error = ""
     session.commit()
     try:
-        if app_.read_gallery(run.id)[0] is not None:
+        if not force and app_.read_gallery(run.id)[0] is not None:
             stage.checkpoint_json = {"reason": "A gallery of the current version already existed."}
         else:
             out = await run_object_views(session, run, video, stage, allow_live=False, keep_on_empty=True)

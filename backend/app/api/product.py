@@ -23,6 +23,7 @@ from app.pipeline import guided, object_views
 from app.pipeline.infer import load_working
 from app.providers.types import UnsupportedMode
 from app.services import verification_store as store
+from app.services.appearance import rebuild_after_correction
 from app.services.ingest import (
     accept_reference,
     accept_upload,
@@ -378,6 +379,7 @@ def correct_object_box(run_id: str, local_id: str, payload: BoxCorrectionBody, s
         index = min(index, frames - 1)
     object_views.save_correction(run_id, local_id, index, box, payload.reviewer.strip())
     _redraw(run_id, video)
+    rebuild_after_correction(session, run_id)
     return run_objects(run_id, session)
 
 
@@ -388,6 +390,7 @@ def undo_object_box(run_id: str, local_id: str, frame_index: int, session: Sessi
     if not object_views.remove_correction(run_id, local_id, frame_index):
         raise HTTPException(404, "No correction on that frame.")
     _redraw(run_id, video)
+    rebuild_after_correction(session, run_id)
     return run_objects(run_id, session)
 
 
@@ -421,6 +424,7 @@ def _clean_box(box: CorrectionBox) -> dict:
 
 
 def _redraw(run_id: str, video: VideoAsset) -> None:
+    """The views at once, from stored boxes. The references follow in a queued job; see rebuild_after_correction."""
     try:
         object_views.redraw(run_id, video)
     except ValueError as exc:

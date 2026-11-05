@@ -53,10 +53,10 @@ async def execute_job(session: Session, job: Job) -> None:
     if job.from_stage == OBJECT_VIEWS_JOB:
         await _remake_object_views(session, job, run, video)
         return
-    from app.services.appearance import APPEARANCE_JOB, build_gallery_job
+    from app.services.appearance import APPEARANCE_JOB, APPEARANCE_REBUILD_JOB, build_gallery_job
 
-    if job.from_stage == APPEARANCE_JOB:
-        await build_gallery_job(session, job, run, video)
+    if job.from_stage in {APPEARANCE_JOB, APPEARANCE_REBUILD_JOB}:
+        await build_gallery_job(session, job, run, video, force=job.from_stage == APPEARANCE_REBUILD_JOB)
         return
     if job.from_stage.startswith(REINSPECT_JOB):
         from app.services.reinspection import run_reinspection_job

@@ -333,7 +333,11 @@ function ObjectTimeline({ view, label, videoId, runId, localId, onSeek }: { view
       correction: mark ? { label: "You marked this object not in this frame." } : undefined,
     };
   };
-  const refresh = (data: ObjectViews) => client.setQueryData(["object-views", runId], data);
+  const refresh = (data: ObjectViews) => {
+    client.setQueryData(["object-views", runId], data);
+    // A corrected box makes the demonstration's references again, and the procedure says so while they build.
+    void client.invalidateQueries({ queryKey: ["procedure"] });
+  };
   const editor: PreviewEditor | undefined = editable
     ? {
         onSave: async (image, box) => {

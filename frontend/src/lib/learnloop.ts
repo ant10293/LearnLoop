@@ -153,6 +153,8 @@ export interface Template {
 
 export interface AppearanceStatus {
   status: "ready" | "partial" | "unavailable" | "building" | "failed" | "disabled" | "missing";
+  /** Building again because a reviewer corrected a box. */
+  rebuilding?: boolean;
   objects?: number;
   objects_learned?: number;
   references?: number;
@@ -165,7 +167,7 @@ export function appearanceLine(item?: AppearanceStatus): string {
   if (!item) return "";
   switch (item.status) {
     case "building":
-      return "Building object references from the demonstration…";
+      return item.rebuilding ? "Updating object references with your corrected boxes…" : "Building object references from the demonstration…";
     case "ready":
     case "partial": {
       const missing = (item.objects ?? 0) - (item.objects_learned ?? 0);

@@ -227,6 +227,23 @@ def _run_job(run_id):
         session.close()
 
 
+def _drain(run_id):
+    """Run every job waiting for this analysis, in the order they were queued."""
+    from app.db import SessionLocal
+    from app.models.runs import Job
+    from sqlalchemy import select
+
+    while True:
+        session = SessionLocal()
+        try:
+            waiting = session.scalar(select(Job.id).where(Job.run_id == run_id, Job.status == "pending"))
+        finally:
+            session.close()
+        if waiting is None:
+            return
+        _run_job(run_id)
+
+
 def _upload(client, procedure, path, role):
     with path.open("rb") as handle:
         response = client.post(
@@ -1185,7 +1202,7 @@ def test_a_reviewer_redraws_boxes_and_marks_frames_and_the_corrections_outlive_n
     # The corrections are kept apart from SAM's answers and survive making the views again.
     remade = client.post(f"{base}/run", json={"allow_live": True})
     assert remade.status_code == 200, remade.text
-    _run_job(run["id"])
+    _drain(run["id"])
     again = client.get(base).json()["objects"]
     assert [row["status"] for row in again[ids[1]]["track"]] == ["human"]
     assert len(again[ids[0]]["track"]) == 3
@@ -1195,3 +1212,69 @@ def test_a_reviewer_redraws_boxes_and_marks_frames_and_the_corrections_outlive_n
     undone = client.delete(f"{base}/{ids[0]}/corrections", params={"frame_index": 0}).json()["objects"][ids[0]]
     assert len(undone["track"]) == 4 and undone["corrections"] == []
     assert client.delete(f"{base}/{ids[0]}/corrections", params={"frame_index": 0}).status_code == 404
+
+
+def test_corrected_boxes_rebuild_the_demonstration_references_from_stored_answers(lab, monkeypatch):
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.models.runs import Job
+    from app.perception import appearance as app_
+    from app.pipeline import object_views
+    from app.services.appearance import APPEARANCE_REBUILD_JOB, gallery_status
+    from sqlalchemy import select
+
+    client, stub, tmp = lab
+    monkeypatch.setattr(settings, "object_views", True)
+    answer_text = "\n".join(_sam_line(frame, [(0, 10)]) for frame in range(12))
+    sent = []
+
+    class FakeSam:
+        def __init__(self, secret, timeout_s=180, model_id="sam-3.1"):
+            pass
+
+        async def segment_video(self, media, prompt, **kwargs):
+            sent.append(prompt)
+            return SimpleNamespace(text=answer_text, file_id="f", request_id="r", input_tokens=0, output_tokens=0, latency_ms=1)
+
+    monkeypatch.setattr(object_views, "SamAdapter", FakeSam)
+    ids = [item["local_id"] for item in json.loads(stub.text)["objects"]]
+    box = {"x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2}
+    stub.locate_text = json.dumps({"objects": [{"local_id": ids[0], "bbox": box}] + [{"local_id": local_id, "bbox": None} for local_id in ids[1:]]})
+    procedure = client.post("/api/learnloop/procedures", json={"name": "References"}).json()["id"]
+    run = _analyze(client, _upload(client, procedure, _video(tmp / "demo.mp4", "red"), "demonstration"))
+    assert run["status"] == "completed", run["error"]
+    before, _vectors = app_.read_gallery(run["id"])
+    assert before is not None and before["objects"][ids[0]]["association"]["reviewer_times"] == []
+    requests_before, provider_calls = len(sent), len(stub.calls)
+
+    base = f"/api/learnloop/runs/{run['id']}/objects"
+    client.put(f"{base}/{ids[0]}/corrections", json={"time": 0.5, "box": {"x": 0.12, "y": 0.1, "w": 0.2, "h": 0.2}})
+    client.put(f"{base}/{ids[0]}/corrections", json={"time": 0.25, "box": None})
+    session = SessionLocal()
+    try:
+        waiting = session.scalars(select(Job).where(Job.run_id == run["id"], Job.status == "pending")).all()
+        # Two corrections, one waiting rebuild.
+        assert [job.from_stage for job in waiting] == [APPEARANCE_REBUILD_JOB]
+        assert gallery_status(session, run["id"]) == {"status": "building", "rebuilding": True}
+    finally:
+        session.close()
+
+    _run_job(run["id"])
+    after, _vectors = app_.read_gallery(run["id"])
+    entry = after["objects"][ids[0]]
+    assert entry["association"]["reviewer_times"] == [0.5]
+    assert 0.5 in entry["anchor_times"]
+    # The frame marked not in frame gave no reference.
+    assert 3 not in [reference["frame_index"] for reference in entry["references"]]
+    # Made from stored answers: nothing more was sent to SAM or the analysis model.
+    assert (len(sent), len(stub.calls)) == (requests_before, provider_calls)
+    # SAM's own boxes are still what raw_tracks.json keeps, and the views still show the reviewer's box.
+    raw = json.loads((object_views.views_dir(run["id"]) / "raw_tracks.json").read_text())["sightings"][ids[0]]
+    assert all(row["provenance"] == "sam" for row in raw)
+    views = client.get(base).json()["objects"][ids[0]]
+    assert {"time": 0.5, "x": 0.12, "y": 0.1, "w": 0.2, "h": 0.2, "status": "human"} in views["track"]
+    session = SessionLocal()
+    try:
+        assert gallery_status(session, run["id"])["status"] in {"ready", "partial", "unavailable"}
+    finally:
+        session.close()

@@ -200,9 +200,16 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
     session.commit()
     if keep_on_empty and not any(tracked.values()) and read_manifest(run.id):
         return {"error": error or "SAM followed nothing.", "kept_existing": True, "requests": requests, "replayed_requests": replayed}
-    checked = _check_appearance(session, run, video, document, media, tracked, seeds)
-    _apply_statuses(tracked, checked)
-    recovery = await _recover(session, run, video, media, tracked, checked, len(seeds), model_id, allow_live, secret, fresh=fresh)
+    # A reviewer's corrections are what appearance is checked and learned from: their boxes are anchors, trusted
+    # as much as a box the analysis model drew, and a frame marked not in frame gives no crop. SAM's own boxes are
+    # still what raw_tracks.json keeps.
+    corrections = read_corrections(run.id)
+    checking = with_corrections(tracked, corrections)
+    reviewed = _reviewer_anchors(corrections)
+    checked = _check_appearance(session, run, video, document, media, checking, seeds + reviewed, reviewed)
+    _apply_statuses(checking, checked)
+    recovery = await _recover(session, run, video, media, checking, checked, len(seeds), model_id, allow_live, secret, fresh=fresh)
+    _keep_recovered(tracked, checking)
     requests += recovery.get("requests", 0)
     replayed += recovery.get("replayed_requests", 0)
     _write_raw(run.id, tracked, checked)
@@ -225,7 +232,7 @@ async def run_object_views(session, run: AnalysisRun, video: VideoAsset, stage, 
             "gallery": app_.gallery_summary(checked.gallery) if checked and checked.mode == "demonstration" and checked.gallery else (checked.gallery if checked else None),
         }
     )
-    (directory / _MANIFEST).write_text(json.dumps(manifest, indent=2))
+    _write_atomic(directory / _MANIFEST, json.dumps(manifest, indent=2))
     return {key: value for key, value in manifest.items() if key != "objects"}
 
 
@@ -557,8 +564,28 @@ def _assign(records: list[SamRecord], seeds: list[Seed], start: int = 0) -> dict
     return tracks
 
 
-def _check_appearance(session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, media: Path, tracked, seeds):
-    """Statuses for every SAM box. None when appearance checks are off; a result with used False when they failed."""
+def _reviewer_anchors(corrections: dict[str, dict[str, dict]]) -> list[Seed]:
+    """Each box a reviewer drew, as a seed: appearance treats it like a box the analysis model located."""
+    return [
+        Seed(local_id, -1, int(mark["frame_index"]) / SAM_FPS, dict(mark["box"]))
+        for local_id, marks in corrections.items()
+        for mark in marks.values()
+        if mark.get("box")
+    ]
+
+
+def _keep_recovered(tracked: dict[str, list[Sighting]], checking: dict[str, list[Sighting]]) -> None:
+    """Recovery adds its boxes to the corrected tracks it was given. They are SAM's boxes, so raw_tracks.json keeps them."""
+    for local_id, sightings in checking.items():
+        known = {id(item) for item in tracked.get(local_id, [])}
+        added = [item for item in sightings if item.provenance == "recovery" and id(item) not in known]
+        if added:
+            tracked.setdefault(local_id, []).extend(added)
+
+
+def _check_appearance(session, run: AnalysisRun, video: VideoAsset, document: AnalysisDocument, media: Path, tracked, seeds, reviewed=()):
+    """Statuses for every SAM box. None when appearance checks are off; a result with used False when they failed.
+    reviewed are the seeds that came from a reviewer's boxes; the gallery records them apart."""
     from app.pipeline.appearance_stage import AppearanceResult, check_tracks
 
     if not settings.appearance_enabled or not any(tracked.values()):
@@ -571,7 +598,14 @@ def _check_appearance(session, run: AnalysisRun, video: VideoAsset, document: An
                 return None
             return check_tracks(
                 run_id=run.id, media=media, tracked=tracked, seeds=seeds, labels=labels, fps=SAM_FPS, mode="demonstration",
-                source={"video_id": video.id, "checksum": video.checksum_sha256},
+                source={
+                    "video_id": video.id,
+                    "checksum": video.checksum_sha256,
+                    "reviewer_anchors": {
+                        local_id: sorted(round(seed.timestamp, 3) for seed in reviewed if seed.local_id == local_id)
+                        for local_id in {seed.local_id for seed in reviewed}
+                    },
+                },
             )
         reference = execution_reference(session, template_id, document)
         return check_tracks(
@@ -727,7 +761,7 @@ def _write_raw(run_id: str, tracked: dict[str, list[Sighting]], checked) -> None
     samples = {}
     if checked and checked.used:
         samples = {local_id: rows for local_id, rows in checked.rows.items()}
-    (views_dir(run_id) / _RAW).write_text(json.dumps({"sightings": out, "appearance_samples": samples}))
+    _write_atomic(views_dir(run_id) / _RAW, json.dumps({"sightings": out, "appearance_samples": samples}))
 
 
 # A reviewer's box is shown before any box SAM proposed for the same cell.
@@ -760,8 +794,13 @@ def read_corrections(run_id: str) -> dict[str, dict[str, dict]]:
 def _write_corrections(run_id: str, objects: dict) -> None:
     path = data_path("runs", run_id, _CORRECTIONS)
     path.parent.mkdir(parents=True, exist_ok=True)
+    _write_atomic(path, json.dumps({"objects": {key: value for key, value in objects.items() if value}}, indent=2))
+
+
+def _write_atomic(path: Path, text: str) -> None:
+    """A redraw and a rebuild can run at once. Neither reads the other's half-written file."""
     tmp = path.with_name(f".{path.name}.tmp")
-    tmp.write_text(json.dumps({"objects": {key: value for key, value in objects.items() if value}}, indent=2))
+    tmp.write_text(text)
     tmp.replace(path)
 
 
@@ -833,7 +872,7 @@ def redraw(run_id: str, video: VideoAsset) -> dict:
     media = _low_rate_copy(resolve_stored(video.stored_path), views_dir(run_id) / f"tracked_{SAM_FPS:g}fps.mp4")
     rendered = _render(run_id, load_working(run_id), media, tracked, _last_frame_time(video), keep=manifest.get("objects") or {})
     manifest["objects"] = rendered["objects"]
-    (views_dir(run_id) / _MANIFEST).write_text(json.dumps(manifest, indent=2))
+    _write_atomic(views_dir(run_id) / _MANIFEST, json.dumps(manifest, indent=2))
     return manifest
 
 

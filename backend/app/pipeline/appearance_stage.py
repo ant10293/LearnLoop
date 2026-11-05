@@ -240,8 +240,10 @@ def _save_gallery(run_id: str, selection: dict, galleries: dict, labels: dict, s
                 for index, sample in enumerate(references)
             ],
             "association": {
-                "evidence": "SAM followed a box the analysis model drew for this object; references come from that stretch only.",
+                "evidence": "SAM followed a box the analysis model or a reviewer drew for this object; references come from those stretches only.",
                 "seed_times": entry.get("anchor_times") or [],
+                # Anchors from boxes a reviewer drew. The rest are boxes the analysis model located.
+                "reviewer_times": (source.get("reviewer_anchors") or {}).get(local_id) or [],
             },
         }
     learned = [local_id for local_id, entry in objects.items() if entry["status"] in {"ready", "limited"}]

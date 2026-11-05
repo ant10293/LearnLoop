@@ -942,6 +942,7 @@ describe("appearance status", () => {
     expect(appearanceLine({ status: "partial", objects: 6, objects_learned: 5 })).toBe("Object references ready: 5 of 6 objects learned. References unavailable for 1 object.");
     expect(appearanceLine({ status: "ready", objects: 3, objects_learned: 3 })).toBe("Object references ready: 3 of 3 objects learned.");
     expect(appearanceLine({ status: "building" })).toContain("Building object references");
+    expect(appearanceLine({ status: "building", rebuilding: true })).toBe("Updating object references with your corrected boxes…");
     expect(appearanceLine({ status: "unavailable", reason: "No crop passed." })).toBe("Object references unavailable: No crop passed.");
     expect(appearanceLine({ status: "disabled" })).toBe("");
   });
