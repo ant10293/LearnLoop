@@ -1,0 +1,16 @@
+# Native development environment: conda env create -f environment.yml && conda activate learnloop
+#
+# Only tools pip and npm cannot install are listed here. Python packages, PyTorch included, come from
+# backend/pyproject.toml through the pip line below, and frontend packages from frontend/package-lock.json.
+# Add a Python dependency to pyproject.toml, never to this file.
+name: learnloop
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.12
+  - nodejs>=20
+  - ffmpeg
+  - pip
+  - pip:
+      - -e ./backend[dev,perception]

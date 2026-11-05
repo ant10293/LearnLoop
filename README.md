@@ -56,31 +56,37 @@ Results vary from run to run on the same recording. The same attempt has come ba
 
 ## Run it
 
-Requires Python 3.12, Node 20 or newer, and ffmpeg.
+Dependencies have one home each: Python packages in [backend/pyproject.toml](backend/pyproject.toml), frontend packages in [frontend/package.json](frontend/package.json). [environment.yml](environment.yml) adds only the tools pip and npm cannot install (Python 3.12, Node, ffmpeg) and installs the backend from `pyproject.toml`.
+
+With conda, one command installs everything:
 
 ```bash
-python3.12 -m venv backend/.venv
+conda env create -f environment.yml
 ```
 
 ```bash
-backend/.venv/bin/pip install -e './backend[dev,perception]'
+conda activate learnloop
 ```
 
-Load the DINOv2 weights once, so the first analysis does not download them:
+Load the DINOv2 weights once, so the first analysis does not download them. On Apple silicon it runs on the GPU (MPS).
 
 ```bash
-backend/.venv/bin/python -m app.perception.encoder
-```
-
-```bash
-npm install --prefix frontend
+python -m app.perception.encoder
 ```
 
 ```bash
 scripts/dev.sh
 ```
 
-Open http://127.0.0.1:5180. The API runs on port 8010.
+Open http://127.0.0.1:5180. The API runs on port 8010. `dev.sh` installs the frontend packages on its first run, and uses the active environment, or `backend/.venv` when none is active.
+
+After changing `pyproject.toml`, run `conda env update -f environment.yml`.
+
+Without conda, install Python 3.12, Node 20 or newer, and ffmpeg yourself, then:
+
+```bash
+python3.12 -m venv backend/.venv && backend/.venv/bin/pip install -e './backend[dev,perception]'
+```
 
 ### Run with Docker
 
@@ -142,7 +148,7 @@ Built during the hackathon:
 ## Tests
 
 ```bash
-cd backend && .venv/bin/python -m pytest -q
+cd backend && python -m pytest -q
 ```
 
 ```bash

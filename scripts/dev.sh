@@ -22,8 +22,19 @@ unset HTTP_PROXY HTTPS_PROXY ALL_PROXY http_proxy https_proxy all_proxy \
   GIT_HTTP_PROXY GIT_HTTPS_PROXY NO_PROXY no_proxy \
   __CURSOR_SANDBOX_ENV_RESTORE || true
 
-if [[ ! -x backend/.venv/bin/uvicorn ]]; then
-  echo "Create the backend environment first: python3.12 -m venv backend/.venv && backend/.venv/bin/pip install -e './backend[dev]'" >&2
+# An activated environment (`conda activate learnloop`, or any venv) wins; conda's base does not count.
+# Otherwise backend/.venv.
+active_env="${VIRTUAL_ENV:-}"
+if [[ -z "$active_env" && -n "${CONDA_PREFIX:-}" && "${CONDA_DEFAULT_ENV:-}" != "base" ]]; then
+  active_env="$CONDA_PREFIX"
+fi
+if [[ -n "$active_env" && -x "$active_env/bin/uvicorn" ]]; then
+  UVICORN="$active_env/bin/uvicorn"
+elif [[ -x backend/.venv/bin/uvicorn ]]; then
+  UVICORN=backend/.venv/bin/uvicorn
+else
+  echo "Create the backend environment first: conda env create -f environment.yml && conda activate learnloop" >&2
+  echo "Or: python3.12 -m venv backend/.venv && backend/.venv/bin/pip install -e './backend[dev,perception]'" >&2
   exit 1
 fi
 if [[ ! -d frontend/node_modules ]]; then
@@ -106,7 +117,7 @@ echo "App       http://127.0.0.1:${APP_PORT}"
 
 # Job control would put the API in the background and the terminal would freeze it,
 # so the page would load while every data request hung.
-backend/.venv/bin/uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port "$API_PORT" --reload --timeout-graceful-shutdown 5 &
+"$UVICORN" app.main:app --app-dir backend --host 127.0.0.1 --port "$API_PORT" --reload --timeout-graceful-shutdown 5 &
 API_PID=$!
 trap 'kill "$API_PID" 2>/dev/null || true' EXIT INT TERM
 

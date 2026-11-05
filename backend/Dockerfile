@@ -16,16 +16,22 @@ RUN useradd --create-home --uid 1000 learnloop \
  && mkdir -p /app/data/app /opt/torch \
  && chown learnloop:learnloop /app/data /app/data/app /opt/torch
 
-# CPU-only wheel, in its own layer: about 200 MB instead of the multi-GB CUDA build.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
-
 # The repository layout is kept (/app/backend), so REPO_ROOT resolves to /app.
 WORKDIR /app/backend
+
+# Dependencies come only from pyproject.toml. This layer is rebuilt when pyproject.toml changes, not
+# on every code edit, so an empty package stands in for app/ here. The PyTorch CPU index supplies the
+# CPU-only build of the torch that pyproject.toml asks for, instead of the multi-GB CUDA one.
+ENV PIP_EXTRA_INDEX_URL=https://download.pytorch.org/whl/cpu
 COPY pyproject.toml ./
+RUN mkdir app && touch app/__init__.py \
+ && pip install './[perception]' \
+ && rm -rf app
+
 COPY app ./app
 COPY alembic.ini ./
 COPY alembic ./alembic
-RUN pip install './[perception]'
+RUN pip install --no-deps .
 
 USER learnloop
 
