@@ -42,12 +42,32 @@ if [[ ! -d frontend/node_modules ]]; then
 fi
 mkdir -p "$DATA_DIR"
 
+# True when the directory is this checkout or inside it. Compared by file identity, not spelling:
+# macOS paths are case-insensitive, so `cd learnloop` and /Users/.../LearnLoop are the same folder.
+inside_root() {
+  local dir=$1
+  while [[ -n "$dir" ]]; do
+    [[ "$dir" -ef "$ROOT" ]] && return 0
+    [[ "$dir" == / || "$dir" == . ]] && return 1
+    dir=$(dirname "$dir")
+  done
+  return 1
+}
+
+# The interpreter does not matter (conda env, venv, system Python); where it runs does.
 is_this_app() {
-  local pid=$1 cmd=$2 cwd
+  local pid=$1 cmd=$2 cwd in_root=1
   cmd=${cmd:-$(ps -p "$pid" -o command= 2>/dev/null || true)}
   [[ -n "$cmd" ]] || return 1
   cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p' | head -1 || true)
-  [[ "$cwd" == "$ROOT" || "$cwd" == "$ROOT"/* || "$cmd" == *"$ROOT"* ]] || return 1
+  if [[ -n "$cwd" ]] && inside_root "$cwd"; then
+    in_root=0
+  else
+    shopt -s nocasematch
+    [[ "$cmd" == *"$ROOT"* ]] && in_root=0
+    shopt -u nocasematch
+  fi
+  ((in_root == 0)) || return 1
   case "$cmd" in
     *app.main:app*|*multiprocessing.spawn\ import\ spawn_main*|*node_modules/.bin/vite*|*node_modules/@esbuild*|*npm\ run\ dev*|*npm\ --prefix\ frontend*|*scripts/dev.sh*)
       return 0
